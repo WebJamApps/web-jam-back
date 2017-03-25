@@ -1,0 +1,73 @@
+{
+  "name": "web-jam-back",
+  "version": "0.1.0",
+  "description": "web-jam.com",
+  "main": "index.js",
+  "engines": {
+    "node": "7.7.3",
+    "npm": "4.1.2"
+  },
+  "license": "MIT",
+  "scripts": {
+    "preinstall": "npm install -g yarn",
+    "postinstall": "./postinstall.sh && npm run build:prod",
+    "dev": "nodemon index.js",
+    "build:dev": "(cd frontend || exit; npm run build:dev)",
+    "build:prod": "(cd frontend || exit; npm run build:prod)",
+    "start": "node index.js",
+    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && npm install -g yarn && yarn cache clean && yarn install",
+    "debug": "node --inspect --debug-brk index.js",
+    "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js",
+    "nyc": "nyc npm run mocha",
+    "test": "istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
+    "test:debug": "./node_modules/.bin/mocha --inspect --debug-brk -r ./test/bootstrap.js test/**/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/WebJamApps/web-jam-back.git"
+  },
+  "license": "MIT",
+  "author": "HandlersAndKickers <>",
+  "contributors": [
+    {
+      "name": ""
+    },
+    {
+      "name": ""
+    }
+  ],
+  "dependencies": {
+    "bluebird": "^3.4.1",
+    "body-parser": "^1.15.2",
+    "cors": "^2.8.1",
+    "dotenv": "^2.0.0",
+    "express": "^4.14.0",
+    "helmet": "^2.1.2",
+    "jwt-simple": "^0.5.0",
+    "lodash": "^4.15.0",
+    "moment": "^2.15.2",
+    "mongoose": "^4.5.9",
+    "morgan": "^1.7.0",
+    "request": "^2.78.0"
+  },
+  "devDependencies": {
+    "chai": "^3.5.0",
+    "chai-as-promised": "^6.0.0",
+    "chai-http": "^3.0.0",
+    "chokidar-cli": "^1.2.0",
+    "eslint": "^3.2.2",
+    "eslint-config-airbnb": "^10.0.1",
+    "eslint-plugin-import": "^1.12.0",
+    "eslint-plugin-jsx-a11y": "^2.0.1",
+    "eslint-plugin-react": "^6.0.0",
+    "istanbul": "^0.4.5",
+    "mocha": "^3.1.2",
+    "mockgoose": "^6.0.8",
+    "nodemon": "^1.9.2",
+    "proxyquire": "^1.7.11",
+    "rewire": "^2.5.2",
+    "sinon": "^1.17.6",
+    "sinon-chai": "^2.8.0",
+    "supertest": "^3.0.0"
+  }
+}
