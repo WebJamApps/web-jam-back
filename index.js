@@ -44,6 +44,11 @@ app.use(bodyParser.json());
 app.use(morgan('tiny'));
 // app.use('/', routes);
 routes(app);
+
+app.get('*', function(request, response){
+    response.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
+});
+
 app.listen(config.server.port, () => {
   console.log(`Magic happens on port ${config.server.port}`);
 });
