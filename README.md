@@ -1,13 +1,19 @@
 # web-jam-back
 [![CircleCI](https://circleci.com/gh/WebJamApps/web-jam-back.svg?style=svg)](https://circleci.com/gh/WebJamApps/web-jam-back)
 
+<p>This repository is used for the following apps:</p>
+<ui>
+<li>ourhandsandfeet.org</li>
+<li>web-jam.com</li>
+<li>sc2rs.com</li>
+<li>future app ideas</li>
+</ul>
 
 <h3>Install</h3>
-- npm install -g yarn
-- yarn install
-- Request a copy of the .env file, which includes credentials to development mLab and to connect to the Google Auth Service. You will need to put a copy of the .env file into the root of the backend folder and also inside of backendroot/frontend so that you can test the production build from the local backend.
-
-<b><i>Note</i></b> There may be times when you need to <b>npm run cleaninstall</b><br>This eliminates any conflicts with existing node modules and new ones being used. If you do this then you will need to put the .env file again into the backendroot/frontend folder because that folder will get deleted and recreated from the github frontend master repo.
+<ui>
+<li>npm install -g yarn</li>
+<li>yarn install</li>
+<li>Request a copy of the .env file, which includes credentials to development mLab and to connect to the Google Auth Service. You will need to put a copy of the .env file into the root of the backend folder and also inside of backendroot/frontend so that you can test the production build from the local backend.</li>
 
 <h3>Run the server</h3>
 <b>npm start</b> starts the express server at localhost:7000<br>
