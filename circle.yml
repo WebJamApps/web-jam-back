@@ -1,0 +1,11 @@
+machine:
+  node:
+    version: 7.8.0
+dependencies:
+  override:
+    - npm install -g istanbul
+    - npm install -g yarn
+    - yarn install
+general:
+  artifacts:
+    - ./coverage
