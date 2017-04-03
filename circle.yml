@@ -12,5 +12,9 @@ general:
 deployment:
   master:
     branch: master
-    heroku:
-      appname: webjamsalem
+    commands:
+      - git config user.email "web.jam.adm@gmail.com"
+      - git config user.name  "circleci"
+      - "[[ ! -s \"$(git rev-parse --git-dir)/shallow\" ]] || git fetch --unshallow"
+      - git commit --amend -C HEAD
+      - git push -f git@heroku.com:webjamsalem.git $CIRCLE_SHA1:master
