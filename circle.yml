@@ -17,4 +17,4 @@ deployment:
       - git config user.name  "circleci"
       - "[[ ! -s \"$(git rev-parse --git-dir)/shallow\" ]] || git fetch --unshallow"
       - git commit --allow-empty -m "Force heroku rebuild"
-      - git push -f git@heroku.com:webjamsalem.git $CIRCLE_SHA1:master
+      - git push -f git@heroku.com:webjamsalem.git master
