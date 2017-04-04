@@ -10,11 +10,19 @@ general:
   artifacts:
     - ./coverage
 deployment:
+  dev:
+    branch: dev
+    commands:
+      - git config user.email "web.jam.adm@gmail.com"
+      - git config user.name  "circleci"
+      - "[[ ! -s \"$(git rev-parse --git-dir)/shallow\" ]] || git fetch --unshallow"
+      - git commit --allow-empty -m "Force heroku dev rebuild"
+      - git push -f git@heroku.com:web-jam-back-dev.git master
   master:
     branch: master
     commands:
       - git config user.email "web.jam.adm@gmail.com"
       - git config user.name  "circleci"
       - "[[ ! -s \"$(git rev-parse --git-dir)/shallow\" ]] || git fetch --unshallow"
-      - git commit --allow-empty -m "Force heroku rebuild"
+      - git commit --allow-empty -m "Force heroku master rebuild"
       - git push -f git@heroku.com:webjamsalem.git master
