@@ -10,7 +10,7 @@ then
 fi
 
 if [ ! -d frontend ]; then
-    (git clone https://github.com/WebJamApps/web-jam-front frontend)
+    (git clone https://github.com/WebJamApps/combined-front frontend)
 fi
 
 (
