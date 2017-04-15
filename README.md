@@ -14,6 +14,8 @@
 <li>npm install -g yarn</li>
 <li>yarn install</li>
 <li>Request a copy of the .env file, which includes credentials to development mLab and to connect to the Google Auth Service. You will need to put a copy of the .env file into the root of the backend folder and also inside of backendroot/frontend so that you can test the production build from the local backend.</li>
+<p>After placing the new .env file into the web-jam-back/frontend folder, you need to rebuild so that these environment variables are used in the output to dist. Run the following command<br>
+<b>npm run build:prod</b>
 
 <h3>Run the server</h3>
 <b>npm start</b> starts the express server at localhost:7000<br>
