@@ -9,5 +9,5 @@ module.exports = function(app) {
     app.use(router);
     router.use('/auth', auth);
     router.use('/user', authUtils.ensureAuthenticated, user);
-    router.use('/book', authUtils.ensureAuthenticated, book);
+    router.use('/book', book);
 };

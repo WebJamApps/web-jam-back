@@ -8,17 +8,16 @@ const router = new Router();
 //   .post((...args) => controller.create(...args));
 
 // router.route('/find/:title')
-   // .put((...args) => controller.update(...args))
-   // .get((...args) => controller.findByTitle(...args));
+// .put((...args) => controller.update(...args))
+// .get((...args) => controller.findByTitle(...args));
 //   .delete((...args) => controller.remove(...args));
 router.route('/getall')
-  .get((...args) => controller.find(...args));
+.get((...args) => controller.find(...args));
 
-// router for a particular book title.
-// router.route("/find/:title")
-//   .get((...args) => controller.findOne(...args));
+router.route('/create')
+.post((...args) => controller.create(...args));
 
-router.route('/')
-  .post((...args) => controller.create(...args));
+router.route('/update/:id')
+.put((...args) => controller.update(...args));
 
 module.exports = router;
