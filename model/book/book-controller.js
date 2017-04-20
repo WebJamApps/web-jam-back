@@ -8,7 +8,7 @@ class BookController extends Controller {
             .then(collection => {
                 console.log(collection.length);
                 if (collection.length) return res.status(200).json(collection);
-                return next(new Error("Bookshelf Empty"));
+                return next(new Error('Bookshelf Empty'));
             });
     }
   // findByTitle(req, res, next) {
