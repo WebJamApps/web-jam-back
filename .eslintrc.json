@@ -16,7 +16,7 @@
     "space-in-parens": 0,
     "key-spacing": 0,
     "no-unused-vars": [2, { "vars": "all", "args": "none" }],
-    "max-len": 1,
+    "max-len": 0,
     "padded-blocks": 0,
     "no-console": 0,
     "no-continue": 0,
