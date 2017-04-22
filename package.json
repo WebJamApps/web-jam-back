@@ -9,6 +9,7 @@
   },
   "license": "MIT",
   "scripts": {
+    "preinstall": "npm install -g yarn",
     "postinstall": "./postinstall.sh && npm run build:prod",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm run vulc && npm start -- build)",
