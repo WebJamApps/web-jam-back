@@ -17,5 +17,5 @@ fi
     cd frontend || exit;
     git checkout $BRANCH;
     git pull;
-    npm install;
+    yarn install;
 )
