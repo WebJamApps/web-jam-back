@@ -14,7 +14,7 @@ const authUtils = require('../../auth/authUtils');
 router.route('/getall')
 .get((...args) => controller.find(...args));
 
-router.route('/create')
+router.route('/create', authUtils.ensureAuthenticated)
 .post((...args) => controller.create(...args));
 
 router.route('/update/:id', authUtils.ensureAuthenticated)
