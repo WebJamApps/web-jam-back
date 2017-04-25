@@ -25,7 +25,6 @@
     "type": "git",
     "url": "git+ssh://git@github.com/WebJamApps/web-jam-back.git"
   },
-  "license": "MIT",
   "author": "HandlersAndKickers <>",
   "contributors": [
     {
@@ -41,6 +40,7 @@
     "cors": "^2.8.1",
     "dotenv": "^2.0.0",
     "express": "^4.14.0",
+    "express-sslify": "^1.2.0",
     "helmet": "^2.1.2",
     "jwt-simple": "^0.5.0",
     "lodash": "^4.15.0",

@@ -9,6 +9,7 @@ const bluebird   = require('bluebird');
 const config = require('./config');
 const routes = require('./routes');
 const cors = require('cors');
+const enforce = require('express-sslify');
 
 // TODO: Figure out why process.env.NODE_ENV is undefined at start YES
 
@@ -17,6 +18,7 @@ const corsOptions =
   credentials: true,
   optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
+
 // if(process.env.NODE_ENV === 'dev' || process.env.NODE_ENV === undefined){
 //   console.log("MONGO DB URI is: " + process.env.MONGO_DB_URI)
 // };
@@ -25,6 +27,11 @@ const corsOptions =
 //   console.log("MONGO DB URI is: " + process.env.MONGO_DB_URI)
 // };
 const app  = express();
+
+if (process.env.NODE_ENV == 'production') {
+    app.use(enforce.HTTPS({ trustProtoHeader: true }));
+}
+
 app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
 
 // app.use(function(req, res, next){
