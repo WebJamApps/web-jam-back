@@ -26,6 +26,7 @@
     "no-undef": 0,
     "prefer-template": 0,
     "indent": 0,
+    "new-cap": 0,
     "no-trailing-spaces": [ 1, {"skipBlankLines" : true}]
   }
 }

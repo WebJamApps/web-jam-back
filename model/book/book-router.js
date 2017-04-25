@@ -1,7 +1,7 @@
 const controller = require('./book-controller');
 const Router = require('express').Router;
 const router = new Router();
-
+const authUtils = require('../../auth/authUtils');
 
 // router.route('/')
 //   .get((...args) => controller.find(...args))
@@ -17,7 +17,7 @@ router.route('/getall')
 router.route('/create')
 .post((...args) => controller.create(...args));
 
-router.route('/update/:id')
+router.route('/update/:id', authUtils.ensureAuthenticated)
 .put((...args) => controller.update(...args));
 
 module.exports = router;
