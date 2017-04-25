@@ -28,8 +28,8 @@ const corsOptions =
 // };
 const app  = express();
 
-if (process.env.NODE_ENV == 'production') {
-    app.use(enforce.HTTPS({ trustProtoHeader: true }));
+if (process.env.NODE_ENV === 'production') {
+  app.use(enforce.HTTPS({ trustProtoHeader: true }));
 }
 
 app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
@@ -52,8 +52,8 @@ app.use(morgan('tiny'));
 // app.use('/', routes);
 routes(app);
 
-app.get('*', function(request, response){
-    response.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
+app.get('*', (request, response) => {
+  response.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
 });
 
 app.listen(config.server.port, () => {
