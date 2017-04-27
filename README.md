@@ -3,10 +3,9 @@
 
 <p>This repository is used for the following apps:</p>
 <ui>
-<li>ourhandsandfeet.org</li>
-<li>web-jam.com</li>
-<li>sc2rs.com</li>
-<li>future app ideas</li>
+<li><a href="http://www.ourhandsandfeet.org">ourhandsandfeet.org</a></li>
+<li><a href="https://www.web-jam.com">web-jam.com</a></li>
+<li><a href="https://www.web-jam.com/music">joshandmariamusic.com</a></li>
 </ul>
 
 <h3>Install</h3>
