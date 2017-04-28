@@ -2,10 +2,13 @@ machine:
   node:
     version: 7.9.0
 dependencies:
+  pre:
+    - npm install -g istanbul yarn codeclimate-test-reporter
   override:
-    - npm install -g istanbul
-    - npm install -g yarn
     - yarn install
+test:
+  post:
+    - codeclimate-test-reporter < coverage/lcov.info
 general:
   artifacts:
     - ./coverage
