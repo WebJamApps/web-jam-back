@@ -2,7 +2,8 @@
 [![CircleCI](https://circleci.com/gh/WebJamApps/web-jam-back.svg?style=svg)](https://circleci.com/gh/WebJamApps/web-jam-back)
 [![Code Climate](https://codeclimate.com/github/WebJamApps/web-jam-back/badges/gpa.svg)](https://codeclimate.com/github/WebJamApps/web-jam-back)
 [![Test Coverage](https://codeclimate.com/github/WebJamApps/web-jam-back/badges/coverage.svg)](https://codeclimate.com/github/WebJamApps/web-jam-back/coverage)
-[![Issue Count](https://codeclimate.com/github/WebJamApps/web-jam-back/badges/issue_count.svg)](https://codeclimate.com/github/WebJamApps/web-jam-back)
+[![Issue Count](https://codeclimate.com/github/WebJamApps/web-jam-back/badges/issue_count.svg)](https://codeclimate.com/github/WebJamApps/web-jam-back/issues)
+[![Known Vulnerabilities](https://snyk.io/test/github/webjamapps/web-jam-back/badge.svg)](https://snyk.io/test/github/webjamapps/web-jam-back)
 
 <p>This repository is used for the following apps:</p>
 <ui>
