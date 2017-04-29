@@ -16,3 +16,6 @@ ratings:
   - "**.jsx"
 exclude_paths:
 - test/
+- node_modules/
+- coverage/
+- frontend/
