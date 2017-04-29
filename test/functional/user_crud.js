@@ -6,22 +6,22 @@ describe('functional test Create User',  () => {
     User1.ensureIndexes();
     mockgoose(mongoose).then(() => {
       allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-      global.server = require('../../index');
+      global.server = require('../../index'); // eslint-disable-line global-require
       done();
     });
   });
-  
+
   it('should create a new user', (done) => {
     const User = new User1();
     User.name = 'foo';
     User.email = 'foo@example.com';
     User.save((err) => {
       const id = User._id;
-      expect(id).to.not.be.null;
+      expect(id).to.not.be.null; // eslint-disable-line no-unused-expressions
       done();
     });
   });
-  
+
   it('should not update a user when using a ID that does not exist', (done) => {
     const Uid = '587298a376d5036c68b6ef12';
     chai.request(server)
@@ -34,7 +34,7 @@ describe('functional test Create User',  () => {
       done();
     });
   });
-  
+
   it('should modify a user', (done) => {
     const User = new User1();
     User.name = 'foo';
@@ -52,7 +52,7 @@ describe('functional test Create User',  () => {
       done();
     });
   });
-  
+
   it('should find a user by id', (done) => {
     const User = new User1();
     User.name = 'foo';
@@ -67,7 +67,7 @@ describe('functional test Create User',  () => {
       done();
     });
   });
-  
+
   it('should NOT find a user by id', (done) => {
     const id = '587298a376d5036c68b6ef12';
     chai.request(server)
@@ -79,7 +79,7 @@ describe('functional test Create User',  () => {
       done();
     });
   });
-  
+
   it('should return an error in update() when nothing was updated', (done) => {
     const Uid = '587298a376d5036c68b6ef12';
     chai.request(server)
@@ -92,8 +92,8 @@ describe('functional test Create User',  () => {
       done();
     });
   });
-  
-  it("should return 404 error when Id not valid on update", (done) => {
+
+  it('should return 404 error when Id not valid on update', (done) => {
     const Uid = '5872';
     chai.request(server)
     .put('/user/' + Uid)
@@ -106,7 +106,7 @@ describe('functional test Create User',  () => {
       done();
     });
   });
-  
+
   it('should throw an error in findById()', (done) => {
     const id = 'TYgsfn';
     chai.request(server)

@@ -10,7 +10,8 @@ const config = {
   },
   mongo: {
     url: process.env.MONGO_DB_URI
-  }
+  },
+  hashString: process.env.HashString
 };
 
 

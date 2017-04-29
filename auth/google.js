@@ -1,13 +1,15 @@
-var User = require('../model/user/user-schema');
-//const config = require('../config');
-var request = require('request');
-//const jwt = require('jwt-simple');
-var authUtils = require('./authUtils');
+const User = require('../model/user/user-schema');
+// const config = require('../config');
+const request = require('request');
+// const jwt = require('jwt-simple');
+
+// let is needed for rewire :(
+let authUtils = require('./authUtils'); // eslint-disable-line prefer-const
 
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';
 const peopleApiUrl = 'https://www.googleapis.com/plus/v1/people/me/openIdConnect';
 
-exports.authenticate = function (req, res) {
+exports.authenticate = function(req, res) {
   console.log(req);
   const params = {
     code: req.body.code,
@@ -18,16 +20,17 @@ exports.authenticate = function (req, res) {
   };
 
   // Step 1. Exchange authorization code for access token.
-  request.post(accessTokenUrl, { json: true, form: params }, function(err, response, token) {
-    //console.log("After initial access");
-    //console.log(token);
+  request.post(accessTokenUrl, { json: true, form: params }, (err, response, token) => {
+    // console.log("After initial access");
+    // console.log(token);
     const accessToken = token.access_token;
-    //console.log(accessToken);
+    // console.log(accessToken);
     const headers = { Authorization: 'Bearer ' + accessToken };
 
     // Step 2. Retrieve profile information about the current user.
-    request.get({ url: peopleApiUrl, headers: headers, json: true }, function(err, response, profile) {
-      //console.log("Got Profile Info");
+    const requestConfig = { url: peopleApiUrl, headers, json: true };
+    request.get(requestConfig, (err, response, profile) => {
+      // console.log("Got Profile Info");
           // // Step 3a. Link user accounts.
       // if (req.headers.authorization) {
       //   User.findOne({ google: profile.sub }, function(err, existingUser) {
@@ -50,24 +53,22 @@ exports.authenticate = function (req, res) {
       //       });
       //     });
       //   });
-      //} else {
+      // } else {
         // Step 3b. Create a new user account or return an existing one.
-        User.findOne({ email: profile.email }, function(err, existingUser) {
-          //console.log(existingUser);
+        const filter = { email: profile.email };
+        User.findOne(filter, (err, existingUser) => {
+          // console.log(existingUser);
           if (existingUser) {
-              console.log("user exist");
-
+            console.log('user exist');
             return res.send({ token: authUtils.createJWT(existingUser) });
-          }else{
-            var user = new User();
-            user.name = profile.name;
-            user.email = profile.email;
-            user.save(function(err) {
-              const token = authUtils.createJWT(user);
-              console.log('token sent');
-              res.send({ token: token });
-            });
           }
+          const user = new User();
+          user.name = profile.name;
+          user.email = profile.email;
+          user.save((err) => {
+            console.log('token sent');
+            res.send({ token: authUtils.createJWT(user) });
+          });
         });
     });
   });
