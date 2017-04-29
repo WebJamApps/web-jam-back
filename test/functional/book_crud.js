@@ -7,7 +7,7 @@ describe('The library feature',  () => {
     Book1.ensureIndexes(() => {
       mockgoose(mongoose).then(() => {
         allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-        global.server = require('../../index');
+        global.server = require('../../index'); // eslint-disable-line global-require
         done();
       });
     });
@@ -23,7 +23,7 @@ describe('The library feature',  () => {
       done();
     });
   });
-  
+
   it('should raise error when no books are found', (done) => {
     chai.request(server)
     .get('/book/getall')
@@ -35,7 +35,7 @@ describe('The library feature',  () => {
       done();
     });
   });
-  
+
   it('should return all books', (done) => {
     const Book = new Book1();
     Book.title = 'foo2book';
@@ -51,8 +51,8 @@ describe('The library feature',  () => {
       });
     });
   });
-  
-  it('should post an array of new books', done => {
+
+  it('should post an array of new books', (done) => {
     chai.request(server)
     .post('/book/')
     .set({ origin: allowedUrl })
@@ -63,9 +63,9 @@ describe('The library feature',  () => {
       done();
     });
   });
-  
+
   // when you call with a non-existent path, be sure to get a 404.
-  it('should pass for the error', done => {
+  it('should pass for the error', (done) => {
     chai.request(server)
     .put('/book/johnny')
     .set({ origin: allowedUrl })
@@ -75,7 +75,7 @@ describe('The library feature',  () => {
       done();
     });
   });
-  
+
   // it('should respond with error on find a book', (done) => {
   //   chai.request(server)
   //   .get('/book/find/one')

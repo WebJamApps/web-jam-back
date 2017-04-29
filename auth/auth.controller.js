@@ -1,8 +1,8 @@
 
-var _ = require('lodash');
-var Entity = require('../model/user/user-schema.js');
-//var jwt = require('jwt-simple');
-//var authUtils = require('./authUtils');
+// var _ = require('lodash');
+// var Entity = require('../model/user/user-schema.js');
+// var jwt = require('jwt-simple');
+// var authUtils = require('./authUtils');
 // exports.signup = function (req, res) {
 //     console.log("req body " + req.body.email);
 //     Entity.findOne({email: req.body.email}, function (err, existingUser) {

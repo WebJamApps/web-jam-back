@@ -4,24 +4,25 @@ const authUtils = rewire('../../auth/authUtils');
 const moment = require('moment');
 
 describe('The Unit Test for authUtils Module', () => {
-  let jwt, revert_jwt;
+  let jwt;
+  let revertJwt;
 
   beforeEach(() => {
     jwt = { encode: sinon.stub(), decode: sinon.stub() };
-    revert_jwt = authUtils.__set__('jwt', jwt);
+    revertJwt = authUtils.__set__('jwt', jwt);
   });
 
   afterEach(() => {
-    revert_jwt();
+    revertJwt();
   });
 
   describe('createJWT', () => {
     it('should create token', () => {
       const token = 'sometoken';
       const user = { _id: 'someid' };
-      jwt.encode.returns(token)
+      jwt.encode.returns(token);
 
-      expect(authUtils.createJWT(user)).to.not.be.null;
+      expect(authUtils.createJWT(user)).to.not.be.null; // eslint-disable-line no-unused-expressions
       expect(jwt.encode.args[0][0].sub).to.equal(user._id);
     });
   });
@@ -32,7 +33,7 @@ describe('The Unit Test for authUtils Module', () => {
       const send = sinon.spy();
       const res = { send };
       authUtils.handleError(res, err);
-      expect(send.args[0]).to.deep.equal([400, err])
+      expect(send.args[0]).to.deep.equal([400, err]);
     });
   });
 
@@ -53,7 +54,7 @@ describe('The Unit Test for authUtils Module', () => {
       authUtils.ensureAuthenticated(req, res);
     });
     it('should 401 when jwt.decode fails', (done) => {
-      revert_jwt();
+      revertJwt();
       const req = { headers: { authorization: 'this will fail jwt.decode' } };
       const res = {
         status(num) {
@@ -93,7 +94,7 @@ describe('The Unit Test for authUtils Module', () => {
       const next = sinon.spy();
       authUtils.ensureAuthenticated(req, null, next);
       expect(req.user).to.equal(sub);
-      expect(next.called).to.be.true;
+      expect(next.called).to.be.true; // eslint-disable-line no-unused-expressions
     });
   });
 
