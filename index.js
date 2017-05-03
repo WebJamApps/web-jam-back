@@ -27,7 +27,7 @@ const corsOptions =
 //   console.log("MONGO DB URI is: " + process.env.MONGO_DB_URI)
 // };
 const app  = express();
-
+/* istanbul ignore if */
 if (process.env.NODE_ENV === 'production') {
   app.use(enforce.HTTPS({ trustProtoHeader: true }));
 }
