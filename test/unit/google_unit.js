@@ -1,9 +1,5 @@
-// let sinon = require('sinon');
 const rewire = require('rewire');
 const google = rewire('../../auth/google');
-
-const accessTokenUrl = google.__get__('accessTokenUrl');
-const peopleApiUrl = google.__get__('peopleApiUrl');
 
 describe('The Unit Test for Google Module', () => {
   let User;
@@ -32,11 +28,9 @@ describe('The Unit Test for Google Module', () => {
   });
 
   it('should authenticate', (done) => {
-    const reqPostArgs = [accessTokenUrl];
     const token = { access_token: 'access_token' };
     request.post.yields(null, {}, token);
 
-    const reqGetArgs = [{ url: peopleApiUrl, json: true, headers: { Authorization: `Bearer ${token.access_token}` } }];
     const profile = { email: 'email' };
     request.get.yields(null, {}, profile);
 
@@ -58,15 +52,12 @@ describe('The Unit Test for Google Module', () => {
   });
 
   it('should create a new user and authenticate', (done) => {
-    const reqPostArgs = [accessTokenUrl];
     const token = { access_token: 'access_token' };
     request.post.yields(null, {}, token);
 
-    const reqGetArgs = [{ url: peopleApiUrl, json: true, headers: { Authorization: `Bearer ${token.access_token}` } }];
     const profile = { email: 'email' };
     request.get.yields(null, {}, profile);
 
-    // const existingUser = { _id: 'someid' };
     User.findOne.yields(null, null);
     const newUser = { save: sinon.stub() };
     User.returns(newUser);

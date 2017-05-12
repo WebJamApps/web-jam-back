@@ -8,11 +8,11 @@ describe('functional test Create User', () => {
     User2.ensureIndexes();
     mockgoose(mongoose).then(() => {
       allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-      global.server = require('../../index');
+      global.server = require('../../index'); // eslint-disable-line global-require
       done();
     });
   });
-  
+
   it('should get the new user by id', (done) => {
     const User = new User2();
     User.name = 'foo2';
@@ -28,7 +28,7 @@ describe('functional test Create User', () => {
       });
     });
   });
-  
+
   it('should update the new user by id', (done) => {
     const User = new User2();
     User.name = 'foo3';

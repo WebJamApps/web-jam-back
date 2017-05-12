@@ -15,6 +15,7 @@ fi
 
 (
     cd frontend || exit;
+    git stash;
     git checkout $BRANCH;
     git pull;
     yarn install;

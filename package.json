@@ -4,7 +4,7 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "7.9.0",
+    "node": "7.10.0",
     "npm": "4.2.0"
   },
   "license": "MIT",
@@ -18,7 +18,7 @@
     "debug": "node --inspect --debug-brk index.js",
     "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js",
     "nyc": "nyc npm run mocha",
-    "test": "istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
+    "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
     "test:debug": "./node_modules/.bin/mocha --inspect --debug-brk -r ./test/bootstrap.js test/**/*.js"
   },
   "repository": {
@@ -50,14 +50,15 @@
     "request": "^2.78.0"
   },
   "devDependencies": {
+    "babel-eslint": "^7.2.3",
     "chai": "^3.5.0",
     "chai-as-promised": "^6.0.0",
     "chai-http": "^3.0.0",
     "chokidar-cli": "^1.2.0",
     "eslint": "^3.2.2",
-    "eslint-config-airbnb": "^10.0.1",
-    "eslint-plugin-import": "^1.12.0",
-    "eslint-plugin-jsx-a11y": "^2.0.1",
+    "eslint-config-airbnb": "^14.1.0",
+    "eslint-plugin-import": "^2.2.0",
+    "eslint-plugin-jsx-a11y": "^4.0.0",
     "eslint-plugin-react": "^6.0.0",
     "istanbul": "^0.4.5",
     "mocha": "^3.1.2",

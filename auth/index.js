@@ -1,11 +1,11 @@
 
 
-var express = require('express');
-var authUtils = require('./authUtils');
-//var authController = require('./auth.controller.js');
-//var meController = require('./me.controller.js');
-//var identSrv = require('./identSrv.js');
-var google = require('./google.js');
+const express = require('express');
+// const authUtils = require('./authUtils');
+// var authController = require('./auth.controller.js');
+// var meController = require('./me.controller.js');
+// var identSrv = require('./identSrv.js');
+const google = require('./google.js');
 // var linkedin = require('./linkedin.js');
 // var twitter = require('./twitter.js');
 // var facebook = require('./facebook.js');
@@ -13,7 +13,7 @@ var google = require('./google.js');
 // var live = require('./live.js');
 // var yahoo = require('./yahoo.js');
 // var foursquare = require('./foursquare');
-var router = express.Router();
+const router = express.Router();
 
 // router.post('/signup', authController.signup);
 // router.post('/login', authController.login);
@@ -28,12 +28,11 @@ router.post('/google', google.authenticate);
 // router.post('/identSrv', identSrv.authenticate);
 
 
-//TODO implement ensureAuthenticated
-/*router.get('/me',authUtils.ensureAuthenticated, meController.getMe );
-router.put('/me',authUtils.ensureAuthenticated, meController.updateMe );
-*/
-//router.use(authUtils.ensureAuthenticated); //auth only appied for following paths, not the paths above
-//router.get('/me', meController.getMe );
-//router.put('/me', meController.updateMe );
-//router.get('/unlink/:provider', meController.unlink);
+// TODO implement ensureAuthenticated
+// router.get('/me',authUtils.ensureAuthenticated, meController.getMe );
+// router.put('/me',authUtils.ensureAuthenticated, meController.updateMe );
+// router.use(authUtils.ensureAuthenticated); //auth only appied for following paths, not the paths above
+// router.get('/me', meController.getMe );
+// router.put('/me', meController.updateMe );
+// router.get('/unlink/:provider', meController.unlink);
 module.exports = router;
