@@ -1,6 +1,11 @@
-const User = require('../model/user/user-schema');
+// let is needed for rewire support
+let User = require('../model/user/user-schema'); // eslint-disable-line prefer-const
+
 // const config = require('../config');
-const request = require('request');
+
+// let is needed for rewire support
+let request = require('request'); // eslint-disable-line prefer-const
+
 // const jwt = require('jwt-simple');
 
 // let is needed for rewire support
