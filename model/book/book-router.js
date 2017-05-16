@@ -17,8 +17,7 @@ router.route('/getall')
 router.route('/create', authUtils.ensureAuthenticated)
 .post((...args) => controller.create(...args));
 
-// we are not currently updating books by id
-// router.route('/update/:id', authUtils.ensureAuthenticated)
-// .put((...args) => controller.update(...args));
+router.route('/update/:id', authUtils.ensureAuthenticated)
+.put((...args) => controller.update(...args));
 
 module.exports = router;
