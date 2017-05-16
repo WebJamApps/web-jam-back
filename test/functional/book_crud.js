@@ -75,16 +75,21 @@ describe('The library feature',  () => {
       done();
     });
   });
-  
-  // it('should respond with error on find a book', (done) => {
-  //   chai.request(server)
-  //   .get('/book/find/one')
-  //   .set({ origin: allowedUrl })
-  //   .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //   .end((err, res) => {
-  //     console.log(res.status);
-  //     // expect(res).to.have.status(200);
-  //     done();
-  //   });
-  // });
+  it('should modify a book', (done) => {
+    const Book = new Book1();
+    Book.title = 'Flow Measurement';
+    Book.type = 'hardback';
+    Book.checkedOutBy = '123456';
+    Book.save();
+    chai.request(server)
+    .put('/book/update/' + Book.id)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .send({ checkedOutBy: '' })
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      expect(res.nModified > 0);
+      done();
+    });
+  });
 });
