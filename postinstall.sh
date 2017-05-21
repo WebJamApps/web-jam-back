@@ -19,4 +19,5 @@ fi
     git checkout $BRANCH;
     git pull;
     yarn install;
+    npm run postinstall:backend
 )
