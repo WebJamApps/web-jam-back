@@ -19,7 +19,9 @@
     "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js",
     "nyc": "nyc npm run mocha",
     "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
-    "test:debug": "./node_modules/.bin/mocha --inspect --debug-brk -r ./test/bootstrap.js test/**/*.js"
+    "test:debug": "./node_modules/.bin/mocha --inspect --debug-brk -r ./test/bootstrap.js test/**/*.js",
+    "snyk-protect": "snyk protect",
+    "prepublish": "npm run snyk-protect"
   },
   "repository": {
     "type": "git",
@@ -41,13 +43,14 @@
     "dotenv": "^2.0.0",
     "express": "^4.15.2",
     "express-sslify": "^1.2.0",
-    "helmet": "^2.3.0",
+    "helmet": "^3.6.1",
     "jwt-simple": "^0.5.0",
     "lodash": "^4.15.0",
     "moment": "^2.15.2",
     "mongoose": "^4.10.0",
     "morgan": "^1.8.1",
-    "request": "^2.78.0"
+    "request": "^2.78.0",
+    "snyk": "^1.30.1"
   },
   "devDependencies": {
     "babel-eslint": "^7.2.3",
@@ -69,5 +72,6 @@
     "sinon": "^1.17.6",
     "sinon-chai": "^2.8.0",
     "supertest": "^3.0.0"
-  }
+  },
+  "snyk": true
 }
