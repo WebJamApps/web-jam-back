@@ -1,7 +1,9 @@
-
 const dotenv = require('dotenv');
+const fs = require('fs');
 
-dotenv.config();
+if (fs.existsSync('./.env')) {
+  dotenv.config();
+}
 
 const config = {
   environment: process.env.NODE_ENV,
@@ -13,6 +15,5 @@ const config = {
   },
   hashString: process.env.HashString
 };
-
 
 module.exports = config;
