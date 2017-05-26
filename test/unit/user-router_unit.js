@@ -45,4 +45,20 @@ describe('functional test Create User', () => {
       });
     });
   });
+
+  it('should delete the new user by id', (done) => {
+    const User = new User2();
+    User.name = 'foo3';
+    User.email = 'foo3@example.com';
+    User.save((err) => {
+      const Uid = User._id;
+      chai.request(server)
+      .delete('/user/' + Uid)
+      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .end((err, res) => {
+        expect(res).to.have.status(204);
+        done();
+      });
+    });
+  });
 });
