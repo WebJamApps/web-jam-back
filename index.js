@@ -42,6 +42,15 @@ app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
 // res.setHeader('Access-Control-Allow-Credentials', true);
 // next();
 // })
+
+// Handle rejected promises globally
+app.use((req, res, next) => {
+  process.on('unhandledRejection', (reason, promise) => {
+    next(new Error(reason));
+  });
+  next();
+});
+
 app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
 mongoose.connect(process.env.MONGO_DB_URI);

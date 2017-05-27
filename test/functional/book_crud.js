@@ -3,9 +3,8 @@ const authUtils = require('../../auth/authUtils');
 
 describe('The library feature',  () => {
   beforeEach((done) => {
-    Book1.collection.drop();
-    Book1.ensureIndexes(() => {
-      mockgoose(mongoose).then(() => {
+    mockgoose(mongoose).then(() => {
+      Book1.ensureIndexes(() => {
         allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
         global.server = require('../../index'); // eslint-disable-line global-require
         done();
@@ -19,12 +18,13 @@ describe('The library feature',  () => {
     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
     .send({ title: 'foobar', type: 'book' })
     .end((err, res) => {
-      // expect(res).to.have.status(201);
+      expect(res).to.have.status(201);
       done();
     });
   });
-  
+
   it('should raise error when no books are found', (done) => {
+    Book1.collection.drop();
     chai.request(server)
     .get('/book/getall')
     .set({ origin: allowedUrl })
@@ -35,7 +35,7 @@ describe('The library feature',  () => {
       done();
     });
   });
-  
+
   it('should return all books', (done) => {
     const Book = new Book1();
     Book.title = 'foo2book';
@@ -51,7 +51,7 @@ describe('The library feature',  () => {
       });
     });
   });
-  
+
   it('should post an array of new books', (done) => {
     chai.request(server)
     .post('/book/create')
@@ -63,7 +63,7 @@ describe('The library feature',  () => {
       done();
     });
   });
-  
+
   // when you call with a non-existent path, be sure to get a 404.
   it('should pass for the error', (done) => {
     chai.request(server)

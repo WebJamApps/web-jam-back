@@ -2,12 +2,13 @@ const User1 = require('../../model/user/user-schema');
 const authUtils = require('../../auth/authUtils');
 describe('functional test Create User',  () => {
   beforeEach((done) => {
-    User1.collection.drop();
-    User1.ensureIndexes();
     mockgoose(mongoose).then(() => {
-      allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-      global.server = require('../../index'); // eslint-disable-line global-require
-      done();
+      User1.collection.drop();
+      User1.ensureIndexes(() => {
+        allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+        global.server = require('../../index'); // eslint-disable-line global-require
+        done();
+      });
     });
   });
 
