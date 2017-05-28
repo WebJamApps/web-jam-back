@@ -1,49 +1,43 @@
-const rewire = require('rewire');
-const google = rewire('../../auth/google');
+const google = require('../../auth/google');
+const User = require('../../model/user/user-schema');
+const jwt = require('jwt-simple');
+const config = require('../../config');
+const nock = require('nock');
 
 describe('The Unit Test for Google Module', () => {
-  let User;
-  let request;
-  let authUtils;
-  let revertUser;
-  let revertRequest;
-  let revertAuthUtils;
+  let userid;
 
-  beforeEach(() => {
-    User = sinon.stub();
-    User.findOne = sinon.stub();
-    revertUser = google.__set__('User', User);
-
-    request = { get: sinon.stub(), post: sinon.stub() };
-    revertRequest = google.__set__('request', request);
-
-    authUtils = { createJWT: sinon.stub() };
-    revertAuthUtils = google.__set__('authUtils', authUtils);
+  before((done) => {
+    // Set up an existing user
+    mockgoose(mongoose).then(() => {
+      const user = new User();
+      user.name = 'foo';
+      user.email = 'foo@example.com';
+      user.save((err) => {
+        userid = user._id.toString();
+        done();
+      });
+    });
   });
 
-  afterEach(() => {
-    revertUser();
-    revertRequest();
-    revertAuthUtils();
-  });
-
-  it('should authenticate', (done) => {
+  it('should authenticate with existing user', (done) => {
+    const sub = 'foo@example.com';
     const token = { access_token: 'access_token' };
-    request.post.yields(null, {}, token);
+    nock('https://accounts.google.com')
+      .post('/o/oauth2/token')
+      .reply(200, token);
 
-    const profile = { email: 'email' };
-    request.get.yields(null, {}, profile);
+    const profile = { email: sub };
+    nock('https://www.googleapis.com')
+      .get('/plus/v1/people/me/openIdConnect')
+      .reply(200, profile);
 
-    const existingUser = { _id: 'someid' };
-    User.findOne.yields(null, existingUser);
-
-    const lastToken = 'lastToken';
-    authUtils.createJWT.returns(lastToken);
     const req = { body: {} };
     const res = {
       send: (msg) => {
         expect(msg).to.have.property('token');
-        expect(msg.token).to.equal(lastToken);
+        const payload = jwt.decode(msg.token, config.hashString);
+        expect(payload.sub).to.equal(userid);
         done();
       }
     };
@@ -52,25 +46,24 @@ describe('The Unit Test for Google Module', () => {
   });
 
   it('should create a new user and authenticate', (done) => {
+    const sub = 'foo2@example.com';
     const token = { access_token: 'access_token' };
-    request.post.yields(null, {}, token);
+    nock('https://accounts.google.com')
+      .post('/o/oauth2/token')
+      .reply(200, token);
 
-    const profile = { email: 'email' };
-    request.get.yields(null, {}, profile);
-
-    User.findOne.yields(null, null);
-    const newUser = { save: sinon.stub() };
-    User.returns(newUser);
-    newUser.save.yields(null);
-
-    const lastToken = 'lastToken';
-    authUtils.createJWT.returns(lastToken);
+    const profile = { email: sub };
+    nock('https://www.googleapis.com')
+      .get('/plus/v1/people/me/openIdConnect')
+      .reply(200, profile);
 
     const req = { body: {} };
     const res = {
       send: (msg) => {
         expect(msg).to.have.property('token');
-        expect(msg.token).to.equal(lastToken);
+        // Make sure our token contains a new user id, different from existing userid
+        const payload = jwt.decode(msg.token, config.hashString);
+        expect(payload.sub).to.not.equal(userid);
         done();
       }
     };
