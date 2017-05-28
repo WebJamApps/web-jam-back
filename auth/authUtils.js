@@ -1,7 +1,7 @@
 
 const moment = require('moment');
 // let is needed for rewire support
-let jwt = require('jwt-simple');  // eslint-disable-line prefer-const
+const jwt = require('jwt-simple');
 const config = require('../config');
 
 class AuthUtils {
@@ -26,7 +26,7 @@ class AuthUtils {
 
     let payload = null;
     try {
-      payload = jwt.decode(token, process.env.HashString);
+      payload = jwt.decode(token, config.hashString);
     } catch (err) {
       return res.status(401).send({ message: err.message });
     }

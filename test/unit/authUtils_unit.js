@@ -1,29 +1,17 @@
 const sinon = require('sinon');
-const rewire = require('rewire');
-const authUtils = rewire('../../auth/authUtils');
+const authUtils = require('../../auth/authUtils');
+const jwt = require('jwt-simple');
+const config = require('../../config');
 const moment = require('moment');
 
 describe('The Unit Test for authUtils Module', () => {
-  let jwt;
-  let revertJwt;
-
-  beforeEach(() => {
-    jwt = { encode: sinon.stub(), decode: sinon.stub() };
-    revertJwt = authUtils.__set__('jwt', jwt);
-  });
-
-  afterEach(() => {
-    revertJwt();
-  });
 
   describe('createJWT', () => {
     it('should create token', () => {
-      const token = 'sometoken';
       const user = { _id: 'someid' };
-      jwt.encode.returns(token);
-
-      expect(authUtils.createJWT(user)).to.not.be.null; // eslint-disable-line no-unused-expressions
-      expect(jwt.encode.args[0][0].sub).to.equal(user._id);
+      const payload = authUtils.createJWT(user);
+      expect(payload).to.not.be.null; // eslint-disable-line no-unused-expressions
+      expect(jwt.decode(payload, config.hashString).sub).to.equal(user._id);
     });
   });
 
@@ -54,7 +42,6 @@ describe('The Unit Test for authUtils Module', () => {
       authUtils.ensureAuthenticated(req, res);
     });
     it('should 401 when jwt.decode fails', (done) => {
-      revertJwt();
       const req = { headers: { authorization: 'this will fail jwt.decode' } };
       const res = {
         status(num) {
@@ -71,14 +58,17 @@ describe('The Unit Test for authUtils Module', () => {
     });
 
     it('should 401 when exp <= moment().unix()', (done) => {
-      jwt.decode.returns({ exp: moment().unix() });
-      const req = { headers: { authorization: 'this shouldnt matter' } };
+      const payload = {
+          exp: moment().unix()
+      };
+      const auth = jwt.encode(payload, config.hashString);
+      const req = { headers: { authorization: 'Bearer ' + auth } };
       const res = {
         status(num) {
           expect(num).to.equal(401);
           return {
             send({ message }) {
-              expect(message).to.have.string('Token has expired');
+              expect(message).to.have.string('expired');
               done();
             }
           };
@@ -89,8 +79,12 @@ describe('The Unit Test for authUtils Module', () => {
 
     it('should call next when all is well', () => {
       const sub = 'test';
-      jwt.decode.returns({ sub, exp: 1000 + moment().unix() });
-      const req = { headers: { authorization: 'this shouldnt matter' } };
+      const payload = {
+          sub,
+          exp: moment().add(14, 'days').unix()
+      };
+      const auth = jwt.encode(payload, config.hashString);
+      const req = { headers: { authorization: 'Bearer ' + auth } };
       const next = sinon.spy();
       authUtils.ensureAuthenticated(req, null, next);
       expect(req.user).to.equal(sub);
