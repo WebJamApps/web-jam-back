@@ -10,23 +10,13 @@ const config = require('./config');
 const routes = require('./routes');
 const cors = require('cors');
 const enforce = require('express-sslify');
-
-// TODO: Figure out why process.env.NODE_ENV is undefined at start YES
-
 const corsOptions =
 { origin: JSON.parse(process.env.AllowUrl).urls,
   credentials: true,
   optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
-
-// if(process.env.NODE_ENV === 'dev' || process.env.NODE_ENV === undefined){
-//   console.log("MONGO DB URI is: " + process.env.MONGO_DB_URI)
-// };
-//
-// if(process.env.NODE_ENV === 'test') {
-//   console.log("MONGO DB URI is: " + process.env.MONGO_DB_URI)
-// };
 const app  = express();
+
 /* istanbul ignore if */
 if (process.env.NODE_ENV === 'production') {
   app.use(enforce.HTTPS({ trustProtoHeader: true }));

@@ -2,6 +2,9 @@
 engines:
   duplication:
     enabled: true
+    checks:
+      Similar Code:
+        enabled: false
     config:
       languages:
         javascript:
