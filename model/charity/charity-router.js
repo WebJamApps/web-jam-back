@@ -1,7 +1,7 @@
 const controller = require('./charity-controller');
 const Router = require('express').Router;
 const router = new Router();
-const authUtils = require('../../auth/authUtils');
+// const authUtils = require('../../auth/authUtils');
 
 // router.route('/')
 //   .get((...args) => controller.find(...args))
@@ -14,7 +14,7 @@ const authUtils = require('../../auth/authUtils');
 // router.route('/getall')
 // .get((...args) => controller.find(...args));
 
-router.route('/create', authUtils.ensureAuthenticated)
+router.route('/create')
 .post((...args) => controller.create(...args));
 
 module.exports = router;

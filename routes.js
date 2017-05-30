@@ -3,6 +3,7 @@ const router = new Router();
 const user  = require('./model/user/user-router');
 const book = require('./model/book/book-router');
 const charity = require('./model/charity/charity-router');
+const volunteer = require('./model/volunteer/volunteer-router');
 const auth = require('./auth');
 const authUtils = require('./auth/authUtils');
 
@@ -11,5 +12,6 @@ module.exports = function(app) {
     router.use('/auth', auth);
     router.use('/user', authUtils.ensureAuthenticated, user);
     router.use('/book', book);
-    router.use('/charity', charity);
+    router.use('/charity', authUtils.ensureAuthenticated, charity);
+      router.use('/volunteer', authUtils.ensureAuthenticated, volunteer);
 };
