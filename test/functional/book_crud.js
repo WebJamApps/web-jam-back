@@ -71,7 +71,7 @@ describe('The library feature',  () => {
     .set({ origin: allowedUrl })
     .set('authorization', 'Bearer ')
     .end((err, res) => {
-      expect(res).to.have.status(404);
+      expect(res).to.have.status(400);
       done();
     });
   });
@@ -82,7 +82,7 @@ describe('The library feature',  () => {
     Book.checkedOutBy = '123456';
     Book.save();
     chai.request(server)
-    .put('/book/update/' + Book.id)
+    .put('/book/' + Book.id)
     .set({ origin: allowedUrl })
     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
     .send({ checkedOutBy: '' })
