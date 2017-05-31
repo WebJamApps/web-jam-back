@@ -32,8 +32,8 @@ acorn@^5.0.1:
   resolved "https://registry.yarnpkg.com/acorn/-/acorn-5.0.3.tgz#c460df08491463f028ccb82eab3730bf01087b3d"
 
 agent-base@2:
-  version "2.1.1"
-  resolved "https://registry.yarnpkg.com/agent-base/-/agent-base-2.1.1.tgz#d6de10d5af6132d5bd692427d46fc538539094c7"
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/agent-base/-/agent-base-2.1.0.tgz#193455e4347bca6b05847cb81e939bb325446da8"
   dependencies:
     extend "~3.0.0"
     semver "~5.0.1"
@@ -1932,8 +1932,8 @@ is-date-object@^1.0.1:
   resolved "https://registry.yarnpkg.com/is-date-object/-/is-date-object-1.0.1.tgz#9aa20eb6aeebbff77fbd33e74ca01b33581d3a16"
 
 is-dotfile@^1.0.0:
-  version "1.0.3"
-  resolved "https://registry.yarnpkg.com/is-dotfile/-/is-dotfile-1.0.3.tgz#a6a2f32ffd2dfb04f5ca25ecd0f6b83cf798a1e1"
+  version "1.0.2"
+  resolved "https://registry.yarnpkg.com/is-dotfile/-/is-dotfile-1.0.2.tgz#2c132383f39199f8edc268ca01b9b007d205cc4d"
 
 is-equal-shallow@^0.1.3:
   version "0.1.3"
@@ -2574,8 +2574,8 @@ mongodb@2.2.27:
     readable-stream "2.2.7"
 
 mongoose@^4.10.0:
-  version "4.10.4"
-  resolved "https://registry.yarnpkg.com/mongoose/-/mongoose-4.10.4.tgz#b9a0a033725e5c29efd9eefb4687d1371956c7b6"
+  version "4.10.3"
+  resolved "https://registry.yarnpkg.com/mongoose/-/mongoose-4.10.3.tgz#5fbcd6549e67191ef30cab259644ff75f77026f9"
   dependencies:
     async "2.1.4"
     bson "~1.0.4"
@@ -2685,8 +2685,8 @@ nock@^9.0.13:
     qs "^6.0.2"
 
 node-pre-gyp@^0.6.29:
-  version "0.6.36"
-  resolved "https://registry.yarnpkg.com/node-pre-gyp/-/node-pre-gyp-0.6.36.tgz#db604112cb74e0d477554e9b505b17abddfab786"
+  version "0.6.34"
+  resolved "https://registry.yarnpkg.com/node-pre-gyp/-/node-pre-gyp-0.6.34.tgz#94ad1c798a11d7fc67381b50d47f8cc18d9799f7"
   dependencies:
     mkdirp "^0.5.1"
     nopt "^4.0.1"
@@ -3584,8 +3584,8 @@ snyk-try-require@^1.1.1, snyk-try-require@^1.2.0:
     then-fs "^2.0.0"
 
 snyk@^1.30.1:
-  version "1.32.0"
-  resolved "https://registry.yarnpkg.com/snyk/-/snyk-1.32.0.tgz#ccf3719a6bdebaed4e94ab5f1f7eb1671f0b9774"
+  version "1.31.1"
+  resolved "https://registry.yarnpkg.com/snyk/-/snyk-1.31.1.tgz#dec97a2c6ea87610224c9223f3814a984f47443d"
   dependencies:
     abbrev "^1.0.7"
     ansi-escapes "^1.3.0"
