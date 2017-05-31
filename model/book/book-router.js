@@ -17,7 +17,8 @@ router.route('/getall')
 router.route('/create', authUtils.ensureAuthenticated)
 .post((...args) => controller.create(...args));
 
-router.route('/update/:id', authUtils.ensureAuthenticated)
-.put((...args) => controller.update(...args));
+router.route('/:id', authUtils.ensureAuthenticated)
+.put((...args) => controller.update(...args))
+.get((...args) => controller.findById(...args));
 
 module.exports = router;
