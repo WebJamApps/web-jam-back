@@ -1,21 +1,19 @@
-
 const moment = require('moment');
-// let is needed for rewire support
 const jwt = require('jwt-simple');
 const config = require('../config');
 
 class AuthUtils {
   static createJWT(user) {
-      const payload = {
-          sub: user._id,
-          iat: moment().unix(),
-          exp: moment().add(14, 'days').unix()
-      };
-      return jwt.encode(payload, config.hashString);
+    const payload = {
+      sub: user._id,
+      iat: moment().unix(),
+      exp: moment().add(14, 'days').unix()
+    };
+    return jwt.encode(payload, config.hashString);
   }
 
   static handleError(res, err) {
-      return res.send(400, err);
+    return res.send(400, err);
   }
 
   static ensureAuthenticated(req, res, next) {
