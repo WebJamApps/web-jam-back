@@ -92,4 +92,20 @@ describe('The library feature',  () => {
       done();
     });
   });
+  it('should find the book by id', (done) => {
+    const Book = new Book1();
+    Book.title = 'Flow Measurement';
+    Book.type = 'hardback';
+    Book.checkedOutBy = '123456';
+    // Book._id = '83';
+    Book.save();
+    chai.request(server)
+    .get('/book/' + Book.id)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ')
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
 });

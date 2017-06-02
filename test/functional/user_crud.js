@@ -69,6 +69,21 @@ describe('functional test Create User',  () => {
     });
   });
 
+  it('should not delete a user when id does not exist', (done) => {
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo2@example.com';
+    User.save();
+    chai.request(server)
+    .delete('/user/53cb6b9b4f4ddef1ad47f943')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(404);
+      done();
+    });
+  });
+
   it('should find a user by id', (done) => {
     const User = new User1();
     User.name = 'foo';
