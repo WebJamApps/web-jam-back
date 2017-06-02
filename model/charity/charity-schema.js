@@ -3,13 +3,13 @@ const Schema   = mongoose.Schema;
 
 const charitySchema = new Schema({
   charityName: { type: String, required: true },
-  charityCity: { type: String, required: true },
-  charityState: { type: String, required: true },
+  charityCity: { type: String, required: false },
+  charityState: { type: String, required: false },
   charityZipCode: { type: Number, required: true },
-  charityPhoneNumber: { type: Number, required: true },
+  charityPhoneNumber: { type: Number, required: false },
   charityEmail: { type: String, required: false },
-  charityType: { type: [String], required: true },
-  charityManagers: { type: [String], required: true }
+  charityType: { type: [String], required: false },
+  charityManagers: { type: [String], required: false }
   // title: { type: String, required: true },
   // type: { type: String, required: true },
   // author: { type: String, required: false },
