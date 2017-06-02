@@ -59,7 +59,7 @@ describe('The Unit Test for authUtils Module', () => {
 
     it('should 401 when exp <= moment().unix()', (done) => {
       const payload = {
-          exp: moment().unix()
+        exp: moment().unix()
       };
       const auth = jwt.encode(payload, config.hashString);
       const req = { headers: { authorization: 'Bearer ' + auth } };
@@ -80,8 +80,8 @@ describe('The Unit Test for authUtils Module', () => {
     it('should call next when all is well', () => {
       const sub = 'test';
       const payload = {
-          sub,
-          exp: moment().add(14, 'days').unix()
+        sub,
+        exp: moment().add(14, 'days').unix()
       };
       const auth = jwt.encode(payload, config.hashString);
       const req = { headers: { authorization: 'Bearer ' + auth } };
