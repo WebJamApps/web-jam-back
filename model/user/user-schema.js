@@ -13,7 +13,10 @@ const userSchema = new Schema({
   volTravelDistMiles: { type: Number, required: false },
   volCauses: { type: [String], required: false },
   volTalents: { type: [String], required: false },
-  volWorkPrefs: { type: [String], required: false }
+  volWorkPrefs: { type: [String], required: false },
+  volCauseOther:{ type: String, required: false },
+  volTalentOther:{ type: String, required: false },
+  volWorkOther:{ type: String, required: false }
 });
 
 
