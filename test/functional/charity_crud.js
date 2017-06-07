@@ -16,7 +16,7 @@ describe('The charity feature',  () => {
     .post('/charity/create')
     .set({ origin: allowedUrl })
     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    .send({ charityName: 'homeless shelter', charityZipCode: '24153' })
+    .send({ charityName: 'homeless shelter', charityZipCode: '24153', charityMngIds: ['1223'] })
     .end((err, res) => {
       expect(res).to.have.status(201);
       done();
