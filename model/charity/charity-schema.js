@@ -9,7 +9,8 @@ const charitySchema = new Schema({
   charityPhoneNumber: { type: Number, required: false },
   charityEmail: { type: String, required: false },
   charityType: { type: [String], required: false },
-  charityManagers: { type: [String], required: false }
+  charityManagers: { type: [String], required: false },
+  charityMngIds:{ type: [String], required: true }
   // title: { type: String, required: true },
   // type: { type: String, required: true },
   // author: { type: String, required: false },
