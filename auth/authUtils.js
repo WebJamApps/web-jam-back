@@ -29,9 +29,6 @@ class AuthUtils {
       return res.status(401).send({ message: err.message });
     }
 
-    if (payload.exp <= moment().unix()) {
-      return res.status(401).send({ message: 'Token has expired' });
-    }
     req.user = payload.sub;
     next();
   }
