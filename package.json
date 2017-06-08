@@ -20,8 +20,7 @@
     "nyc": "nyc npm run mocha",
     "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
-    "snyk-protect": "snyk protect",
-    "prepublish": "npm run snyk-protect"
+    "snyk-protect": "snyk protect"
   },
   "repository": {
     "type": "git",
