@@ -2,12 +2,13 @@ const User1 = require('../../model/user/user-schema');
 const authUtils = require('../../auth/authUtils');
 describe('functional test Create User',  () => {
   beforeEach((done) => {
-    User1.collection.drop();
-    User1.ensureIndexes();
     mockgoose(mongoose).then(() => {
-      allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-      global.server = require('../../index'); // eslint-disable-line global-require
-      done();
+      User1.collection.drop();
+      User1.ensureIndexes(() => {
+        allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+        global.server = require('../../index'); // eslint-disable-line global-require
+        done();
+      });
     });
   });
 
@@ -49,6 +50,36 @@ describe('functional test Create User',  () => {
       expect(res).to.have.status(200);
       expect(res.nModified > 0);
       // TODO: Write a GET request to verify that user's name has been changed
+      done();
+    });
+  });
+
+  it('should delete a user', (done) => {
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo2@example.com';
+    User.save();
+    chai.request(server)
+    .delete('/user/' + User.id)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(204);
+      done();
+    });
+  });
+
+  it('should not delete a user when id does not exist', (done) => {
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo2@example.com';
+    User.save();
+    chai.request(server)
+    .delete('/user/53cb6b9b4f4ddef1ad47f943')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(404);
       done();
     });
   });
@@ -115,6 +146,19 @@ describe('functional test Create User',  () => {
     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
     .end((err, res) => {
       expect(err).to.be.an('error');
+      done();
+    });
+  });
+
+  it('should return 404 error when Id no valid on delete', (done) => {
+    const Uid = '5872';
+    chai.request(server)
+    .delete('/user/' + Uid)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(err).to.be.an('error');
+      expect(res).to.have.status(400);
       done();
     });
   });

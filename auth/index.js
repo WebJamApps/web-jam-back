@@ -27,8 +27,6 @@ router.post('/google', google.authenticate);
 // router.post('/foursquare', foursquare.authenticate);
 // router.post('/identSrv', identSrv.authenticate);
 
-
-// TODO implement ensureAuthenticated
 // router.get('/me',authUtils.ensureAuthenticated, meController.getMe );
 // router.put('/me',authUtils.ensureAuthenticated, meController.updateMe );
 // router.use(authUtils.ensureAuthenticated); //auth only appied for following paths, not the paths above

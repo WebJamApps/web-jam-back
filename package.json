@@ -4,8 +4,8 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "7.10.0",
-    "npm": "4.2.0"
+    "node": "8.1.0",
+    "npm": "5.0.3"
   },
   "license": "MIT",
   "scripts": {
@@ -15,11 +15,12 @@
     "build:prod": "(cd frontend || exit; npm run vulc && npm start -- build)",
     "start": "node index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && npm install -g yarn && yarn cache clean && yarn install",
-    "debug": "node --inspect --debug-brk index.js",
+    "debug": "node --inspect-brk index.js",
     "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js",
     "nyc": "nyc npm run mocha",
     "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
-    "test:debug": "./node_modules/.bin/mocha --inspect --debug-brk -r ./test/bootstrap.js test/**/*.js"
+    "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
+    "snyk-protect": "snyk protect"
   },
   "repository": {
     "type": "git",
@@ -41,13 +42,14 @@
     "dotenv": "^2.0.0",
     "express": "^4.15.2",
     "express-sslify": "^1.2.0",
-    "helmet": "^2.3.0",
+    "helmet": "^3.6.1",
     "jwt-simple": "^0.5.0",
     "lodash": "^4.15.0",
     "moment": "^2.15.2",
-    "mongoose": "^4.9.9",
+    "mongoose": "^4.10.0",
     "morgan": "^1.8.1",
-    "request": "^2.78.0"
+    "request": "^2.78.0",
+    "snyk": "^1.30.1"
   },
   "devDependencies": {
     "babel-eslint": "^7.2.3",
@@ -63,11 +65,12 @@
     "istanbul": "^0.4.5",
     "mocha": "^3.1.2",
     "mockgoose": "^6.0.8",
+    "nock": "^9.0.13",
     "nodemon": "^1.9.2",
     "proxyquire": "^1.7.11",
-    "rewire": "^2.5.2",
     "sinon": "^1.17.6",
     "sinon-chai": "^2.8.0",
     "supertest": "^3.0.0"
-  }
+  },
+  "snyk": true
 }
