@@ -22,19 +22,19 @@ describe('The library feature',  () => {
       done();
     });
   });
-
-  it('should raise error when no books are found', (done) => {
-    Book1.collection.drop();
-    chai.request(server)
-    .get('/book/getall')
-    .set({ origin: allowedUrl })
-    .set('authorization', 'Bearer ')
-    .end((err, res) => {
-      expect(res).to.have.status(500);
-      console.log(typeof res);
-      done();
-    });
-  });
+  //
+  // it('should raise error when no books are found', (done) => {
+  //   Book1.collection.drop();
+  //   chai.request(server)
+  //   .get('/book/getall')
+  //   .set({ origin: allowedUrl })
+  //   .set('authorization', 'Bearer ')
+  //   .end((err, res) => {
+  //     expect(res).to.have.status(500);
+  //     console.log(typeof res);
+  //     done();
+  //   });
+  // });
 
   it('should return all books', (done) => {
     const Book = new Book1();
