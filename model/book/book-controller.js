@@ -12,11 +12,10 @@ class BookController extends Controller {
   }
 
   remove(req, res, next) {
-    console.log(req.query);
     return this.model.remove(req.query)
     .then((collection) => {
-      
-      return res.status(200).json(collection);
+      console.log(req.query);
+      res.status(200).json(collection);
     });
   }
   // .then((doc) => {
