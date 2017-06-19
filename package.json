@@ -20,6 +20,7 @@
     "nyc": "nyc npm run mocha",
     "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
+    "eslint-fix": "./node_modules/eslint/bin/eslint.js --fix .",
     "snyk-protect": "snyk protect"
   },
   "repository": {
