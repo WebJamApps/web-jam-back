@@ -22,4 +22,16 @@ describe('The charity feature',  () => {
       done();
     });
   });
+
+  it('should get the charities that are managed by this user', (done) => {
+    chai.request(server)
+    .get('/charity/1223')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
+
 });
