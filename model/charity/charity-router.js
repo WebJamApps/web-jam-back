@@ -6,6 +6,7 @@ router.route('/create')
 .post((...args) => controller.create(...args));
 
 router.route('/:id')
-.get((...args) => controller.find(...args));
+.get((...args) => controller.find(...args))
+.delete((...args) => controller.findByIdAndRemove(...args));
 
 module.exports = router;
