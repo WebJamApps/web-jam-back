@@ -22,6 +22,17 @@ describe('The library feature',  () => {
       done();
     });
   });
+  it('should remove all books', (done) => {
+    chai.request(server)
+    .get('/book/deleteall')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .send({})
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
   //
   // it('should raise error when no books are found', (done) => {
   //   Book1.collection.drop();
