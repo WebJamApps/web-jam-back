@@ -34,4 +34,20 @@ describe('The charity feature',  () => {
     });
   });
 
+  it('should delete a charity', (done) => {
+    const Charity = new Charity1();
+    Charity.charityName = 'foo';
+    Charity.charityZipCode = '12345';
+    Charity.charityMngIds = ['12345'];
+    Charity.save();
+    chai.request(server)
+    .delete('/charity/' + Charity.id)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(204);
+      done();
+    });
+  });
+
 });
