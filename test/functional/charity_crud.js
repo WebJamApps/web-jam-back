@@ -22,4 +22,50 @@ describe('The charity feature',  () => {
       done();
     });
   });
+
+  it('should get the charities that are managed by this user', (done) => {
+    chai.request(server)
+    .get('/charity/1223')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
+
+  it('should delete a charity', (done) => {
+    const Charity = new Charity1();
+    Charity.charityName = 'foo';
+    Charity.charityZipCode = '12345';
+    Charity.charityMngIds = ['12345'];
+    Charity.save();
+    chai.request(server)
+    .delete('/charity/' + Charity.id)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(204);
+      done();
+    });
+  });
+
+  it('should modify a charity', (done) => {
+    const Charity2 = new Charity1();
+    Charity2.charityName = 'foo2';
+    Charity2.charityZipCode = '22222';
+    Charity2.charityMngIds = ['33333'];
+    Charity2.save();
+    chai.request(server)
+    .put('/charity/' + Charity2.id)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .send({ charityName: 'foobar' })
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      expect(res.nModified > 0);
+      done();
+    });
+  });
+
 });

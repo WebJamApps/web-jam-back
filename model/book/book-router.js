@@ -14,6 +14,9 @@ const authUtils = require('../../auth/authUtils');
 router.route('/getall')
 .get((...args) => controller.find(...args));
 
+router.route('/deleteall')
+.get((...args) => controller.remove(...args));
+
 router.route('/create', authUtils.ensureAuthenticated)
 .post((...args) => controller.create(...args));
 
