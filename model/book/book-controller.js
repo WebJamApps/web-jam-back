@@ -11,6 +11,15 @@ class BookController extends Controller {
     });
   }
 
+  findCheckedOut(req, res, next) {
+    console.log('this is the user id: ' + req.params.id);
+    return this.model.find({ checkedOutBy:req.params.id })
+    .then((collection) => {
+      console.log(collection.length);
+      return res.status(200).json(collection);
+    });
+  }
+
   remove(req, res, next) {
     return this.model.remove(req.query)
     .then((collection) => {

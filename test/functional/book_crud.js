@@ -33,6 +33,22 @@ describe('The library feature',  () => {
       done();
     });
   });
+
+  it('should find checked out books', (done) => {
+    const Book = new Book1();
+    Book.title = 'foo2';
+    Book.type = 'paperback';
+    Book.checkedOutBy = ['33333'];
+    chai.request(server)
+    .get('/book/findcheckedout/33333')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    // .send({})
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
   //
   // it('should raise error when no books are found', (done) => {
   //   Book1.collection.drop();
@@ -104,14 +120,14 @@ describe('The library feature',  () => {
     });
   });
   it('should find the book by id', (done) => {
-    const Book = new Book1();
-    Book.title = 'Flow Measurement';
-    Book.type = 'hardback';
-    Book.checkedOutBy = '123456';
+    const Book2 = new Book1();
+    Book2.title = 'Flow Measurement';
+    Book2.type = 'hardback';
+    Book2.checkedOutBy = '123456';
     // Book._id = '83';
-    Book.save();
+    Book2.save();
     chai.request(server)
-    .get('/book/' + Book.id)
+    .get('/book/' + Book2.id)
     .set({ origin: allowedUrl })
     .set('authorization', 'Bearer ')
     .end((err, res) => {

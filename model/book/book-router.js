@@ -14,7 +14,7 @@ const authUtils = require('../../auth/authUtils');
 router.route('/getall')
 .get((...args) => controller.find(...args));
 
-router.route('/deleteall')
+router.route('/deleteall', authUtils.ensureAuthenticated)
 .get((...args) => controller.remove(...args));
 
 router.route('/create', authUtils.ensureAuthenticated)
@@ -23,5 +23,8 @@ router.route('/create', authUtils.ensureAuthenticated)
 router.route('/:id', authUtils.ensureAuthenticated)
 .put((...args) => controller.update(...args))
 .get((...args) => controller.findById(...args));
+
+router.route('/findcheckedout/:id', authUtils.ensureAuthenticated)
+.get((...args) => controller.findCheckedOut(...args));
 
 module.exports = router;
