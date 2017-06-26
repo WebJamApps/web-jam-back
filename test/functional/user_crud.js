@@ -99,6 +99,22 @@ describe('functional test Create User',  () => {
     });
   });
 
+  it('should find a user by email', (done) => {
+    const User2 = new User1();
+    User2.name = 'foo';
+    User2.email = 'foo3@example.com';
+    User2.save();
+    chai.request(server)
+    .post('/user/')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .send({ email: 'foo3@example.com' })
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
+
   it('should NOT find a user by id', (done) => {
     const id = '587298a376d5036c68b6ef12';
     chai.request(server)
