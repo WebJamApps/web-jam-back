@@ -4,7 +4,7 @@ const charitySchema = new Schema({
   charityName: { type: String, required: true },
   charityCity: { type: String, required: false },
   charityState: { type: String, required: false },
-  charityZipCode: { type: Number, required: true },
+  charityZipCode: { type: String, required: true },
   charityPhoneNumber: { type: Number, required: false },
   charityEmail: { type: String, required: false },
   charityTypes: { type: [String], required: false },
