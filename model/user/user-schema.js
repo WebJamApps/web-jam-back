@@ -8,7 +8,7 @@ const userSchema = new Schema({
   userPhone: { type: Number, required: false },
   userType: { type: String, required: false },
   userCity: { type: String, required: false },
-  userZip: { type: Number, required: false },
+  userZip: { type: String, required: false },
   userDetails:{ type: String, required: false },
   volTravelDistMiles: { type: Number, required: false },
   volCauses: { type: [String], required: false },
