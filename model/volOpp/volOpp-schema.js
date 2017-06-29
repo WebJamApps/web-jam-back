@@ -6,6 +6,7 @@ const volOppSchema = new Schema({
   voNumPeopleNeeded: { type: Number, required: false },
   voDescription: { type: String, required: false },
   voWorkTypes: { type: [String], required: false },
+  voTalentTypes: { type: [String], required: false },
   voStartDate: { type: Date, min: Date('2017-07-07'), required: false },
   voStartTime: { type: String, required: false },
   voEndDate: { type: Date, min: Date('2017-07-07'), required: false },
