@@ -5,10 +5,10 @@ const router = new Router();
 router.route('/create')
 .post((...args) => controller.create(...args));
 
-router.route('/:id')
+// router.route('/:id')
 // the id for this get request is the user id
-.get((...args) => controller.find(...args))
-.delete((...args) => controller.findByIdAndRemove(...args))
-.put((...args) => controller.update(...args));
+// .get((...args) => controller.find(...args))
+// .delete((...args) => controller.findByIdAndRemove(...args))
+// .put((...args) => controller.update(...args));
 
 module.exports = router;
