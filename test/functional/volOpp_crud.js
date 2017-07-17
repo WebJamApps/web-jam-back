@@ -16,7 +16,7 @@ describe('The volunteer opportunity feature',  () => {
     .post('/volopp/create')
     .set({ origin: allowedUrl })
     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    .send({ voName: 'clean the homeless shelter', voCharityId: '333333' })
+    .send({ voName: 'clean the homeless shelter', voCharityId: '333333', voCharityName: 'Rescue Mission' })
     .end((err, res) => {
       expect(res).to.have.status(201);
       done();
