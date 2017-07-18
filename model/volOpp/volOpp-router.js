@@ -5,9 +5,9 @@ const router = new Router();
 router.route('/create')
 .post((...args) => controller.create(...args));
 
-// router.route('/:id')
-// the id for this get request is the user id
-// .get((...args) => controller.find(...args))
+router.route('/:id')
+// the id for charity that has a scheduled event
+.get((...args) => controller.find(...args));
 // .delete((...args) => controller.findByIdAndRemove(...args))
 // .put((...args) => controller.update(...args));
 
