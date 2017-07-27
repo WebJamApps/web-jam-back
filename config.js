@@ -1,7 +1,7 @@
 const dotenv = require('dotenv');
 const fs = require('fs');
 // ignoring this for testing because it is only used for development purposes
-/* istanbul ignore else */
+/* istanbul ignore next */
 if (fs.existsSync('./.env')) {
   dotenv.config();
 }

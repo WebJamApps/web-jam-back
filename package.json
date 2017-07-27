@@ -4,8 +4,8 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "8.1.2",
-    "npm": "5.0.3"
+    "node": "8.1.4",
+    "npm": "5.3.0"
   },
   "license": "MIT",
   "scripts": {
