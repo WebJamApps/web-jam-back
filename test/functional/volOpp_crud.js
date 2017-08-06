@@ -23,6 +23,21 @@ describe('The volunteer opportunity feature',  () => {
     });
   });
 
+  it('should find all events that were scheduled by a particular charity', (done) => {
+    const voOp = new VolOpp1();
+    voOp.voName = 'paint';
+    voOp.voCharityId = '44444';
+    voOp.voCharityName = 'painters';
+    chai.request(server)
+    .get('/volopp/44444')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
+
   // it('should get the charities that are managed by this user', (done) => {
   //   chai.request(server)
   //   .get('/charity/1223')
