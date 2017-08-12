@@ -127,18 +127,18 @@ describe('functional test Create User',  () => {
     });
   });
 
-  it('should return an error in update() when nothing was updated', (done) => {
-    const Uid = '587298a376d5036c68b6ef12';
-    chai.request(server)
-    .put('/user/' + Uid)
-    .set({ origin: allowedUrl })
-    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    .send({ alien: 'yes' })
-    .end((err, res) => {
-      expect(err).to.be.an('error');
-      done();
-    });
-  });
+  // it('should return an error in update() when nothing was updated', (done) => {
+  //   const Uid = '587298a376d5036c68b6ef12';
+  //   chai.request(server)
+  //   .put('/user/' + Uid)
+  //   .set({ origin: allowedUrl })
+  //   .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+  //   .send({ alien: 'yes' })
+  //   .end((err, res) => {
+  //     expect(err).to.be.an('error');
+  //     done();
+  //   });
+  // });
 
   it('should return 404 error when Id not valid on update', (done) => {
     const Uid = '5872';
