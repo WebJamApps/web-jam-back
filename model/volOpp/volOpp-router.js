@@ -6,9 +6,8 @@ router.route('/create')
 .post((...args) => controller.create(...args));
 
 router.route('/:id')
-// the id for charity that has a scheduled event
-.get((...args) => controller.find(...args))
-// .delete((...args) => controller.findByIdAndRemove(...args))
+.get((...args) => controller.find(...args)) // get id is the charity that has a scheduled event
+.delete((...args) => controller.findByIdAndRemove(...args))
 .put((...args) => controller.update(...args));
 
 router.route('/get/:id')
