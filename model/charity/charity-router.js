@@ -11,4 +11,7 @@ router.route('/:id')
 .delete((...args) => controller.findByIdAndRemove(...args))
 .put((...args) => controller.update(...args));
 
+router.route('/find/:id')
+.get((...args) => controller.findById(...args));
+
 module.exports = router;
