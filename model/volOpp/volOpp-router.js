@@ -7,9 +7,10 @@ router.route('/create')
 
 router.route('/:id')
 // the id for charity that has a scheduled event
-.get((...args) => controller.find(...args));
+.get((...args) => controller.find(...args))
 // .delete((...args) => controller.findByIdAndRemove(...args))
-// .put((...args) => controller.update(...args));
+.put((...args) => controller.update(...args));
+
 router.route('/get/:id')
 .get((...args) => controller.findById(...args));
 

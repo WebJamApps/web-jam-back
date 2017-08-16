@@ -55,6 +55,25 @@ describe('The volunteer opportunity feature',  () => {
     });
   });
 
+  it('should modify an event', (done) => {
+    const voOp3 = new VolOpp1();
+    voOp3.voName = 'paint';
+    voOp3.voCharityId = '44444';
+    voOp3.voCharityName = 'painters';
+    voOp3.save();
+    const eventid = voOp3._id;
+    chai.request(server)
+    .put('/volopp/' + eventid)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .send({ voCharityName: 'foobar' })
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      expect(res.nModified > 0);
+      done();
+    });
+  });
+
   // it('should get the charities that are managed by this user', (done) => {
   //   chai.request(server)
   //   .get('/charity/1223')
