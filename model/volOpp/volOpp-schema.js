@@ -4,6 +4,7 @@ const volOppSchema = new Schema({
   voName: { type: String, required: true },
   voCharityName: { type: String, required: true },
   voCharityId: { type: String, required: true },
+  voCharityTypes: { type: [String], required: false },
   voStreet: { type: String, required: false },
   voCity: { type: String, required: false },
   voState: { type: String, required: false },
