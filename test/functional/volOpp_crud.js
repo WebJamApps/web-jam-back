@@ -55,49 +55,39 @@ describe('The volunteer opportunity feature',  () => {
     });
   });
 
-  // it('should get the charities that are managed by this user', (done) => {
-  //   chai.request(server)
-  //   .get('/charity/1223')
-  //   .set({ origin: allowedUrl })
-  //   .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //   .end((err, res) => {
-  //     expect(res).to.have.status(200);
-  //     done();
-  //   });
-  // });
-  //
-  // it('should delete a charity', (done) => {
-  //   const Charity = new Charity1();
-  //   Charity.charityName = 'foo';
-  //   Charity.charityZipCode = '12345';
-  //   Charity.charityMngIds = ['12345'];
-  //   Charity.save();
-  //   chai.request(server)
-  //   .delete('/charity/' + Charity.id)
-  //   .set({ origin: allowedUrl })
-  //   .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //   .end((err, res) => {
-  //     expect(res).to.have.status(204);
-  //     done();
-  //   });
-  // });
-  //
-  // it('should modify a charity', (done) => {
-  //   const Charity2 = new Charity1();
-  //   Charity2.charityName = 'foo2';
-  //   Charity2.charityZipCode = '22222';
-  //   Charity2.charityMngIds = ['33333'];
-  //   Charity2.save();
-  //   chai.request(server)
-  //   .put('/charity/' + Charity2.id)
-  //   .set({ origin: allowedUrl })
-  //   .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //   .send({ charityName: 'foobar' })
-  //   .end((err, res) => {
-  //     expect(res).to.have.status(200);
-  //     expect(res.nModified > 0);
-  //     done();
-  //   });
-  // });
+  it('should modify an event', (done) => {
+    const voOp3 = new VolOpp1();
+    voOp3.voName = 'paint';
+    voOp3.voCharityId = '44444';
+    voOp3.voCharityName = 'painters';
+    voOp3.save();
+    const eventid = voOp3._id;
+    chai.request(server)
+    .put('/volopp/' + eventid)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .send({ voCharityName: 'foobar' })
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      expect(res.nModified > 0);
+      done();
+    });
+  });
+
+  it('should delete an event', (done) => {
+    const event = new VolOpp1();
+    event.voName = 'foo';
+    event.voCharityId = '12345';
+    event.voCharityName = ['fuzzies'];
+    event.save();
+    chai.request(server)
+    .delete('/volopp/' + event._id)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(204);
+      done();
+    });
+  });
 
 });
