@@ -38,6 +38,23 @@ describe('The volunteer opportunity feature',  () => {
     });
   });
 
+  it('should find all events', (done) => {
+    const voOp4 = new VolOpp1();
+    voOp4.voName = 'paint';
+    voOp4.voCharityId = '44444';
+    voOp4.voCharityName = 'painters';
+    voOp4.save((err) => {
+      chai.request(server)
+      .get('/volopp/getall')
+      .set({ origin: allowedUrl })
+      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .end((err, res) => {
+        expect(res).to.have.status(200);
+        done();
+      });
+    });
+  });
+
   it('should find the event by event id', (done) => {
     const voOp2 = new VolOpp1();
     voOp2.voName = 'paint';
