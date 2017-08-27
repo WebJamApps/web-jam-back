@@ -3,13 +3,13 @@ const bookModel  = require('./book-facade');
 
 class BookController extends Controller {
 
-  find(req, res, next) {
-    return this.model.find(req.query)
-    .then((collection) => {
-      console.log(collection.length);
-      return res.status(200).json(collection);
-    });
-  }
+  // find(req, res, next) {
+  //   return this.model.find(req.query)
+  //   .then((collection) => {
+  //     console.log(collection.length);
+  //     return res.status(200).json(collection);
+  //   });
+  // }
 
   findCheckedOut(req, res, next) {
     console.log('this is the user id: ' + req.params.id);
