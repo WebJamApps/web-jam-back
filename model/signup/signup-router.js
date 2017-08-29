@@ -5,10 +5,10 @@ const router = new Router();
 // router.route('/')
 //   .post((...args) => controller.find(...args));
 //
-// router.route('/:id')
+router.route('/:id')
 // .put((...args) => controller.update(...args))
-// .get((...args) => controller.findById(...args))
-// .delete((...args) => controller.findByIdAndRemove(...args));
+.get((...args) => controller.find(...args)) // this is the user id
+.delete((...args) => controller.remove(...args)); // this is the event id
 
 router.route('/create')
 .post((...args) => controller.create(...args));
