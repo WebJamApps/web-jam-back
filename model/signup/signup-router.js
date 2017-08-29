@@ -13,5 +13,7 @@ router.route('/:id')
 router.route('/create')
 .post((...args) => controller.create(...args));
 
+router.route('/event/:id')
+.get((...args) => controller.findByEventId(...args)); // this is the event id
 
 module.exports = router;
