@@ -28,16 +28,49 @@ describe('The signup feature',  () => {
     });
   });
 
-  // it('should get the charities that are managed by this user', (done) => {
+  it('should get the signups that are created by this user', (done) => {
+    chai.request(server)
+    .get('/signup/1223')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
+
+  it('should delete a signup by event id', (done) => {
+    const signup2 = new Signup1();
+    signup2.voloppId = 'foo';
+    signup2.userId = '12345';
+    signup2.numPeople = 123;
+    signup2.save();
+    chai.request(server)
+    .delete('/signup/foo')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(204);
+      done();
+    });
+  });
+
+  // it('should not delete a signup with invalid event id', (done) => {
+  //   const signup2 = new Signup1();
+  //   signup2.voloppId = 'foo';
+  //   signup2.userId = '12345';
+  //   signup2.numPeople = 123;
+  //   signup2.save();
   //   chai.request(server)
-  //   .get('/charity/1223')
+  //   .delete('/signup/foosy')
   //   .set({ origin: allowedUrl })
   //   .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
   //   .end((err, res) => {
-  //     expect(res).to.have.status(200);
+  //     expect(res).to.have.status(404);
   //     done();
   //   });
   // });
+
   //
   // it('should get the charity by its id', (done) => {
   //   const Charity = new Charity1();
@@ -55,21 +88,7 @@ describe('The signup feature',  () => {
   //   });
   // });
   //
-  // it('should delete a charity', (done) => {
-  //   const Charity = new Charity1();
-  //   Charity.charityName = 'foo';
-  //   Charity.charityZipCode = '12345';
-  //   Charity.charityMngIds = ['12345'];
-  //   Charity.save();
-  //   chai.request(server)
-  //   .delete('/charity/' + Charity.id)
-  //   .set({ origin: allowedUrl })
-  //   .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //   .end((err, res) => {
-  //     expect(res).to.have.status(204);
-  //     done();
-  //   });
-  // });
+
   //
   // it('should modify a charity', (done) => {
   //   const Charity2 = new Charity1();
