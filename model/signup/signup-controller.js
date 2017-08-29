@@ -11,6 +11,15 @@ class SignupController extends Controller {
     });
   }
 
+  findByEventId(req, res, next) {
+    console.log('this is the event id: ' + req.params.id);
+    return this.model.find({ voloppId:req.params.id })
+    .then((collection) => {
+      console.log(collection.length);
+      return res.status(200).json(collection);
+    });
+  }
+
   remove(req, res, next) {
     console.log('this is the event id: ' + req.params.id);
     return this.model.remove({ voloppId:req.params.id })

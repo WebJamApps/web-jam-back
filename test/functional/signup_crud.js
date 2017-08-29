@@ -39,6 +39,17 @@ describe('The signup feature',  () => {
     });
   });
 
+  it('should find the signups by event id', (done) => {
+    chai.request(server)
+    .get('/signup/event/1223')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
+
   it('should delete a signup by event id', (done) => {
     const signup2 = new Signup1();
     signup2.voloppId = 'foo';
