@@ -9,6 +9,7 @@ const volOppSchema = new Schema({
   voCity: { type: String, required: false },
   voState: { type: String, required: false },
   voZipCode: { type: String, required: false },
+  voStatus: { type: String, required: false },
   voNumPeopleNeeded: { type: Number, required: false },
   voDescription: { type: String, required: false },
   voWorkTypes: { type: [String], required: false },
