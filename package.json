@@ -1,20 +1,21 @@
 {
   "name": "web-jam-back",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
     "node": "8.4.0",
-    "npm": "5.3.0"
+    "npm": "5.3.0",
+    "yarn": "1.0.1"
   },
   "license": "MIT",
   "scripts": {
-    "preinstall": "npm install -g yarn",
+    "preinstall": "npm install -g yarn@1.0.1",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm run vulc && npm start -- build)",
     "start": "node index.js",
-    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && npm install -g yarn && yarn cache clean && yarn install",
+    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && npm install -g yarn@1.0.1 && yarn cache clean && yarn install",
     "debug": "node --inspect-brk index.js",
     "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js",
     "nyc": "nyc npm run mocha",
