@@ -8,6 +8,7 @@ const userSchema = new Schema({
   isOhafUser: { type: Boolean, required: false },
   userPhone: { type: Number, required: false },
   userType: { type: String, required: false },
+  userStreetAddress: { type: String, required: false },
   userCity: { type: String, required: false },
   userZip: { type: String, required: false },
   userDetails:{ type: String, required: false },
