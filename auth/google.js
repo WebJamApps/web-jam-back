@@ -7,7 +7,7 @@ const peopleApiUrl = 'https://www.googleapis.com/plus/v1/people/me/openIdConnect
 
 class Google {
   static authenticate(req, res) {
-    console.log(req);
+    console.log(req.body);
     const params = {
       code: req.body.code,
       client_id: req.body.clientId,
@@ -38,6 +38,7 @@ class Google {
             const user = new User();
             user.name = profile.name;
             user.email = profile.email;
+            user.isOhafUser = req.body.isOhafUser;
             user.save((err) => {
               console.log('token sent');
               res.send({ token: authUtils.createJWT(user) });
