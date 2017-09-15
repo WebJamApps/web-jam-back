@@ -39,6 +39,17 @@ describe('The signup feature',  () => {
     });
   });
 
+  it('should get all signups', (done) => {
+    chai.request(server)
+    .get('/signup/getall')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(200);
+      done();
+    });
+  });
+
   it('should find the signups by event id', (done) => {
     chai.request(server)
     .get('/signup/event/1223')
@@ -58,6 +69,22 @@ describe('The signup feature',  () => {
     signup2.save();
     chai.request(server)
     .delete('/signup/foo')
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .end((err, res) => {
+      expect(res).to.have.status(204);
+      done();
+    });
+  });
+
+  it('should delete a signup by user id', (done) => {
+    const signup2 = new Signup1();
+    signup2.voloppId = 'foo';
+    signup2.userId = '12345';
+    signup2.numPeople = 123;
+    signup2.save();
+    chai.request(server)
+    .delete('/signup/remove/12345')
     .set({ origin: allowedUrl })
     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
     .end((err, res) => {
