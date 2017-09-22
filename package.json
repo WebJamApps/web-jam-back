@@ -1,16 +1,16 @@
 {
   "name": "web-jam-back",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "8.4.0",
-    "npm": "5.4.1",
-    "yarn": "1.0.1"
+    "node": "8.5.0",
+    "npm": "5.4.2",
+    "yarn": "1.0.2"
   },
   "license": "MIT",
   "scripts": {
-    "preinstall": "npm install -g yarn@1.0.1",
+    "preinstall": "npm install -g yarn@1.0.2 && npm install -g npm",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm run vulc && npm start -- build)",
