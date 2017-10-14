@@ -4,13 +4,13 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "8.6.0",
-    "npm": "5.4.2",
-    "yarn": "1.1.0"
+    "node": "8.7.0",
+    "npm": "5.5.1",
+    "yarn": "1.2.1"
   },
   "license": "MIT",
   "scripts": {
-    "preinstall": "npm install -g npm && npm install -g yarn",
+    "preinstall": "npm install -g npm && npm install -g yarn && npm install -g bower",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm run vulc && npm start -- build)",
