@@ -4,25 +4,26 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "8.5.0",
-    "npm": "5.4.2",
-    "yarn": "1.0.2"
+    "node": "8.7.0",
+    "npm": "5.5.1",
+    "yarn": "1.2.1"
   },
   "license": "MIT",
   "scripts": {
-    "preinstall": "npm install -g yarn@1.0.2 && npm install -g npm",
+    "preinstall": "npm install -g npm && npm install -g yarn && npm install -g bower",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm run vulc && npm start -- build)",
     "start": "node index.js",
-    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && npm install -g yarn@1.0.1 && yarn cache clean && yarn install",
+    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && yarn install",
     "debug": "node --inspect-brk index.js",
     "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js",
     "nyc": "nyc npm run mocha",
     "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
     "eslint-fix": "./node_modules/eslint/bin/eslint.js --fix .",
-    "snyk-protect": "snyk protect"
+    "snyk-protect": "snyk protect",
+    "prepublish": "npm run snyk-protect"
   },
   "repository": {
     "type": "git",
@@ -51,7 +52,7 @@
     "mongoose": "^4.10.0",
     "morgan": "^1.8.1",
     "request": "^2.78.0",
-    "snyk": "^1.30.1"
+    "snyk": "^1.41.1"
   },
   "devDependencies": {
     "babel-eslint": "^7.2.3",
