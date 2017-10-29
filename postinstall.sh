@@ -4,7 +4,7 @@ set -e
 
 BRANCH=master
 
-if [[ $NODE_ENV != "production" ]]; 
+if [[ $NODE_ENV != "production" ]];
 then
     BRANCH=dev
 fi
@@ -18,6 +18,7 @@ fi
     git stash;
     git checkout $BRANCH;
     git pull;
+    npm run installglobals;
     yarn install;
     npm run postinstall:backend
 )
