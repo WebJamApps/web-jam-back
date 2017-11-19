@@ -1,15 +1,15 @@
 {
   "name": "web-jam-back",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "8.9.0",
+    "node": "8.9.1",
     "npm": "5.5.1"
   },
   "license": "MIT",
   "scripts": {
-    "installglobals": "npm install -g npm@latest && npm install -g yarn@latest && npm install -g bower@latest",
+    "installglobals": "npm install -g yarn@latest && npm install -g bower@latest",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm run vulc && npm start -- build)",
