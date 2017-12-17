@@ -5,7 +5,6 @@ dependencies:
   pre:
     - npm run installglobals && npm install -g istanbul && npm install -g codeclimate-test-reporter
   override:
-    - sudo npm -g i yarn@latest
     - yarn install
 test:
   post:
