@@ -9,12 +9,14 @@ router.route('/getall')
 .get((...args) => controller.find(...args));
 
 router.route('/remove/:id')
-.delete((...args) => controller.removeByUserId(...args));
+// .delete((...args) => controller.removeByUserId(...args));
+.delete((req, res, next) => controller.removeById('userId', req, res, next));
 
 router.route('/:id')
 // .put((...args) => controller.update(...args))
 .get((...args) => controller.findByUserId(...args)) // this is the user id
-.delete((...args) => controller.remove(...args)); // this is the event id
+// .delete((...args) => controller.remove(...args)); // this is the event id
+.delete((req, res, next) => controller.removeById('voloppId', req, res, next)); // this is the event id
 
 router.route('/create')
 .post((...args) => controller.create(...args));
