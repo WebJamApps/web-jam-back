@@ -10,7 +10,7 @@
   },
   "license": "MIT",
   "scripts": {
-    "installglobals": "npm install -g npm@latest && npm install -g yarn@latest && npm install -g bower@latest",
+    "installglobals": "npm install -g npm@latest && npm install -g yarn@latest",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm run vulc && npm start -- build)",
@@ -18,7 +18,6 @@
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && npm run installglobals && yarn install",
     "debug": "node --inspect-brk index.js",
     "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js",
-    "nyc": "nyc npm run mocha",
     "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
     "eslint-fix": "./node_modules/eslint/bin/eslint.js --fix .",
@@ -30,14 +29,6 @@
     "url": "git+ssh://git@github.com/WebJamApps/web-jam-back.git"
   },
   "author": "HandlersAndKickers <>",
-  "contributors": [
-    {
-      "name": ""
-    },
-    {
-      "name": ""
-    }
-  ],
   "dependencies": {
     "bluebird": "^3.4.1",
     "body-parser": "^1.17.1",
@@ -55,11 +46,8 @@
     "snyk": "^1.41.1"
   },
   "devDependencies": {
-    "babel-eslint": "^7.2.3",
     "chai": "^3.5.0",
-    "chai-as-promised": "^6.0.0",
     "chai-http": "^3.0.0",
-    "chokidar-cli": "^1.2.0",
     "eslint": "^3.2.2",
     "eslint-config-airbnb": "^14.1.0",
     "eslint-plugin-import": "^2.2.0",
@@ -70,10 +58,7 @@
     "mockgoose": "^6.0.8",
     "nock": "^9.0.13",
     "nodemon": "^1.9.2",
-    "proxyquire": "^1.7.11",
-    "sinon": "^1.17.6",
-    "sinon-chai": "^2.8.0",
-    "supertest": "^3.0.0"
+    "sinon": "^1.17.6"
   },
   "snyk": true
 }
