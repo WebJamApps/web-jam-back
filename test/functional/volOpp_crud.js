@@ -1,9 +1,10 @@
 const VolOpp1 = require('../../model/volOpp/volOpp-schema');
 const authUtils = require('../../auth/authUtils');
-
+let previousId = '';
 describe('The volunteer opportunity feature',  () => {
   beforeEach((done) => {
     mockgoose(mongoose).then(() => {
+        VolOpp1.collection.drop();
       VolOpp1.ensureIndexes(() => {
         allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
         global.server = require('../../index'); // eslint-disable-line global-require
@@ -79,6 +80,7 @@ describe('The volunteer opportunity feature',  () => {
     voOp3.voCharityName = 'painters';
     voOp3.save();
     const eventid = voOp3._id;
+    previousId = eventid;
     chai.request(server)
     .put('/volopp/' + eventid)
     .set({ origin: allowedUrl })
@@ -89,6 +91,27 @@ describe('The volunteer opportunity feature',  () => {
       expect(res.nModified > 0);
       done();
     });
+  });
+
+  it('should respond with 404 error when update by id has an id that does not exist', (done) => {
+    const voOp3 = new VolOpp1();
+    voOp3.voName = 'paint';
+    voOp3.voCharityId = '44444';
+    voOp3.voCharityName = 'painters';
+    voOp3.save();
+    // const eventid = voOp3._id;
+    // voOp3.collection.drop(() => {
+    chai.request(server)
+    .put('/volopp/' + previousId)
+    .set({ origin: allowedUrl })
+    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+    .send({ voCharityName: 'foobar' })
+    .end((err, res) => {
+      expect(res).to.have.status(404);
+      expect(res.nModified === 0);
+      done();
+    });
+  // });
   });
 
   it('should delete an event', (done) => {

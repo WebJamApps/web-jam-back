@@ -49,7 +49,6 @@ describe('functional test Create User',  () => {
     .end((err, res) => {
       expect(res).to.have.status(200);
       expect(res.nModified > 0);
-      // TODO: Write a GET request to verify that user's name has been changed
       done();
     });
   });
