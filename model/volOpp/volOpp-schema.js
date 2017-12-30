@@ -11,7 +11,7 @@ const volOppSchema = new Schema({
   voZipCode: { type: String, required: false },
   voStatus: { type: String, required: false },
   voNumPeopleNeeded: { type: Number, required: false },
-  // voNumPeopleScheduled: { type: Number, required: false },
+  voPeopleScheduled: { type: [String], required: false },
   voDescription: { type: String, required: false },
   voWorkTypes: { type: [String], required: false },
   voWorkTypeOther: { type: String, required: false },
