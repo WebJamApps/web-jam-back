@@ -4,7 +4,7 @@ let previousId = '';
 describe('The volunteer opportunity feature',  () => {
   beforeEach((done) => {
     mockgoose(mongoose).then(() => {
-        VolOpp1.collection.drop();
+        // VolOpp1.collection.drop();
       VolOpp1.ensureIndexes(() => {
         allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
         global.server = require('../../index'); // eslint-disable-line global-require
