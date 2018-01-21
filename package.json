@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
@@ -21,8 +21,7 @@
     "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
     "eslint-fix": "./node_modules/eslint/bin/eslint.js --fix .",
-    "snyk-protect": "snyk protect",
-    "prepublish": "npm run snyk-protect"
+    "snyk-protect": "snyk protect"
   },
   "repository": {
     "type": "git",
