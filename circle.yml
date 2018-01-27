@@ -1,6 +1,6 @@
 machine:
   node:
-    version: 8.9.3
+    version: 8.9.4
 dependencies:
   pre:
     - npm run installglobals && npm install -g istanbul && npm install -g codeclimate-test-reporter
