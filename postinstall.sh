@@ -14,11 +14,20 @@ if [ ! -d frontend ]; then
 fi
 
 (
-    cd frontend || exit;
-    git stash;
-    git checkout $BRANCH;
-    git pull;
-    npm run installglobals;
-    yarn install;
-    npm run postinstall:backend
+cd frontend || exit;
+git stash;
+git checkout $BRANCH;
+git pull;
+cd ..;
+)
+
+if [ -f .env ];
+then
+  (cp .env frontend/;
+  )
+fi
+
+(
+cd frontend;
+yarn install;
 )
