@@ -37,7 +37,7 @@ jobs:
       #    name: install chrome
       #    command: 'curl -s https://raw.githubusercontent.com/chronogolf/circleci-google-chrome/master/use_chrome_stable_version.sh | bash'
       - run:
-          name: test karma and jest and protractor
+          name: test mocha
           command: npm test
       - run:
           name: Generate code coverage
