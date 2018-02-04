@@ -6,6 +6,9 @@ const userSchema = new Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: false, select: false },
+  resetCode: { type: String, required: false },
+  isPswdReset: { type: Boolean, required: false },
+  changeemail: { type: String, required: false },
   isOhafUser: { type: Boolean, required: false },
   userPhone: { type: Number, required: false },
   userStatus: { type: String, required: false },
@@ -25,24 +28,23 @@ const userSchema = new Schema({
 });
 
 userSchema.pre('save', function(next) {
-    const user = this;
-    if (!user.isModified('password')) {
-        return next();
-    }
-    bcrypt.genSalt(10, (err, salt) => {
-        bcrypt.hash(user.password, salt, (err, hash) => {
-            user.password = hash;
-            next();
-        });
+  const user = this;
+  if (!user.isModified('password')) {
+    return next();
+  }
+  bcrypt.genSalt(10, (err, salt) => {
+    bcrypt.hash(user.password, salt, (err, hash) => {
+      user.password = hash;
+      next();
     });
+  });
 });
 
-userSchema.methods.comparePassword = function(password, done) {
-  // console.log('trying to compare a password now');
-  bcrypt.compare(password, this.password, (err, isMatch) => {
-          done(err, isMatch);
-      });
-};
+// userSchema.methods.comparePassword = function(password, done) {
+//   bcrypt.compare(password, this.password, (err, isMatch) => {
+//     done(err, isMatch);
+//   });
+// };
 
 userSchema.methods.validateSignup = function() {
   let message = '';
