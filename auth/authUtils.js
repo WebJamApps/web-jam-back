@@ -44,18 +44,21 @@ class AuthUtils {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: 'vt.biocomplexity@gmail.com',
+        user: 'chemmariasherman@gmail.com',
         pass: emailpassword
       }
     });
 
     const mailOptions = {
-      from: 'vt.biocomplexity@gmail.com',
+      from: 'chemmariasherman@gmail.com',
       to: toemail,
       subject: subjectline,
       html: bodyhtml
     };
     transporter.sendMail(mailOptions, (error, info) => {
+      console.log('trying to send an email');
+      console.log(mailOptions);
+      console.log(transporter);
     });
   }
 
