@@ -236,32 +236,12 @@ it('should delete the user by id', (done) => {
   it('should signup the new user', (done) => {
     chai.request(server)
     .post('/auth/signup')
-    // .set({ origin: allowedUrl })
-    // .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
     .send({ email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555', id: 'yoyo23' })
     .end((err, res) => {
       expect(res).to.have.status(201);
       done();
     });
   });
-
-  // it('should not signup the new user if the userid already exists', (done) => {
-  //   const User = new User1();
-  //   User.name = 'foo4';
-  //   User.email = 'foo4@example.com';
-  //   User.id = 'yoyo23';
-  //   User.save((err) => {
-  //     chai.request(server)
-  //     .post('/auth/signup')
-  //     // .set({ origin: allowedUrl })
-  //     // .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //     .send({ email: 'foobar@example.com', name: 'foomanchew', password: 'lottanumbers35555', id: 'yoyo23' })
-  //     .end((err, res) => {
-  //       expect(res).to.have.status(409);
-  //       done();
-  //     });
-  //   });
-  // });
 
   it('should not signup the new user if the email already exists', (done) => {
     const User = new User1();
@@ -286,26 +266,24 @@ it('should delete the user by id', (done) => {
       expect(res).to.have.status(409);
       done();
     });
-    // });
   });
 
-  // it('should allow the user to login with email', (done) => {
-  //   const User = new User1();
-  //   User.name = 'foo4';
-  //   User.email = 'foo3@example.com';
-  //   User.password = 'lottanumbers35555';
-  //   User.resetCode = '';
-  //   User.save((err) => {
-  //     chai.request(server)
-  //
-  //     .post('/auth/login')
-  //     .send({ email: 'foo3@example.com', password: 'lottanumbers35555' })
-  //     .end((err, resp) => {
-  //       expect(resp).to.have.status(200);
-  //       done();
-  //     });
-  //   });
-  // });
+  it('should allow the user to login with email', (done) => {
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    User.resetCode = '';
+    User.save((err) => {
+      chai.request(server)
+      .post('/auth/login')
+      .send({ email: 'foo3@example.com', password: 'lottanumbers35555' })
+      .end((err, resp) => {
+        expect(resp).to.have.status(200);
+        done();
+      });
+    });
+  });
 
   // it('should allow the user to login with userid', (done) => {
   //   const User = new User1();
@@ -343,59 +321,59 @@ it('should delete the user by id', (done) => {
   //   });
   // });
 
-  // it('should not allow the user to login with incorrect userid and incorrect email', (done) => {
-  //   const User = new User1();
-  //   User.name = 'foo4';
-  //   User.email = 'foo3@example.com';
-  //   User.password = 'lottanumbers35555';
-  //   User.id = 'yoyo23';
-  //   User.resetCode = '';
-  //   User.save((err) => {
-  //     chai.request(server)
-  //     .post('/auth/login')
-  //     .send({ id: 'yoyo24', password: 'lottanumbers35555', email: 'foogie@yoyo.com' })
-  //     .end((err, resp) => {
-  //       expect(resp).to.have.status(401);
-  //       done();
-  //     });
-  //   });
-  // });
+  it('should not allow the user to login with incorrect email', (done) => {
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    // User.id = 'yoyo23';
+    User.resetCode = '';
+    User.save((err) => {
+      chai.request(server)
+      .post('/auth/login')
+      .send({ password: 'lottanumbers35555', email: 'foogie@yoyo.com' })
+      .end((err, resp) => {
+        expect(resp).to.have.status(401);
+        done();
+      });
+    });
+  });
 
-  // it('should not allow the user to login with correct userid but incorect password', (done) => {
-  //   const User = new User1();
-  //   User.name = 'foo4';
-  //   User.email = 'foo3@example.com';
-  //   User.password = 'lottanumbers35555';
-  //   User.id = 'yoyo23';
-  //   User.resetCode = '';
-  //   User.save((err) => {
-  //     chai.request(server)
-  //     .post('/auth/login')
-  //     .send({ id: 'yoyo23', password: 'fewnumbers33' })
-  //     .end((err, resp) => {
-  //       expect(resp).to.have.status(401);
-  //       done();
-  //     });
-  //   });
-  // });
+  it('should not allow the user to login with correct email but incorect password', (done) => {
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    // User.id = 'yoyo23';
+    User.resetCode = '';
+    User.save((err) => {
+      chai.request(server)
+      .post('/auth/login')
+      .send({ email: 'foo3@example.com', password: 'fewnumbers33' })
+      .end((err, resp) => {
+        expect(resp).to.have.status(401);
+        done();
+      });
+    });
+  });
 
-  // it('prevents user to login with userid without email varification', (done) => {
-  //   const User = new User1();
-  //   User.name = 'foo4';
-  //   User.email = 'foo3@example.com';
-  //   User.password = 'lottanumbers35555';
-  //   User.id = 'yoyo23';
-  //   User.resetCode = '12345';
-  //   User.save((err) => {
-  //     chai.request(server)
-  //     .post('/auth/login')
-  //     .send({ id: 'yoyo23', password: 'lottanumbers35555' })
-  //     .end((err, resp) => {
-  //       expect(resp).to.have.status(401);
-  //       done();
-  //     });
-  //   });
-  // });
+  it('prevents user to login without email varification', (done) => {
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    // User.id = 'yoyo23';
+    User.resetCode = '12345';
+    User.save((err) => {
+      chai.request(server)
+      .post('/auth/login')
+      .send({ email: 'foo3@example.com', password: 'lottanumbers35555' })
+      .end((err, resp) => {
+        expect(resp).to.have.status(401);
+        done();
+      });
+    });
+  });
 
   // it('allows user to login with userid and existing password after password reset request', (done) => {
   //   const User = new User1();

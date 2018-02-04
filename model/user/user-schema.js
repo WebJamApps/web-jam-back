@@ -40,11 +40,11 @@ userSchema.pre('save', function(next) {
   });
 });
 
-// userSchema.methods.comparePassword = function(password, done) {
-//   bcrypt.compare(password, this.password, (err, isMatch) => {
-//     done(err, isMatch);
-//   });
-// };
+userSchema.methods.comparePassword = function(password, done) {
+  bcrypt.compare(password, this.password, (err, isMatch) => {
+    done(err, isMatch);
+  });
+};
 
 userSchema.methods.validateSignup = function() {
   let message = '';

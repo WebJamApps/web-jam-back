@@ -1,19 +1,18 @@
-const fs = require('fs');
+// const fs = require('fs');
 const config = require('../config');
 const User = require('../model/user/user-schema');
 const authUtils = require('./authUtils');
-let frontURL = config.frontURL;
-let config2;
-/* eslint-disable */
-let pathtoconf = __dirname;
-pathtoconf = pathtoconf.replace('backend/auth', '');
-console.log(pathtoconf);
-/* istanbul ignore if */
-if (fs.existsSync(pathtoconf + 'config.js')) {
-  config2 = require('../../config');
-  frontURL = config2.get('frontendUrl');
-}
-/* eslint-enable */
+const frontURL = config.frontURL;
+// let config2;
+
+// let pathtoconf = __dirname;
+// pathtoconf = pathtoconf.replace('backend/auth', '');
+// console.log(pathtoconf);
+// if (fs.existsSync(pathtoconf + 'config.js')) {
+//   config2 = require('../../config');
+//   frontURL = config2.get('frontendUrl');
+// }
+
 exports.signup = function(req, res) {
   const randomNumba = authUtils.generateCode(99999, 10000);
   const user = new User({
@@ -21,8 +20,6 @@ exports.signup = function(req, res) {
   });
   User.findOne({ email: req.body.email }, (err, existingUser) => {
     if (existingUser) { return res.status(409).send({ message: 'This email address has already been registered.' }); }
-    // User.findOne({ id: req.body.id }, (err, existingUser2) => {
-      // if (existingUser2) { return res.status(409).send({ message: 'Userid is already taken' }); }
       const validData = user.validateSignup();
       if (validData !== '') { return res.status(409).send({ message: validData }); }
       user.save(() => {
@@ -31,7 +28,6 @@ exports.signup = function(req, res) {
         authUtils.sendEmail(mailbody, user.email, 'Verify Your Email Address');
         return res.status(201).json({ email: user.email });
       });
-    // });
   });
 };
 
@@ -50,27 +46,29 @@ exports.validemail = function(req, res) {
   });
 };
 
-// exports.login = function(req, res) {
-//   console.log('req body email' + req.body.email);
-//   console.log('req body userid ' + req.body.id);
-//   let reqUserId = '';
-//   let reqUserEmail = '';
-//     reqUserId = authUtils.setIfExists(req.body.id);
-//     reqUserEmail = authUtils.setIfExists(req.body.email);
-//   User.findOne({ $or: [{ id: reqUserId }, { email: reqUserId }, { email: reqUserEmail }] }, '+password', (err, user) => {
-//     if (!user && reqUserId === '') {
-//       return res.status(401).json({ message: 'Wrong email address' });
-//     }
-//     if (!user && reqUserEmail === '') {
-//       return res.status(401).json({ message: 'Wrong email address or userid' });
-//     }
-//     if (user) {
-//       authUtils.verifySaveUser(user, req, res);
-//     } else {
-//       return res.status(401).json({ message: 'unable to login, try again' });
-//     }
-//   });
-// };
+exports.login = function(req, res) {
+  console.log('req body email' + req.body.email);
+  // console.log('req body userid ' + req.body.id);
+  // let reqUserId = '';
+  let reqUserEmail = '';
+    // reqUserId = authUtils.setIfExists(req.body.id);
+    reqUserEmail = authUtils.setIfExists(req.body.email);
+  // User.findOne({ $or: [{ id: reqUserId }, { email: reqUserId }, { email: reqUserEmail }] }, '+password', (err, user) => {
+    User.findOne({ email: reqUserEmail }, '+password', (err, user) => {
+    // if (!user && reqUserId === '') {
+        if (!user) {
+      return res.status(401).json({ message: 'Wrong email address' });
+    }
+    // if (!user && reqUserEmail === '') {
+    //   return res.status(401).json({ message: 'Wrong email address or userid' });
+    // }
+    // if (user) {
+      authUtils.verifySaveUser(user, req, res);
+    // } else {
+    //   return res.status(401).json({ message: 'unable to login, try again' });
+    // }
+  });
+};
 
 // exports.resetpass = function(req, res) {
 //   console.log('email:' + req.body.email);
