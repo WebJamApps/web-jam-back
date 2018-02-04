@@ -26,7 +26,7 @@ exports.signup = function(req, res) {
       const validData = user.validateSignup();
       if (validData !== '') { return res.status(409).send({ message: validData }); }
       user.save(() => {
-        const mailbody = '<h1>Welcome ' + user.name + ' to PATRIC.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" ' +
+        const mailbody = '<h1>Welcome ' + user.name + ' to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" ' +
         'href="' + frontURL + '/userutil/?email=' + user.email + '">link</a>, then enter the following code to verify your email: <br><br><strong>' + randomNumba + '</strong></p>';
         authUtils.sendEmail(mailbody, user.email, 'Verify Your Email Address');
         return res.status(201).json({ email: user.email });
