@@ -68,34 +68,33 @@ class AuthUtils {
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-//   static verifySaveUser(user, req, res) {
-//     let hascode = false;
-//     let hasnewemail = false;
-//     if (user.resetCode !== '' && user.resetCode !== null && user.resetCode !== undefined) {
-//       hascode = true;
-//     }
-//     if (user.changeemail !== null && user.changeemail !== '' && user.changeemail !== undefined) {
-//       hasnewemail = true;
-//     }
-//     // this checks if it is a brand new email that has not yet been verified
-//     if (hascode && !user.isPswdReset && !hasnewemail) {
-//       return res.status(401).json({ message: 'Validate your email address or click forgot password link to reset' });
-//     }
-//     user.comparePassword(req.body.password, (err, isMatch) => {
-//       if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
-//       this.saveSendToken(user, req, res);
-//     });
-//   }
-//
-//   static saveSendToken(user, req, res) {
-//     const userToken = { token: this.createJWT(user), email: user.email };
-//     user.isPswdReset = false;
-//     user.resetCode = '';
-//     user.changeemail = '';
-//     user.save(err =>
-//       // this.createSession(user, userToken, req, res);
-//        res.status(200).json(userToken));
-//   }
+  static verifySaveUser(user, req, res) {
+    let hascode = false;
+    let hasnewemail = false;
+    if (user.resetCode !== '' && user.resetCode !== null && user.resetCode !== undefined) {
+      hascode = true;
+    }
+    if (user.changeemail !== null && user.changeemail !== '' && user.changeemail !== undefined) {
+      hasnewemail = true;
+    }
+    // this checks if it is a brand new email that has not yet been verified
+    if (hascode && !user.isPswdReset && !hasnewemail) {
+      return res.status(401).json({ message: 'Validate your email address or click forgot password link to reset' });
+    }
+    user.comparePassword(req.body.password, (err, isMatch) => {
+      if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
+      this.saveSendToken(user, req, res);
+    });
+  }
+
+  static saveSendToken(user, req, res) {
+    const userToken = { token: this.createJWT(user), email: user.email };
+    user.isPswdReset = false;
+    user.resetCode = '';
+    user.changeemail = '';
+    user.save(err =>
+       res.status(200).json(userToken));
+  }
 //
 //   static checkEmailSyntax(req, res) {
 //     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
@@ -104,12 +103,12 @@ class AuthUtils {
 //     return res.status(409).json({ message: 'Email address is not a valid format' });
 //   }
 //
-//   static setIfExists(item) {
-//     if (item !== '' && item !== null && item !== undefined) {
-//       return item;
-//     }
-//     return '';
-//   }
+  static setIfExists(item) {
+    if (item !== '' && item !== null && item !== undefined) {
+      return item;
+    }
+    return '';
+  }
  }
 
 module.exports = AuthUtils;
