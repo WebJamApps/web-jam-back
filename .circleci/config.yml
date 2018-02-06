@@ -16,7 +16,7 @@ jobs:
           key: dependency-cache-{{ checksum "package.json" }}
       - run:
           name: Install npm wee
-          command: yarn install
+          command: yarn install --ignore-scripts
       - save_cache:
           key: dependency-cache-{{ checksum "package.json" }}
           paths:
@@ -29,7 +29,7 @@ jobs:
       - checkout
       - run:
           name: Test install
-          command: 'sudo npm install -g npm@latest && sudo npm install -g bower@latest && sudo npm install -g codeclimate-test-reporter && yarn install'
+          command: 'sudo npm install -g npm@latest && sudo npm install -g bower@latest && sudo npm install -g codeclimate-test-reporter && yarn install --ignore-scripts'
       #- run:
       #    name: ubuntu dependancies
       #    command: 'sudo apt-get update -y && sudo apt-get install -y apt-utils gconf-service libasound2 libatk1.0-0 libcups2 libdbus-1-3 libgconf-2-4 libgtk-3-0 libnspr4 libxcomposite1 libxss1 fonts-liberation libappindicator1 libnss3 lsb-release xdg-utils'
