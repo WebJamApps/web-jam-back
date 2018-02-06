@@ -17,7 +17,6 @@ const config = {
   hashString: process.env.HashString,
   gmailpassword: process.env.gmailpassword,
   frontURL: process.env.frontURL
-
 };
 
 module.exports = config;
