@@ -88,49 +88,49 @@ exports.passwdreset = function(req, res) {
   });
 };
 
-// exports.changeemail = function(req, res) {
-//   console.log('request to change the email address');
-//   authUtils.checkEmailSyntax(req, res);
-//   User.findOne({ email: req.body.changeemail }, (err, user) => {
-//     if (user) {
-//       return res.status(409).json({ message: 'Email address already exists' });
-//     }
-//     User.findOne( { email: req.body.email }, (err, existinguser) => {
-//       if (!existinguser) {
-//         return res.status(409).json({ message: 'current user does not exist' });
-//       }
-//       existinguser.resetCode = authUtils.generateCode(99999, 10000);
-//       existinguser.changeemail = req.body.changeemail;
-//       existinguser.save((err) => {
-//         console.log(existinguser);
-//         res.status(201).json({ success: true });
-//         const mailBody = '<h1>A PATRIC Email Address Change was Requested for ' + existinguser.name + '.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="' +
-//         frontURL + '/userutil/?changeemail=' + existinguser.changeemail + '">' +
-//         'link</a>, then enter the following code to validate this new email: <br><br><strong>' + existinguser.resetCode + '</strong></p><p><i>If this reset was requested in error, you can ignore it and login to PATRIC as usual.</i></p>';
-//         authUtils.sendEmail(mailBody, existinguser.changeemail, 'Email Change Request');
-//       });
-//     });
-//   });
-// };
+exports.changeemail = function(req, res) {
+  console.log('request to change the email address');
+  authUtils.checkEmailSyntax(req, res);
+  User.findOne({ email: req.body.changeemail }, (err, user) => {
+    if (user) {
+      return res.status(409).json({ message: 'Email address already exists' });
+    }
+    User.findOne( { email: req.body.email }, (err, existinguser) => {
+      if (!existinguser) {
+        return res.status(409).json({ message: 'current user does not exist' });
+      }
+      existinguser.resetCode = authUtils.generateCode(99999, 10000);
+      existinguser.changeemail = req.body.changeemail;
+      existinguser.save((err) => {
+        console.log(existinguser);
+        res.status(201).json({ success: true });
+        const mailBody = '<h1>A PATRIC Email Address Change was Requested for ' + existinguser.name + '.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="' +
+        frontURL + '/userutil/?changeemail=' + existinguser.changeemail + '">' +
+        'link</a>, then enter the following code to validate this new email: <br><br><strong>' + existinguser.resetCode + '</strong></p><p><i>If this reset was requested in error, you can ignore it and login to PATRIC as usual.</i></p>';
+        authUtils.sendEmail(mailBody, existinguser.changeemail, 'Email Change Request');
+      });
+    });
+  });
+};
 
-// exports.updateemail = function(req, res) {
-//   console.log('validate with pin then change the email address');
-//   authUtils.checkEmailSyntax(req, res);
-//   User.findOne({ email: req.body.email }, (err, user) => {
-//     if (!user) {
-//       return res.status(409).json({ message: 'User does not exist' });
-//     }
-//     if (user.resetCode !== req.body.resetCode) {
-//       return res.status(409).json({ message: 'Reset code is wrong' });
-//     }
-//     if (user.changeemail !== req.body.changeemail) {
-//       return res.status(409).json({ message: 'Reset email is not valid' });
-//     }
-//     user.resetCode = '';
-//     user.email = req.body.changeemail;
-//     user.changeemail = '';
-//     user.save((err) => {
-//       res.status(201).json({ success: true });
-//     });
-//   });
-// };
+exports.updateemail = function(req, res) {
+  console.log('validate with pin then change the email address');
+  authUtils.checkEmailSyntax(req, res);
+  User.findOne({ email: req.body.email }, (err, user) => {
+    if (!user) {
+      return res.status(409).json({ message: 'User does not exist' });
+    }
+    if (user.resetCode !== req.body.resetCode) {
+      return res.status(409).json({ message: 'Reset code is wrong' });
+    }
+    if (user.changeemail !== req.body.changeemail) {
+      return res.status(409).json({ message: 'Reset email is not valid' });
+    }
+    user.resetCode = '';
+    user.email = req.body.changeemail;
+    user.changeemail = '';
+    user.save((err) => {
+      res.status(201).json({ success: true });
+    });
+  });
+};
