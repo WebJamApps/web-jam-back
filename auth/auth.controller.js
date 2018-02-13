@@ -104,7 +104,7 @@ exports.changeemail = function(req, res) {
       existinguser.save((err) => {
         console.log(existinguser);
         res.status(201).json({ success: true });
-        const mailBody = '<h1>A PATRIC Email Address Change was Requested for ' + existinguser.name + '.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="' +
+        const mailBody = '<h2>An Email Address Change was Requested for ' + existinguser.name + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="' +
         frontURL + '/userutil/?changeemail=' + existinguser.changeemail + '">' +
         'link</a>, then enter the following code to validate this new email: <br><br><strong>' + existinguser.resetCode + '</strong></p><p><i>If this reset was requested in error, you can ignore it and login to PATRIC as usual.</i></p>';
         authUtils.sendEmail(mailBody, existinguser.changeemail, 'Email Change Request');
