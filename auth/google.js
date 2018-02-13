@@ -32,7 +32,9 @@ class Google {
           User.findOne(filter, (err, existingUser) => {
             // console.log(existingUser);
             if (existingUser) {
-              console.log('user exist');
+              console.log('user exists');
+              existingUser.password = '';
+              existingUser.save();
               return res.send({ token: authUtils.createJWT(existingUser) });
             }
             const user = new User();

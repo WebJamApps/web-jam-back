@@ -43,6 +43,8 @@ exports.login = function(req, res) {
     User.findOne({ email: reqUserEmail }, '+password', (err, user) => {
         if (!user) {
       return res.status(401).json({ message: 'Wrong email address' });
+    } if (user.password === '' || user.password === null || user.password === undefined) {
+      return res.status(401).json({ message: 'Please reset your password' });
     }
       authUtils.verifySaveUser(user, req, res);
   });
