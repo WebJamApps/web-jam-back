@@ -34,6 +34,8 @@ class Google {
             if (existingUser) {
               console.log('user exists');
               existingUser.password = '';
+              // force the name of the user to be the name from google account
+              existingUser.name = profile.name;
               existingUser.save();
               return res.send({ token: authUtils.createJWT(existingUser) });
             }
