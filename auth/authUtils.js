@@ -56,9 +56,9 @@ class AuthUtils {
       html: bodyhtml
     };
     transporter.sendMail(mailOptions, (error, info) => {
-      console.log('trying to send an email');
-      console.log(mailOptions);
-      console.log(transporter);
+      // console.log('trying to send an email');
+      // console.log(mailOptions);
+      // console.log(transporter);
     });
   }
 
