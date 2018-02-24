@@ -7,9 +7,8 @@
 
 <p>This repository is used for the following apps:</p>
 <ui>
-<li><a href="http://www.ourhandsandfeet.org">ourhandsandfeet.org</a></li>
 <li><a href="https://www.web-jam.com">Web Jam LLC</a></li>
-<li><a href="http://www.joshandmariamusic.com">joshandmariamusic.com</a></li>
+<li><a href="http://www.ourhandsandfeet.org">ourhandsandfeet.org</a></li>
 <li><a href="https://www.web-jam.com/library">Web Jam Library</a></li>
 </ul>
 

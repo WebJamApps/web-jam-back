@@ -14,7 +14,9 @@ const config = {
   mongo: {
     url: process.env.MONGO_DB_URI
   },
-  hashString: process.env.HashString
+  hashString: process.env.HashString,
+  gmailpassword: process.env.gmailpassword,
+  frontURL: process.env.frontURL
 };
 
 module.exports = config;
