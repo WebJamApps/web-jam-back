@@ -1,7 +1,8 @@
 const moment = require('moment');
 const jwt = require('jwt-simple');
 const config = require('../config');
-const nodemailer = require('nodemailer');
+// const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 // const uuid = require('uuid');
 // const crypto = require('crypto');
 // const fs = require('fs');
@@ -35,33 +36,48 @@ class AuthUtils {
     next();
   }
 
-  static sendEmail(bodyhtml, toemail, subjectline) {
-    let emailpassword = config.gmailpassword;
-    /* istanbul ignore next */
-    if (process.env.NODE_ENV === 'test') {
-      console.log('i am testing');
-      emailpassword = '';
-    }
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: 'chemmariasherman@gmail.com',
-        pass: emailpassword
-      }
-    });
-
-    const mailOptions = {
-      from: 'chemmariasherman@gmail.com',
+  static sendGridEmail(bodyhtml, toemail, subjectline) {
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    const msg = {
       to: toemail,
+      from: 'user-service@web-jam.com',
       subject: subjectline,
+      text: bodyhtml,
       html: bodyhtml
     };
-    transporter.sendMail(mailOptions, (error, info) => {
-      // console.log('trying to send an email');
-      // console.log(mailOptions);
-      // console.log(transporter);
-    });
+    /* istanbul ignore if */
+    if (process.env.NODE_ENV !== 'test') {
+      sgMail.send(msg);
+    }
   }
+
+  // static sendEmail(bodyhtml, toemail, subjectline) {
+  //   let emailpassword = config.gmailpassword;
+  //   /* istanbul ignore next */
+  //   if (process.env.NODE_ENV === 'test') {
+  //     console.log('i am testing');
+  //     emailpassword = '';
+  //   }
+  //   const transporter = nodemailer.createTransport({
+  //     service: 'gmail',
+  //     auth: {
+  //       user: 'chemmariasherman@gmail.com',
+  //       pass: emailpassword
+  //     }
+  //   });
+
+  //   const mailOptions = {
+  //     from: 'chemmariasherman@gmail.com',
+  //     to: toemail,
+  //     subject: subjectline,
+  //     html: bodyhtml
+  //   };
+  //   transporter.sendMail(mailOptions, (error, info) => {
+  //     // console.log('trying to send an email');
+  //     // console.log(mailOptions);
+  //     // console.log(transporter);
+  //   });
+  // }
 
   static generateCode(hi, low) {
     const min = Math.ceil(low);
@@ -94,22 +110,22 @@ class AuthUtils {
     user.resetCode = '';
     user.changeemail = '';
     user.save(err =>
-       res.status(200).json(userToken));
-  }
-
-  static checkEmailSyntax(req, res) {
-    if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
-      return console.log('email is valid');
+      res.status(200).json(userToken));
     }
-    return res.status(409).json({ message: 'Email address is not a valid format' });
-  }
 
-  static setIfExists(item) {
-    if (item !== '' && item !== null && item !== undefined) {
-      return item;
+    static checkEmailSyntax(req, res) {
+      if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
+        return console.log('email is valid');
+      }
+      return res.status(409).json({ message: 'Email address is not a valid format' });
     }
-    return '';
-  }
- }
 
-module.exports = AuthUtils;
+    static setIfExists(item) {
+      if (item !== '' && item !== null && item !== undefined) {
+        return item;
+      }
+      return '';
+    }
+  }
+
+  module.exports = AuthUtils;
