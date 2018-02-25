@@ -6,7 +6,6 @@
   "engines": {
     "node": "8.9.4",
     "npm": "5.6.0"
-
   },
   "license": "MIT",
   "scripts": {
@@ -29,6 +28,7 @@
   },
   "author": "HandlersAndKickers <>",
   "dependencies": {
+    "@sendgrid/mail": "^6.2.1",
     "bcryptjs": "^2.4.3",
     "bluebird": "^3.4.1",
     "body-parser": "^1.17.1",
