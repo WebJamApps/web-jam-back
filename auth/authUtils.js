@@ -39,6 +39,7 @@ class AuthUtils {
     let emailpassword = config.gmailpassword;
     /* istanbul ignore next */
     if (process.env.NODE_ENV === 'test') {
+      console.log('i am testing');
       emailpassword = '';
     }
     const transporter = nodemailer.createTransport({
