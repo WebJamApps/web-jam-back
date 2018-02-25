@@ -1,7 +1,11 @@
 const config = require('../config');
 const User = require('../model/user/user-schema');
 const authUtils = require('./authUtils');
-const frontURL = config.frontURL;
+let frontURL = config.frontURL;
+/* istanbul ignore if */
+if (process.env.NODE_ENV === 'production') {
+  frontURL = 'https://web-jam.com';
+}
 
 exports.signup = function(req, res) {
   const randomNumba = authUtils.generateCode(99999, 10000);
@@ -15,7 +19,7 @@ exports.signup = function(req, res) {
       user.save(() => {
         const mailbody = '<h1>Welcome ' + user.name + ' to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" ' +
         'href="' + frontURL + '/userutil/?email=' + user.email + '">link</a>, then enter the following code to verify your email: <br><br><strong>' + randomNumba + '</strong></p>';
-        authUtils.sendEmail(mailbody, user.email, 'Verify Your Email Address');
+        authUtils.sendGridEmail(mailbody, user.email, 'Verify Your Email Address');
         return res.status(201).json({ email: user.email });
       });
   });
@@ -66,7 +70,7 @@ exports.resetpass = function(req, res) {
       const mailBody = '<h2>A password reset was requested for ' + user.name + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="' +
       frontURL + '/userutil/?email=' + user.email + '&form=reset">' +
       'link</a>, then enter the following code to reset your password: <br><br><strong>' + randomNumba + '</strong></p><p><i>If a reset was requested in error, you can ignore this email and login to web-jam.com as usual.</i></p>';
-      authUtils.sendEmail(mailBody, user.email, 'Password Reset');
+      authUtils.sendGridEmail(mailBody, user.email, 'Password Reset');
     });
   });
 };
@@ -109,7 +113,7 @@ exports.changeemail = function(req, res) {
         const mailBody = '<h2>An Email Address Change was Requested for ' + existinguser.name + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="' +
         frontURL + '/userutil/?changeemail=' + existinguser.changeemail + '">' +
         'link</a>, then enter the following code to validate this new email: <br><br><strong>' + existinguser.resetCode + '</strong></p><p><i>If this reset was requested in error, you can ignore it and login as usual.</i></p>';
-        authUtils.sendEmail(mailBody, existinguser.changeemail, 'Email Change Request');
+        authUtils.sendGridEmail(mailBody, existinguser.changeemail, 'Email Change Request');
       });
     });
   });
