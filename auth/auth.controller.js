@@ -10,7 +10,7 @@ if (process.env.NODE_ENV === 'production') {
 exports.signup = function(req, res) {
   const randomNumba = authUtils.generateCode(99999, 10000);
   const user = new User({
-    name: req.body.name, id: req.body.id, email: req.body.email, password: req.body.password, isPswdReset: false, resetCode: randomNumba, first_name: req.body.first_name, last_name: req.body.last_name, interests: req.body.interests, affiliation: req.body.affiliation, organisms: req.body.organisms
+    name: req.body.name, id: req.body.id, verifiedEmail: false, email: req.body.email, password: req.body.password, isPswdReset: false, resetCode: randomNumba, first_name: req.body.first_name, last_name: req.body.last_name, interests: req.body.interests, affiliation: req.body.affiliation, organisms: req.body.organisms
   });
   User.findOne({ email: req.body.email }, (err, existingUser) => {
     if (existingUser) { return res.status(409).send({ message: 'This email address has already been registered.' }); }
@@ -34,6 +34,7 @@ exports.validemail = function(req, res) {
     }
     user.resetCode = '';
     user.isPswdReset = false;
+    user.verifiedEmail = true;
     user.save((err) => {
       res.status(201).json({ success: true });
     });
@@ -49,8 +50,14 @@ exports.login = function(req, res) {
       return res.status(401).json({ message: 'Wrong email address' });
     } if (user.password === '' || user.password === null || user.password === undefined) {
       return res.status(401).json({ message: 'Please reset your password' });
+    } if (!user.verifiedEmail) {
+      return res.status(401).json({ message: 'Verify your email' });
     }
-      authUtils.verifySaveUser(user, req, res);
+      // authUtils.verifySaveUser(user, req, res);
+      user.comparePassword(req.body.password, (err, isMatch) => {
+     if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
+     return authUtils.saveSendToken(user, req, res);
+   });
   });
 };
 
@@ -61,6 +68,9 @@ exports.resetpass = function(req, res) {
     console.log(user);
     if (!user) {
       return res.status(401).json({ message: 'incorrect email address' });
+    }
+    if (!user.verifiedEmail) {
+      return res.status(401).json({ message: 'Verify your email address' });
     }
     const randomNumba = authUtils.generateCode(99999, 10000);
     user.resetCode = randomNumba;
