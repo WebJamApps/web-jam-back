@@ -1,11 +1,7 @@
 const moment = require('moment');
 const jwt = require('jwt-simple');
 const config = require('../config');
-// const nodemailer = require('nodemailer');
 const sgMail = require('@sendgrid/mail');
-// const uuid = require('uuid');
-// const crypto = require('crypto');
-// const fs = require('fs');
 
 class AuthUtils {
   static createJWT(user) {
@@ -51,58 +47,30 @@ class AuthUtils {
     }
   }
 
-  // static sendEmail(bodyhtml, toemail, subjectline) {
-  //   let emailpassword = config.gmailpassword;
-  //   /* istanbul ignore next */
-  //   if (process.env.NODE_ENV === 'test') {
-  //     console.log('i am testing');
-  //     emailpassword = '';
-  //   }
-  //   const transporter = nodemailer.createTransport({
-  //     service: 'gmail',
-  //     auth: {
-  //       user: 'chemmariasherman@gmail.com',
-  //       pass: emailpassword
-  //     }
-  //   });
-
-  //   const mailOptions = {
-  //     from: 'chemmariasherman@gmail.com',
-  //     to: toemail,
-  //     subject: subjectline,
-  //     html: bodyhtml
-  //   };
-  //   transporter.sendMail(mailOptions, (error, info) => {
-  //     // console.log('trying to send an email');
-  //     // console.log(mailOptions);
-  //     // console.log(transporter);
-  //   });
-  // }
-
   static generateCode(hi, low) {
     const min = Math.ceil(low);
     const max = Math.floor(hi);
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-  static verifySaveUser(user, req, res) {
-    let hascode = false;
-    let hasnewemail = false;
-    if (user.resetCode !== '' && user.resetCode !== null && user.resetCode !== undefined) {
-      hascode = true;
-    }
-    if (user.changeemail !== null && user.changeemail !== '' && user.changeemail !== undefined) {
-      hasnewemail = true;
-    }
-    // this checks if it is a brand new email that has not yet been verified
-    if (hascode && !user.isPswdReset && !hasnewemail) {
-      return res.status(401).json({ message: 'Validate your email address or click forgot password link to reset' });
-    }
-    user.comparePassword(req.body.password, (err, isMatch) => {
-      if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
-      this.saveSendToken(user, req, res);
-    });
-  }
+  // static verifySaveUser(user, req, res) {
+  //   // let hascode = false;
+  //   // let hasnewemail = false;
+  //   // if (user.resetCode !== '' && user.resetCode !== null && user.resetCode !== undefined) {
+  //   //   hascode = true;
+  //   // }
+  //   // if (user.changeemail !== null && user.changeemail !== '' && user.changeemail !== undefined) {
+  //   //   hasnewemail = true;
+  //   // }
+  //   // this checks if it is a brand new email that has not yet been verified
+  //   // if (hascode && !user.isPswdReset && !hasnewemail) {
+  //   //   return res.status(401).json({ message: 'Validate your email address or click forgot password link to reset' });
+  //   // }
+  //   user.comparePassword(req.body.password, (err, isMatch) => {
+  //     if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
+  //     this.saveSendToken(user, req, res);
+  //   });
+  // }
 
   static saveSendToken(user, req, res) {
     const userToken = { token: this.createJWT(user), email: user.email };
