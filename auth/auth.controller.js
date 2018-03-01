@@ -13,15 +13,24 @@ exports.signup = function(req, res) {
     name: req.body.name, id: req.body.id, verifiedEmail: false, email: req.body.email, password: req.body.password, isPswdReset: false, resetCode: randomNumba, first_name: req.body.first_name, last_name: req.body.last_name, interests: req.body.interests, affiliation: req.body.affiliation, organisms: req.body.organisms
   });
   User.findOne({ email: req.body.email }, (err, existingUser) => {
-    if (existingUser) { return res.status(409).send({ message: 'This email address has already been registered.' }); }
-      const validData = user.validateSignup();
-      if (validData !== '') { return res.status(409).send({ message: validData }); }
-      user.save(() => {
-        const mailbody = '<h1>Welcome ' + user.name + ' to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" ' +
-        'href="' + frontURL + '/userutil/?email=' + user.email + '">link</a>, then enter the following code to verify your email: <br><br><strong>' + randomNumba + '</strong></p>';
-        authUtils.sendGridEmail(mailbody, user.email, 'Verify Your Email Address');
-        return res.status(201).json({ email: user.email });
-      });
+    if (existingUser && existingUser.verifiedEmail) {
+      return res.status(409).send({ message: 'This email address has already been registered.' });
+    }
+    const validData = user.validateSignup();
+    if (validData !== '') {
+      return res.status(409).send({ message: validData });
+    }
+    let userSave = user;
+    if (existingUser && !existingUser.verifiedEmail) {
+      existingUser.resetCode = randomNumba;
+      userSave = existingUser;
+    }
+    userSave.save(() => {
+      const mailbody = '<h1>Welcome ' + user.name + ' to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" ' +
+      'href="' + frontURL + '/userutil/?email=' + user.email + '">link</a>, then enter the following code to verify your email: <br><br><strong>' + randomNumba + '</strong></p>';
+      authUtils.sendGridEmail(mailbody, user.email, 'Verify Your Email Address');
+      return res.status(201).json({ email: user.email });
+    });
   });
 };
 
@@ -44,27 +53,27 @@ exports.validemail = function(req, res) {
 exports.login = function(req, res) {
   console.log('req body email' + req.body.email);
   let reqUserEmail = '';
-    reqUserEmail = authUtils.setIfExists(req.body.email);
-    User.findOne({ email: reqUserEmail }, '+password', (err, user) => {
-        if (!user) {
+  reqUserEmail = authUtils.setIfExists(req.body.email);
+  User.findOne({ email: reqUserEmail }, '+password', (err, user) => {
+    if (!user) {
       return res.status(401).json({ message: 'Wrong email address' });
     } if (user.password === '' || user.password === null || user.password === undefined) {
       return res.status(401).json({ message: 'Please reset your password' });
     } if (!user.verifiedEmail) {
       return res.status(401).json({ message: 'Verify your email' });
     }
-      // authUtils.verifySaveUser(user, req, res);
-      user.comparePassword(req.body.password, (err, isMatch) => {
-     if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
-     return authUtils.saveSendToken(user, req, res);
-   });
+    // authUtils.verifySaveUser(user, req, res);
+    user.comparePassword(req.body.password, (err, isMatch) => {
+      if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
+      return authUtils.saveSendToken(user, req, res);
+    });
   });
 };
 
 exports.resetpass = function(req, res) {
   console.log('email:' + req.body.email);
   // User.findOne({ $or:[{ email: req.body.email }, { id: req.body.email }] }, (err, user) => {
-      User.findOne({ email: req.body.email }, (err, user) => {
+  User.findOne({ email: req.body.email }, (err, user) => {
     console.log(user);
     if (!user) {
       return res.status(401).json({ message: 'incorrect email address' });
