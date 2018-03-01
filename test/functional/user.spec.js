@@ -243,16 +243,33 @@ it('should delete the user by id', (done) => {
     });
   });
 
-  it('should not signup the new user if the email already exists', (done) => {
+  it('should not signup the new user if the email already exists and has been verified', (done) => {
     const User = new User1();
     User.name = 'foo4';
     User.email = 'foo4@example.com';
+    User.verifiedEmail = true;
     User.save((err) => {
       chai.request(server)
       .post('/auth/signup')
       .send({ email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555' })
       .end((err, res) => {
         expect(res).to.have.status(409);
+        done();
+      });
+    });
+  });
+
+  it('allows signup the existing user if the email has not been verified', (done) => {
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo4@example.com';
+    User.verifiedEmail = false;
+    User.save((err) => {
+      chai.request(server)
+      .post('/auth/signup')
+      .send({ email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555' })
+      .end((err, res) => {
+        expect(res).to.have.status(201);
         done();
       });
     });
