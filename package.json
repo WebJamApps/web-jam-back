@@ -20,7 +20,8 @@
     "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
     "eslint-fix": "./node_modules/eslint/bin/eslint.js --fix .",
-    "snyk-protect": "snyk protect"
+    "snyk-protect": "snyk protect",
+    "prepublish": "npm run snyk-protect"
   },
   "repository": {
     "type": "git",
@@ -43,7 +44,7 @@
     "mongoose": "^4.10.0",
     "morgan": "^1.8.1",
     "request": "^2.78.0",
-    "snyk": "^1.41.1"
+    "snyk": "^1.69.10"
   },
   "devDependencies": {
     "chai": "^3.5.0",
