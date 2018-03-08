@@ -36,6 +36,7 @@ class Google {
               existingUser.password = '';
               // force the name of the user to be the name from google account
               existingUser.name = profile.name;
+              existingUser.verifiedEmail = true;
               existingUser.save();
               return res.send({ token: authUtils.createJWT(existingUser) });
             }
@@ -43,6 +44,7 @@ class Google {
             user.name = profile.name;
             user.email = profile.email;
             user.isOhafUser = req.body.isOhafUser;
+            user.verifiedEmail = true;
             user.save((err) => {
               console.log('token sent');
               res.send({ token: authUtils.createJWT(user) });

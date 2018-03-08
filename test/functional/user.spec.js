@@ -243,16 +243,33 @@ it('should delete the user by id', (done) => {
     });
   });
 
-  it('should not signup the new user if the email already exists', (done) => {
+  it('should not signup the new user if the email already exists and has been verified', (done) => {
     const User = new User1();
     User.name = 'foo4';
     User.email = 'foo4@example.com';
+    User.verifiedEmail = true;
     User.save((err) => {
       chai.request(server)
       .post('/auth/signup')
       .send({ email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555' })
       .end((err, res) => {
         expect(res).to.have.status(409);
+        done();
+      });
+    });
+  });
+
+  it('allows signup the existing user if the email has not been verified', (done) => {
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo4@example.com';
+    User.verifiedEmail = false;
+    User.save((err) => {
+      chai.request(server)
+      .post('/auth/signup')
+      .send({ email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555' })
+      .end((err, res) => {
+        expect(res).to.have.status(201);
         done();
       });
     });
@@ -273,6 +290,7 @@ it('should delete the user by id', (done) => {
     User.name = 'foo4';
     User.email = 'foo3@example.com';
     User.password = 'lottanumbers35555';
+    User.verifiedEmail = true;
     User.resetCode = '';
     User.save((err) => {
       chai.request(server)
@@ -344,6 +362,7 @@ it('should delete the user by id', (done) => {
     User.name = 'foo4';
     User.email = 'foo3@example.com';
     User.password = 'lottanumbers35555';
+    User.verifiedEmail = true;
     // User.id = 'yoyo23';
     User.resetCode = '';
     User.save((err) => {
@@ -381,6 +400,7 @@ it('should delete the user by id', (done) => {
     User.email = 'foo3@example.com';
     User.password = 'lottanumbers35555';
     User.resetCode = '12345';
+    User.verifiedEmail = true;
     User.isPswdReset = true;
     User.save((err) => {
       chai.request(server)
@@ -399,6 +419,7 @@ it('should delete the user by id', (done) => {
     User.email = 'foo3@example.com';
     User.password = 'lottanumbers35555';
     User.resetCode = '12345';
+    User.verifiedEmail = true;
     User.changeemail = 'foo@bar.com';
     User.save((err) => {
       chai.request(server)
@@ -493,12 +514,29 @@ it('should delete the user by id', (done) => {
     const User = new User1();
     User.name = 'foo3';
     User.email = 'foo3@example.com';
+    User.verifiedEmail = true;
     User.save((err) => {
       chai.request(server)
       .put('/auth/resetpass')
       .send({ email: 'foo3@example.com' })
       .end((err, res) => {
         expect(res).to.have.status(201);
+        done();
+      });
+    });
+  });
+
+  it('does not allow a reset password request with an unverified email', (done) => {
+    const User = new User1();
+    User.name = 'foo3';
+    User.email = 'foo3@example.com';
+    User.verifiedEmail = false;
+    User.save((err) => {
+      chai.request(server)
+      .put('/auth/resetpass')
+      .send({ email: 'foo3@example.com' })
+      .end((err, res) => {
+        expect(res).to.have.status(401);
         done();
       });
     });
