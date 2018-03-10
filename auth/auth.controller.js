@@ -131,7 +131,7 @@ exports.changeemail = function(req, res) {
         res.status(201).json({ success: true });
         const mailBody = '<h2>An Email Address Change was Requested for ' + existinguser.name + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="' +
         frontURL + '/userutil/?changeemail=' + existinguser.changeemail + '">' +
-        'link</a>, then enter the following code to validate this new email: <br><br><strong>' + existinguser.resetCode + '</strong></p><p><i>If this reset was requested in error, you can ignore it and login as usual.</i></p>';
+        'link</a>, then enter the following code to validate this new email: <br><br><strong>' + existinguser.resetCode + '</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>';
         authUtils.sendGridEmail(mailBody, existinguser.changeemail, 'Email Change Request');
       });
     });
