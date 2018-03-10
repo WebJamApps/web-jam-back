@@ -60,7 +60,7 @@ exports.login = function(req, res) {
     } if (user.password === '' || user.password === null || user.password === undefined) {
       return res.status(401).json({ message: 'Please reset your password' });
     } if (!user.verifiedEmail) {
-      return res.status(401).json({ message: 'Verify your email' });
+      return res.status(401).json({ message: '<a href="/userutil">Verify</a> your email' });
     }
     // authUtils.verifySaveUser(user, req, res);
     user.comparePassword(req.body.password, (err, isMatch) => {
