@@ -1,11 +1,10 @@
 {
   "name": "web-jam-back",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "8.9.4",
-    "npm": "5.6.0"
+    "node": "8.10.0"
   },
   "license": "MIT",
   "scripts": {
