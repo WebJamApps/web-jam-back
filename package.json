@@ -1,18 +1,17 @@
 {
   "name": "web-jam-back",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "8.9.4",
-    "npm": "5.6.0"
+    "node": "8.10.0"
   },
   "license": "MIT",
   "scripts": {
-    "installglobals": "npm install -g npm@latest && npm install -g bower@latest",
+    "installglobals": "npm install -g npm@latest",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
-    "build:prod": "(cd frontend || exit; npm run vulc && npm start -- build)",
+    "build:prod": "(cd frontend || exit; npm start -- build)",
     "start": "node index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && npm run installglobals && yarn install",
     "debug": "node --inspect-brk index.js",
@@ -59,7 +58,7 @@
     "mockgoose": "^6.0.8",
     "nock": "^9.0.13",
     "nodemon": "^1.9.2",
-    "sinon": "^1.17.6"
+    "sinon": "^4.4.6"
   },
   "snyk": true
 }
