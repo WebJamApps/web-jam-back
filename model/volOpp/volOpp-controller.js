@@ -1,5 +1,5 @@
 const Controller = require('../../lib/controller');
-const volOppModel  = require('./volOpp-facade');
+const volOppModel = require('./volOpp-facade');
 
 class VolOppController extends Controller {
   findByCharityId(req, res, next) {

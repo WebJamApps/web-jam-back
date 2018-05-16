@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const Schema   = mongoose.Schema;
+const Schema = mongoose.Schema;
 const bcrypt = require('bcryptjs');
 
 const userSchema = new Schema({
@@ -49,7 +49,7 @@ userSchema.methods.comparePassword = function(password, done) {
 
 userSchema.methods.validateSignup = function() {
   let message = '';
-  if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(this.email))  {
+  if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(this.email)) {
     console.log('email is valid');
   } else {
     message = 'Email address is invalid format';

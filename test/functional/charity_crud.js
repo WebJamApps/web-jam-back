@@ -1,7 +1,7 @@
 const Charity1 = require('../../model/charity/charity-schema');
 const authUtils = require('../../auth/authUtils');
 
-describe('The charity feature',  () => {
+describe('The charity feature', () => {
   beforeEach((done) => {
     mockgoose(mongoose).then(() => {
       Charity1.ensureIndexes(() => {

@@ -1,5 +1,5 @@
 const Controller = require('../../lib/controller');
-const charityModel  = require('./charity-facade');
+const charityModel = require('./charity-facade');
 
 class CharityController extends Controller {
   find(req, res, next) {

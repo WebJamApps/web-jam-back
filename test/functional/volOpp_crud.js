@@ -1,7 +1,7 @@
 const VolOpp1 = require('../../model/volOpp/volOpp-schema');
 const authUtils = require('../../auth/authUtils');
 let previousId = '';
-describe('The volunteer opportunity feature',  () => {
+describe('The volunteer opportunity feature', () => {
   beforeEach((done) => {
     mockgoose(mongoose).then(() => {
         // VolOpp1.collection.drop();
