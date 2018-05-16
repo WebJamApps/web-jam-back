@@ -6,17 +6,18 @@
     "comma-dangle": [0, "never"],
     "no-undef": [0, "never"],
     "no-underscore-dangle": [0, "never"],
-    "consistent-return": 0,
+    "func-names": [0, "never"],
+    "no-restricted-syntax": [0, "never"],
     "no-unused-expressions": [2, {
       "allowShortCircuit": true
     }],
     "no-param-reassign": 0,
-    "func-names": 0,
+
     "space-before-function-paren": [2, "never"],
 
     "no-shadow": 0,
     "guard-for-in": 0,
-    "no-restricted-syntax": [2, "WithStatement"],
+
     "newline-per-chained-call": [2, {
       "ignoreChainWithDepth": 5
     }],
