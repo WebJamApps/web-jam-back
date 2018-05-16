@@ -25,11 +25,13 @@ exports.signup = function(req, res) {
       existingUser.resetCode = randomNumba;
       userSave = existingUser;
     }
-    userSave.save(() => {
+    return userSave.save(() => {
       const mailbody = '<h1>Welcome ' + user.name + ' to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" ' +
       'href="' + frontURL + '/userutil/?email=' + user.email + '">link</a>, then enter the following code to verify your email: <br><br><strong>' + randomNumba + '</strong></p>';
       authUtils.sendGridEmail(mailbody, user.email, 'Verify Your Email Address');
-      return res.status(201).json({ email: user.email });
+      res.status(201).json({ email: user.email });
+    }).catch((err) => {
+      res.status(400).json({ message: 'New user failed to save to mongodb', error: err });
     });
   });
 };
@@ -154,8 +156,10 @@ exports.updateemail = function(req, res) {
     user.resetCode = '';
     user.email = req.body.changeemail;
     user.changeemail = '';
-    user.save((err) => {
+    return user.save(() => {
       res.status(201).json({ success: true });
+    }).catch((err) => {
+      res.status(400).json({ message: 'Failed to save user to mongodb', error: err });
     });
   });
 };
