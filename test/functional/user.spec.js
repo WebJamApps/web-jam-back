@@ -1,6 +1,6 @@
 const User1 = require('../../model/user/user-schema');
 const authUtils = require('../../auth/authUtils');
-describe('functional test for users',  () => {
+describe('functional test for users', () => {
   beforeEach((done) => {
     mockgoose(mongoose).then(() => {
       User1.collection.drop();
