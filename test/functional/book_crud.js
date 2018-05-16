@@ -1,7 +1,7 @@
 const Book1 = require('../../model/book/book-schema');
 const authUtils = require('../../auth/authUtils');
 
-describe('The library feature',  () => {
+describe('The library feature', () => {
   beforeEach((done) => {
     mockgoose(mongoose).then(() => {
       Book1.ensureIndexes(() => {
