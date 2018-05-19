@@ -5,7 +5,6 @@ const config = require('../../config');
 const moment = require('moment');
 
 describe('The Unit Test for authUtils Module', () => {
-
   describe('createJWT', () => {
     it('should create token', () => {
       const user = { _id: 'someid' };
@@ -91,5 +90,4 @@ describe('The Unit Test for authUtils Module', () => {
       expect(next.called).to.be.true; // eslint-disable-line no-unused-expressions
     });
   });
-
 });

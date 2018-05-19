@@ -28,28 +28,28 @@ class Google {
       const requestConfig = { url: peopleApiUrl, headers, json: true };
       request.get(requestConfig, (err, response, profile) => {
           // Step 3b. Create a new user account or return an existing one.
-          const filter = { email: profile.email };
-          User.findOne(filter, (err, existingUser) => {
+        const filter = { email: profile.email };
+        User.findOne(filter, (err, existingUser) => {
             // console.log(existingUser);
-            if (existingUser) {
-              console.log('user exists');
-              existingUser.password = '';
+          if (existingUser) {
+            console.log('user exists');
+            existingUser.password = '';
               // force the name of the user to be the name from google account
-              existingUser.name = profile.name;
-              existingUser.verifiedEmail = true;
-              existingUser.save();
-              return res.send({ token: authUtils.createJWT(existingUser) });
-            }
-            const user = new User();
-            user.name = profile.name;
-            user.email = profile.email;
-            user.isOhafUser = req.body.isOhafUser;
-            user.verifiedEmail = true;
-            user.save((err) => {
-              console.log('token sent');
-              res.send({ token: authUtils.createJWT(user) });
-            });
+            existingUser.name = profile.name;
+            existingUser.verifiedEmail = true;
+            existingUser.save();
+            return res.send({ token: authUtils.createJWT(existingUser) });
+          }
+          const user = new User();
+          user.name = profile.name;
+          user.email = profile.email;
+          user.isOhafUser = req.body.isOhafUser;
+          user.verifiedEmail = true;
+          user.save((err) => {
+            console.log('token sent');
+            res.send({ token: authUtils.createJWT(user) });
           });
+        });
       });
     });
   }

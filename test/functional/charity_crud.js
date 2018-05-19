@@ -83,5 +83,4 @@ describe('The charity feature', () => {
       done();
     });
   });
-
 });

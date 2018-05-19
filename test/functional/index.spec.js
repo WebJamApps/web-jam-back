@@ -13,8 +13,8 @@ describe('Index test', () => {
     .set({ origin: allowedUrl })
     .set('authorization', 'Bearer ')
     .end((err, res) => {
-        expect(res).to.have.status(200);
-        done();
-      });
+      expect(res).to.have.status(200);
+      done();
     });
+  });
 });
