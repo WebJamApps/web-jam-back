@@ -1,5 +1,6 @@
 const User1 = require('../../model/user/user-schema');
 const authUtils = require('../../auth/authUtils');
+
 describe('functional test for users', () => {
   beforeEach((done) => {
     mockgoose(mongoose).then(() => {
@@ -37,11 +38,11 @@ describe('functional test for users', () => {
   });
 
   it('should not update a user when the name is an empty string', (done) => {
-  const User = new User1();
-  User.name = 'foo';
-  User.email = 'foo2@example.com';
-  User.save((err) => {
-    chai.request(server)
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo2@example.com';
+    User.save((err) => {
+      chai.request(server)
     .put('/user/' + User._id)
     .set({ origin: allowedUrl })
     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
@@ -51,8 +52,8 @@ describe('functional test for users', () => {
       expect(res.nModified === 0);
       done();
     });
+    });
   });
-});
 
   it('should modify a user', (done) => {
     const User = new User1();
@@ -201,12 +202,12 @@ describe('functional test for users', () => {
   });
 
   it('should update the new user by id', (done) => {
-  const User = new User1();
-  User.name = 'foo3';
-  User.email = 'foo3@example.com';
-  User.save((err) => {
-    const Uid = User._id;
-    chai.request(server)
+    const User = new User1();
+    User.name = 'foo3';
+    User.email = 'foo3@example.com';
+    User.save((err) => {
+      const Uid = User._id;
+      chai.request(server)
     .put('/user/' + Uid)
     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
     .send({ userType: 'Developer' })
@@ -214,10 +215,10 @@ describe('functional test for users', () => {
       expect(res).to.have.status(200);
       done();
     });
+    });
   });
-});
 
-it('should delete the user by id', (done) => {
+  it('should delete the user by id', (done) => {
     const User = new User1();
     User.name = 'foo3';
     User.email = 'foo3@example.com';
@@ -699,7 +700,7 @@ it('should delete the user by id', (done) => {
     User.password = 'lottanumbers35555';
     User.resetCode = '12345';
     User.changeemail = 'foo@bar.com';
-      User.save((err) => {
+    User.save((err) => {
       chai.request(server)
       .put('/auth/updateemail')
       .send({ email: 'foo@example.com', changeemail: 'foo@bar.com', resetCode: '12345' })
@@ -717,8 +718,8 @@ it('should delete the user by id', (done) => {
     User.password = 'lottanumbers35555';
     User.resetCode = '12345';
     User.changeemail = 'foo@bar.com';
-      User.save((err) => {
-        chai.request(server)
+    User.save((err) => {
+      chai.request(server)
       .put('/auth/updateemail')
         .send({ email: 'foo3@example.com', changeemail: 'foo@bar.com', resetCode: '12347' })
       .end((err, res) => {
@@ -745,5 +746,4 @@ it('should delete the user by id', (done) => {
       });
     });
   });
-
 });

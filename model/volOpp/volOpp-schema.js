@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+
 const Schema = mongoose.Schema;
 const volOppSchema = new Schema({
   voName: { type: String, required: true },

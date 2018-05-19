@@ -79,21 +79,21 @@ class AuthUtils {
     user.changeemail = '';
     user.save(err =>
       res.status(200).json(userToken));
-    }
-
-    static checkEmailSyntax(req, res) {
-      if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
-        return console.log('email is valid');
-      }
-      return res.status(409).json({ message: 'Email address is not a valid format' });
-    }
-
-    static setIfExists(item) {
-      if (item !== '' && item !== null && item !== undefined) {
-        return item;
-      }
-      return '';
-    }
   }
 
-  module.exports = AuthUtils;
+  static checkEmailSyntax(req, res) {
+    if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
+      return console.log('email is valid');
+    }
+    return res.status(409).json({ message: 'Email address is not a valid format' });
+  }
+
+  static setIfExists(item) {
+    if (item !== '' && item !== null && item !== undefined) {
+      return item;
+    }
+    return '';
+  }
+  }
+
+module.exports = AuthUtils;

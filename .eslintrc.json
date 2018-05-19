@@ -1,7 +1,10 @@
 {
   "plugins": ["node", "security"],
-  "extends": ["airbnb", "plugin:node/recommended", "plugin:security/recommended"],
+  "extends": ["plugin:node/recommended", "plugin:security/recommended", "airbnb"],
   "rules": {
+    "max-len": ["error", {
+      "code": 150
+    }],
     "no-console": 0,
     "comma-dangle": [0, "never"],
     "no-undef": [0, "never"],
@@ -12,31 +15,20 @@
       "allowShortCircuit": true
     }],
     "no-param-reassign": 0,
-
-    "space-before-function-paren": [2, "never"],
-
     "no-shadow": 0,
     "guard-for-in": 0,
-
     "newline-per-chained-call": [2, {
       "ignoreChainWithDepth": 5
     }],
-    "space-in-parens": 0,
     "key-spacing": 0,
     "no-unused-vars": [2, {
       "vars": "all",
       "args": "none"
     }],
-    "max-len": 0,
-    "padded-blocks": 0,
-
     "no-continue": 0,
     "import/no-extraneous-dependencies": 0,
-    "import/newline-after-import": 0,
     "no-mixed-operators": 0,
-
     "prefer-template": 0,
-    "indent": 0,
     "no-trailing-spaces": [1, {
       "skipBlankLines": true
     }],
