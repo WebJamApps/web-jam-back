@@ -12,7 +12,8 @@ const cors = require('cors');
 const enforce = require('express-sslify');
 
 const corsOptions =
-  { origin: JSON.parse(process.env.AllowUrl).urls,
+  {
+    origin: JSON.parse(process.env.AllowUrl).urls,
     credentials: true,
     optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
   };
@@ -38,7 +39,7 @@ app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
 // mongoose.connect(process.env.MONGO_DB_URI);
 mongoose.connect(process.env.MONGO_DB_URI, {
-    /* other options */
+  /* other options */
 });
 app.use(helmet());
 app.use(bodyParser.urlencoded({ extended: true }));

@@ -3,11 +3,12 @@ const authUtils = require('../../auth/authUtils');
 
 let previousId = '';
 describe('The volunteer opportunity feature', () => {
+  let allowedUrl = [];
   beforeEach((done) => {
     mockgoose(mongoose).then(() => {
-        // VolOpp1.collection.drop();
+      // VolOpp1.collection.drop();
       VolOpp1.ensureIndexes(() => {
-        allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+        allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; //eslint-disable-line
         global.server = require('../../index'); // eslint-disable-line global-require
         done();
       });
@@ -15,14 +16,14 @@ describe('The volunteer opportunity feature', () => {
   });
   it('should create a new volunteer opportunity', (done) => {
     chai.request(server)
-    .post('/volopp/create')
-    .set({ origin: allowedUrl })
-    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    .send({ voName: 'clean the homeless shelter', voCharityId: '333333', voCharityName: 'Rescue Mission' })
-    .end((err, res) => {
-      expect(res).to.have.status(201);
-      done();
-    });
+      .post('/volopp/create')
+      .set({ origin: allowedUrl })
+      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .send({ voName: 'clean the homeless shelter', voCharityId: '333333', voCharityName: 'Rescue Mission' })
+      .end((err, res) => {
+        expect(res).to.have.status(201);
+        done();
+      });
   });
 
   it('should find all events that were scheduled by a particular charity', (done) => {
@@ -31,13 +32,13 @@ describe('The volunteer opportunity feature', () => {
     voOp.voCharityId = '44444';
     voOp.voCharityName = 'painters';
     chai.request(server)
-    .get('/volopp/44444')
-    .set({ origin: allowedUrl })
-    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    .end((err, res) => {
-      expect(res).to.have.status(200);
-      done();
-    });
+      .get('/volopp/44444')
+      .set({ origin: allowedUrl })
+      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .end((err, res) => {
+        expect(res).to.have.status(200);
+        done();
+      });
   });
 
   it('should find all events', (done) => {
@@ -47,13 +48,13 @@ describe('The volunteer opportunity feature', () => {
     voOp4.voCharityName = 'painters';
     voOp4.save((err) => {
       chai.request(server)
-      .get('/volopp/getall')
-      .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-      .end((err, res) => {
-        expect(res).to.have.status(200);
-        done();
-      });
+        .get('/volopp/getall')
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .end((err, res) => {
+          expect(res).to.have.status(200);
+          done();
+        });
     });
   });
 
@@ -64,14 +65,14 @@ describe('The volunteer opportunity feature', () => {
     voOp2.voCharityName = 'painters';
     const eventid = voOp2._id;
     chai.request(server)
-    .get('/volopp/get/' + eventid)
-    .set({ origin: allowedUrl })
-    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    .end((err, res) => {
+      .get('/volopp/get/' + eventid)
+      .set({ origin: allowedUrl })
+      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .end((err, res) => {
       // expect(
       //   res).to.have.status(200);
-      done();
-    });
+        done();
+      });
   });
 
   it('should modify an event', (done) => {
@@ -83,15 +84,15 @@ describe('The volunteer opportunity feature', () => {
     const eventid = voOp3._id;
     previousId = eventid;
     chai.request(server)
-    .put('/volopp/' + eventid)
-    .set({ origin: allowedUrl })
-    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    .send({ voCharityName: 'foobar' })
-    .end((err, res) => {
-      expect(res).to.have.status(200);
-      expect(res.nModified > 0);
-      done();
-    });
+      .put('/volopp/' + eventid)
+      .set({ origin: allowedUrl })
+      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .send({ voCharityName: 'foobar' })
+      .end((err, res) => {
+        expect(res).to.have.status(200);
+        expect(res.nModified > 0);
+        done();
+      });
   });
 
   it('should respond with 404 error when update by id has an id that does not exist', (done) => {
@@ -103,15 +104,15 @@ describe('The volunteer opportunity feature', () => {
     // const eventid = voOp3._id;
     // voOp3.collection.drop(() => {
     chai.request(server)
-    .put('/volopp/' + previousId)
-    .set({ origin: allowedUrl })
-    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    .send({ voCharityName: 'foobar' })
-    .end((err, res) => {
-      expect(res).to.have.status(404);
-      expect(res.nModified === 0);
-      done();
-    });
+      .put('/volopp/' + previousId)
+      .set({ origin: allowedUrl })
+      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .send({ voCharityName: 'foobar' })
+      .end((err, res) => {
+        expect(res).to.have.status(404);
+        expect(res.nModified === 0);
+        done();
+      });
   // });
   });
 
@@ -122,12 +123,12 @@ describe('The volunteer opportunity feature', () => {
     event.voCharityName = ['fuzzies'];
     event.save();
     chai.request(server)
-    .delete('/volopp/' + event._id)
-    .set({ origin: allowedUrl })
-    .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    .end((err, res) => {
-      expect(res).to.have.status(204);
-      done();
-    });
+      .delete('/volopp/' + event._id)
+      .set({ origin: allowedUrl })
+      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .end((err, res) => {
+        expect(res).to.have.status(204);
+        done();
+      });
   });
 });

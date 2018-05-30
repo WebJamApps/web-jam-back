@@ -9,9 +9,9 @@ router.route('/')
 //   .post((...args) => controller.create(...args));
 
 router.route('/:id')
-.put((...args) => controller.update(...args))
-.get((...args) => controller.findById(...args))
-.delete((...args) => controller.findByIdAndRemove(...args));
+  .put((...args) => controller.update(...args))
+  .get((...args) => controller.findById(...args))
+  .delete((...args) => controller.findByIdAndRemove(...args));
 
 // router.route('/delete/:id')
 // .get((...args) => controller.findByIdAndRemove(...args));

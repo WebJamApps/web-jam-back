@@ -11,7 +11,6 @@ class UserController extends Controller {
         return res.status(200).json(collection);
       });
   }
-
 }
 
 module.exports = new UserController(userModel);

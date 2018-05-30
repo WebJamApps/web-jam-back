@@ -34,7 +34,7 @@ userSchema.pre('save', function (next) {
   if (!user.isModified('password') || user.password === '') {
     return next();
   }
-  bcrypt.genSalt(10, (err, salt) => {
+  return bcrypt.genSalt(10, (err, salt) => {
     bcrypt.hash(user.password, salt, (err, hash) => {
       user.password = hash;
       next();
