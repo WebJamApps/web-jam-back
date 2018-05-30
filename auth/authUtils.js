@@ -29,7 +29,7 @@ class AuthUtils {
       return res.status(401).send({ message: err.message });
     }
     req.user = payload.sub;
-    next();
+    return next();
   }
 
   static sendGridEmail(bodyhtml, toemail, subjectline) {
@@ -94,6 +94,6 @@ class AuthUtils {
     }
     return '';
   }
-  }
+}
 
 module.exports = AuthUtils;

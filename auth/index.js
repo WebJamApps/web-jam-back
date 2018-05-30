@@ -1,5 +1,3 @@
-
-
 const express = require('express');
 // const authUtils = require('./authUtils');
 const authController = require('./auth.controller.js');
@@ -20,7 +18,8 @@ router.post('/google', google.authenticate);
 router.post('/login', authController.login);
 router.put('/resetpass', authController.resetpass);
 router.put('/passwdreset', authController.passwdreset);
-router.put('/changeemail', authController.changeemail); // request is made and verification pin is sent to new email, new email is stored in user.changeemail field
+router.put('/changeemail', authController.changeemail); // request is made and verification pin is sent to new email,
+// new email is stored in user.changeemail field
 router.put('/updateemail', authController.updateemail); // pin is processed and old email is replaced with new email
 // router.post('/linkedin', linkedin.authenticate);
 // router.post('/twitter', twitter.authenticate);
