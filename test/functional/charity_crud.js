@@ -4,12 +4,10 @@ const authUtils = require('../../auth/authUtils');
 describe('The charity feature', () => {
   let allowedUrl;
   beforeEach((done) => {
-    mockgoose(mongoose).then(() => {
-      Charity1.ensureIndexes(() => {
+    Charity1.ensureIndexes(() => {
         allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; // eslint-disable-line
-        global.server = require('../../index'); // eslint-disable-line global-require
-        done();
-      });
+      global.server = require('../../index'); // eslint-disable-line global-require
+      done();
     });
   });
   it('should create a new charity', (done) => {

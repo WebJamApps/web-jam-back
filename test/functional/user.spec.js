@@ -4,13 +4,11 @@ const authUtils = require('../../auth/authUtils');
 describe('functional test for users', () => {
   let allowedUrl;
   beforeEach((done) => {
-    mockgoose(mongoose).then(() => {
-      User1.collection.drop();
-      User1.ensureIndexes(() => {
+    User1.collection.drop();
+    User1.ensureIndexes(() => {
         allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; // eslint-disable-line
-        global.server = require('../../index'); // eslint-disable-line global-require
-        done();
-      });
+      global.server = require('../../index'); // eslint-disable-line global-require
+      done();
     });
   });
 

@@ -8,15 +8,12 @@ describe('The Unit Test for Google Module', () => {
   let userid;
 
   before((done) => {
-    // Set up an existing user
-    mockgoose(mongoose).then(() => {
-      const user = new User();
-      user.name = 'foo';
-      user.email = 'foo@example.com';
-      user.save((err) => {
-        userid = user._id.toString();
-        done();
-      });
+    const user = new User();
+    user.name = 'foo';
+    user.email = 'foo@example.com';
+    user.save((err) => {
+      userid = user._id.toString();
+      done();
     });
   });
 
