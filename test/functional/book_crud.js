@@ -4,12 +4,10 @@ const authUtils = require('../../auth/authUtils');
 describe('The library feature', () => {
   let allowedUrl;
   beforeEach((done) => {
-    mockgoose(mongoose).then(() => {
-      Book1.ensureIndexes(() => {
+    Book1.ensureIndexes(() => {
         allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; // eslint-disable-line
-        global.server = require('../../index'); // eslint-disable-line global-require
-        done();
-      });
+      global.server = require('../../index'); // eslint-disable-line global-require
+      done();
     });
   });
   it('should create a new book', (done) => {
