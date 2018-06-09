@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
-const Schema   = mongoose.Schema;
+
+const Schema = mongoose.Schema;
 const volOppSchema = new Schema({
   voName: { type: String, required: true },
   voCharityName: { type: String, required: true },

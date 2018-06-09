@@ -1,5 +1,5 @@
 const Model = require('../../lib/facade');
-const volOppSchema  = require('./volOpp-schema');
+const volOppSchema = require('./volOpp-schema');
 
 
 class VolOppModel extends Model {

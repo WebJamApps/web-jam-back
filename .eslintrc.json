@@ -1,31 +1,40 @@
 {
-  "extends": "airbnb",
+  "plugins": ["node", "security"],
+  "extends": ["plugin:node/recommended", "plugin:security/recommended", "airbnb"],
   "rules": {
-    "no-multi-spaces": 0,
-    "no-underscore-dangle": [0],
-    "consistent-return": 0,
-    "no-unused-expressions": [2, { "allowShortCircuit": true }],
+    "max-len": ["error", {
+      "code": 150
+    }],
+    "no-console": 0,
+    "comma-dangle": [0, "never"],
+    "no-undef": [0, "never"],
+    "no-underscore-dangle": [0, "never"],
+    "func-names": [0, "never"],
+    "no-restricted-syntax": [0, "never"],
+    "no-unused-expressions": [2, {
+      "allowShortCircuit": true
+    }],
     "no-param-reassign": 0,
-    "func-names": 0,
-    "space-before-function-paren": [2, "never"],
-    "comma-dangle": [2, "never"],
     "no-shadow": 0,
     "guard-for-in": 0,
-    "no-restricted-syntax": [2, "WithStatement"],
-    "newline-per-chained-call": [2, { "ignoreChainWithDepth": 5 }],
-    "space-in-parens": 0,
+    "newline-per-chained-call": [2, {
+      "ignoreChainWithDepth": 5
+    }],
     "key-spacing": 0,
-    "no-unused-vars": [2, { "vars": "all", "args": "none" }],
-    "max-len": 0,
-    "padded-blocks": 0,
-    "no-console": 0,
+    "no-unused-vars": [2, {
+      "vars": "all",
+      "args": "none"
+    }],
     "no-continue": 0,
     "import/no-extraneous-dependencies": 0,
-    "import/newline-after-import": 0,
     "no-mixed-operators": 0,
-    "no-undef": 0,
     "prefer-template": 0,
-    "indent": 0,
-    "no-trailing-spaces": [ 1, {"skipBlankLines" : true}]
+    "no-trailing-spaces": [1, {
+      "skipBlankLines": true
+    }],
+    "node/no-unpublished-require": 0,
+    "security/detect-unsafe-regex": 0,
+    "security/detect-object-injection": 0,
+    "prefer-destructuring": 0
   }
 }
