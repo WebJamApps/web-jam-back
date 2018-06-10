@@ -3,6 +3,7 @@ global.chai = require('chai');
 global.chaiHttp = require('chai-http');
 global.sinon = require('sinon');
 global.mongoose = require('mongoose');
+global.mockgoose = require('sinon-mongoose');
 
 mongoose.Promise = bluebird;
 process.env.NODE_ENV = 'test';
