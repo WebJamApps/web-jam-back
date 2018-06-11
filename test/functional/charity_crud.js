@@ -5,7 +5,7 @@ describe('The charity feature', () => {
   let allowedUrl;
   beforeEach((done) => {
     Charity1.ensureIndexes(() => {
-        allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; // eslint-disable-line
+      allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; // eslint-disable-line
       global.server = require('../../index'); // eslint-disable-line global-require
       done();
     });
