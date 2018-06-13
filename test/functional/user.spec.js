@@ -2,14 +2,10 @@ const User1 = require('../../model/user/user-schema');
 const authUtils = require('../../auth/authUtils');
 
 describe('functional test for users', () => {
-  let allowedUrl;
   beforeEach((done) => {
-    User1.collection.drop();
-    User1.ensureIndexes(() => {
-        allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; // eslint-disable-line
-      global.server = require('../../index'); // eslint-disable-line global-require
-      done();
-    });
+    // User1.collection.drop();
+    // User1.ensureIndexes(() => {});
+    // User1 = sinon.mock(User1);
   });
 
   it('should create a new user', (done) => {
