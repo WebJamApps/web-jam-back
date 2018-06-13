@@ -3,13 +3,9 @@ const authUtils = require('../../auth/authUtils');
 
 let previousId = '';
 describe('The volunteer opportunity feature', () => {
-  let allowedUrl = [];
   beforeEach((done) => {
-    VolOpp1.ensureIndexes(() => {
-        allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; //eslint-disable-line
-      global.server = require('../../index'); // eslint-disable-line global-require
-      done();
-    });
+    // VolOpp1.ensureIndexes(() => {});
+    // VolOpp1 = sinon.mock(VolOpp1);
   });
   it('should create a new volunteer opportunity', (done) => {
     chai.request(server)
