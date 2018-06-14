@@ -5,7 +5,8 @@ describe('functional test for users', () => {
   beforeEach((done) => {
     // User1.collection.drop();
     // User1.ensureIndexes(() => {});
-    // User1 = sinon.mock(User1);
+    sinon.mock(User1, 'find');
+    sinon.mock(User1, 'create');
   });
 
   it('should create a new user', (done) => {
