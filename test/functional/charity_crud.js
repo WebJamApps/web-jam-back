@@ -1,10 +1,14 @@
-let Charity1 = require('../../model/charity/charity-schema');
+const Charity1 = require('../../model/charity/charity-schema');
 const authUtils = require('../../auth/authUtils');
 
 describe('The charity feature', () => {
   beforeEach((done) => {
     // Charity1.ensureIndexes(() => {});
-    Charity1 = sinon.mock(Charity1);
+    sinon.mock(Charity1, 'find');
+    sinon.mock(Charity1)
+      .expects('save')
+      .chain('exec')
+      .resolves({});
   });
 
   it('should create a new charity', (done) => {
