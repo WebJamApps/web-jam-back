@@ -15,7 +15,7 @@
     "start": "node index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && npm run installglobals && yarn install",
     "debug": "node --inspect-brk index.js",
-    "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js",
+    "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js --timeout 10000",
     "test": "istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage && eslint .",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
     "test:lint": "eslint .",
