@@ -1,9 +1,10 @@
-let Book1 = require('../../model/book/book-schema');
+const Book1 = require('../../model/book/book-schema');
 const authUtils = require('../../auth/authUtils');
 
 describe('The library feature', () => {
   beforeEach(() => {
-    Book1 = sinon.mock(Book1);
+    sinon.mock(Book1, 'find');
+    sinon.mock(Book1, 'create');
   });
 
   it('should create a new book', (done) => {
@@ -103,7 +104,7 @@ describe('The library feature', () => {
   });
 
   it('should modify a book', (done) => {
-    const Book = Book1;
+    const Book = new Book1();
     Book.title = 'Flow Measurement';
     Book.type = 'hardback';
     Book.checkedOutBy = '123456';
@@ -121,7 +122,7 @@ describe('The library feature', () => {
   });
 
   it('should find the book by id', (done) => {
-    const Book2 = Book1;
+    const Book2 = new Book1();
     Book2.title = 'Flow Measurement';
     Book2.type = 'hardback';
     Book2.checkedOutBy = '123456';
