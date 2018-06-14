@@ -5,7 +5,8 @@ let previousId = '';
 describe('The volunteer opportunity feature', () => {
   beforeEach((done) => {
     // VolOpp1.ensureIndexes(() => {});
-    // VolOpp1 = sinon.mock(VolOpp1);
+    sinon.mock(VolOpp1, 'find');
+    sinon.mock(VolOpp1, 'create');
   });
   it('should create a new volunteer opportunity', (done) => {
     chai.request(server)
