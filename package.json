@@ -15,10 +15,8 @@
     "start": "node index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && npm run installglobals && yarn install",
     "debug": "node --inspect-brk index.js",
-    "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js --timeout 6000 --exit",
-    "test": "rm -rf coverage && nyc --reporter=html ./node_modules/.bin/_mocha --timeout 10000 -r ./test/bootstrap.js test/**/*.js --exit && eslint .",
+    "test": "rm -rf coverage && nyc --reporter=html --reporter=lcov ./node_modules/.bin/_mocha --timeout 10000 -r ./test/bootstrap.js test/**/*.js --exit && eslint .",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
-    "test:lint": "eslint .",
     "fix:lint": "./node_modules/eslint/bin/eslint.js --fix .",
     "snyk-protect": "snyk protect",
     "prepublish": "npm run snyk-protect"
