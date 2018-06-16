@@ -1,10 +1,7 @@
 describe('Index test', () => {
-  let allowedUrl;
-  beforeEach((done) => {
-      allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; // eslint-disable-line
-    global.server = require('../../index'); // eslint-disable-line global-require
-    done();
-  });
+
+  // beforeEach((done) => {
+  // });
 
   it('should return status 200 when use -> app.get', (done) => {
     chai.request(server)

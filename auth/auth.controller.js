@@ -2,7 +2,7 @@ const config = require('../config');
 const User = require('../model/user/user-schema');
 const authUtils = require('./authUtils');
 
-let { frontURL } = config.frontURL;
+let frontURL = config.frontURL;
 /* istanbul ignore if */
 if (process.env.NODE_ENV === 'production') {
   frontURL = 'https://web-jam.com';

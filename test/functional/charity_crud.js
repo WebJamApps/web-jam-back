@@ -2,14 +2,15 @@ const Charity1 = require('../../model/charity/charity-schema');
 const authUtils = require('../../auth/authUtils');
 
 describe('The charity feature', () => {
-  let allowedUrl;
   beforeEach((done) => {
-    Charity1.ensureIndexes(() => {
-        allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; // eslint-disable-line
-      global.server = require('../../index'); // eslint-disable-line global-require
-      done();
-    });
+    // Charity1.ensureIndexes(() => {});
+    sinon.mock(Charity1, 'find');
+    sinon.mock(Charity1)
+      .expects('save')
+      .chain('exec')
+      .resolves({});
   });
+
   it('should create a new charity', (done) => {
     chai.request(server)
       .post('/charity/create')

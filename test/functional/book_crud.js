@@ -2,14 +2,11 @@ const Book1 = require('../../model/book/book-schema');
 const authUtils = require('../../auth/authUtils');
 
 describe('The library feature', () => {
-  let allowedUrl;
-  beforeEach((done) => {
-    Book1.ensureIndexes(() => {
-        allowedUrl = JSON.parse(process.env.AllowUrl).urls[0]; // eslint-disable-line
-      global.server = require('../../index'); // eslint-disable-line global-require
-      done();
-    });
+  beforeEach(() => {
+    sinon.mock(Book1, 'find');
+    sinon.mock(Book1, 'create');
   });
+
   it('should create a new book', (done) => {
     chai.request(server)
       .post('/book/create')
@@ -21,6 +18,7 @@ describe('The library feature', () => {
         done();
       });
   });
+
   it('should remove all books', (done) => {
     chai.request(server)
       .get('/book/deleteall')
@@ -28,6 +26,7 @@ describe('The library feature', () => {
       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
       .send({})
       .end((err, res) => {
+        console.log(res.status);
         expect(res).to.have.status(200);
         done();
       });
@@ -42,12 +41,14 @@ describe('The library feature', () => {
       .get('/book/findcheckedout/33333')
       .set({ origin: allowedUrl })
       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-    // .send({})
+      .send({})
       .end((err, res) => {
+        console.log(res.status);
         expect(res).to.have.status(200);
         done();
       });
   });
+
   //
   // it('should raise error when no books are found', (done) => {
   //   Book1.collection.drop();
@@ -101,6 +102,7 @@ describe('The library feature', () => {
         done();
       });
   });
+
   it('should modify a book', (done) => {
     const Book = new Book1();
     Book.title = 'Flow Measurement';
@@ -118,6 +120,7 @@ describe('The library feature', () => {
         done();
       });
   });
+
   it('should find the book by id', (done) => {
     const Book2 = new Book1();
     Book2.title = 'Flow Measurement';
@@ -134,4 +137,5 @@ describe('The library feature', () => {
         done();
       });
   });
+
 });
