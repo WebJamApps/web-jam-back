@@ -1,8 +1,6 @@
 describe('Index test', () => {
-
   // beforeEach((done) => {
   // });
-
   it('should return status 200 when use -> app.get', (done) => {
     chai.request(server)
       .get('/anyUrl')

@@ -4,7 +4,6 @@ global.chaiHttp = require('chai-http');
 global.sinon = require('sinon');
 global.mongoose = require('mongoose');
 global.server = require('../index');
-
 require('sinon-mongoose');
 
 mongoose.Promise = bluebird;
