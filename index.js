@@ -51,8 +51,10 @@ app.get('*', (request, response) => {
   response.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
 });
 
-app.listen(config.server.port, () => {
-  console.log(`Magic happens on port ${config.server.port}`);
-});
+if (!module.parent) {
+  app.listen(config.server.port, () => {
+    console.log(`Magic happens on port ${config.server.port}`);
+  });
+}
 
 module.exports = app;

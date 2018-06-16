@@ -137,5 +137,4 @@ describe('The library feature', () => {
         done();
       });
   });
-
 });

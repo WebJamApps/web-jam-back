@@ -1,56 +1,56 @@
-version: 2
+version:               2
 jobs:
   build:
     working_directory: ~/web-jam-back
     # The primary container is an instance of the first list image listed. Your build commands run in this container.
     docker:
-      - image: circleci/node:8.11.1-browsers
+      - image:         circleci/node:8.11.3-browsers
     # The secondary container is an instance of the second listed image which is run in a common network where ports exposed on the primary container are available on localhost.
-      #- image: mongo:3.4.4
+      #- image:        mongo:3.4.4
     steps:
       - checkout
       - run:
-          name: Install globals
-          command: 'sudo npm install -g npm@latest && sudo npm install -g codeclimate-test-reporter'
+          name:        Install globals
+          command:     'sudo npm install -g npm@latest && sudo npm install -g codeclimate-test-reporter'
       - restore_cache:
-          key: dependency-cache-{{ checksum "package.json" }}
+          key:         dependency-cache-{{ checksum "package.json" }}
       - run:
-          name: Install npm wee
-          command: yarn install
+          name:        Install npm wee
+          command:     yarn install
       - save_cache:
-          key: dependency-cache-{{ checksum "package.json" }}
+          key:         dependency-cache-{{ checksum "package.json" }}
           paths:
             - node_modules
   test:
     docker:
-      - image: circleci/node:8.11.1-browsers
-      #- image: mongo:3.4.4
+      - image:         circleci/node:8.11.3-browsers
+      #- image:        mongo:3.4.4
     steps:
       - checkout
       - run:
-          name: Test install
-          command: 'sudo npm install -g npm@latest && sudo npm install -g codeclimate-test-reporter && yarn install'
+          name:        Test install
+          command:     'sudo npm install -g npm@latest && sudo npm install -g codeclimate-test-reporter && yarn install'
       #- run:
-      #    name: ubuntu dependancies
-      #    command: 'sudo apt-get update -y && sudo apt-get install -y apt-utils gconf-service libasound2 libatk1.0-0 libcups2 libdbus-1-3 libgconf-2-4 libgtk-3-0 libnspr4 libxcomposite1 libxss1 fonts-liberation libappindicator1 libnss3 lsb-release xdg-utils'
+      #    name:       ubuntu dependancies
+      #    command:    'sudo apt-get update -y && sudo apt-get install -y apt-utils gconf-service libasound2 libatk1.0-0 libcups2 libdbus-1-3 libgconf-2-4 libgtk-3-0 libnspr4 libxcomposite1 libxss1 fonts-liberation libappindicator1 libnss3 lsb-release xdg-utils'
       #- run:
-      #    name: install chrome
-      #    command: 'curl -s https://raw.githubusercontent.com/chronogolf/circleci-google-chrome/master/use_chrome_stable_version.sh | bash'
+      #    name:       install chrome
+      #    command:    'curl -s https://raw.githubusercontent.com/chronogolf/circleci-google-chrome/master/use_chrome_stable_version.sh | bash'
       - run:
-          name: test mocha
-          command: npm test
+          name:        test mocha
+          command:     npm test
       - run:
-          name: Generate code coverage
-          command: 'codeclimate-test-reporter < coverage/lcov.info'
+          name:        Generate code coverage
+          command:     'codeclimate-test-reporter < coverage/lcov.info'
       #- store_artifacts:
-      #    path: test-results.xml
-      #    prefix: tests
+      #    path:       test-results.xml
+      #    prefix:     tests
       - store_artifacts:
-          path: coverage
-          prefix: coverage
+          path:        coverage
+          prefix:      coverage
 
 workflows:
-  version: 2
+  version:             2
   build_and_test:
     jobs:
       #- build
@@ -59,4 +59,4 @@ workflows:
           #  - build
           #filters:
           #  branches:
-          #    only: master
+          #    only:   master
