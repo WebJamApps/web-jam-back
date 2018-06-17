@@ -28,8 +28,8 @@ app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
 
 // Handle rejected promises globally
 app.use((req, res, next) => {
+  /* istanbul ignore next */
   process.on('unhandledRejection', (reason, promise) => {
-    /* istanbul ignore next */
     next(new Error(reason));
   });
   next();
@@ -51,6 +51,8 @@ app.get('*', (request, response) => {
   response.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
 });
 
+// this if statement is only for mocha test that may spin up twice
+/* istanbul ignore if */
 if (!module.parent) {
   app.listen(config.server.port, () => {
     console.log(`Magic happens on port ${config.server.port}`);
