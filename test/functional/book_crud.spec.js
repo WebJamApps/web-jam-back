@@ -2,9 +2,18 @@ const Book1 = require('../../model/book/book-schema');
 const authUtils = require('../../auth/authUtils');
 
 describe('The library feature', () => {
-  beforeEach(() => {
-    sinon.mock(Book1, 'find');
-    sinon.mock(Book1, 'create');
+  let server, find, create, allowedUrl;
+  beforeEach(async () => {
+    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+    server = require('../../index'); // eslint-disable-line global-require
+    // global.server = require('../../index'); // eslint-disable-line global-require
+    find = await sinon.mock(Book1, 'find');
+    create = await sinon.mock(Book1, 'create');
+  });
+
+  afterEach(async () => {
+    find.restore();
+    create.restore();
   });
 
   it('should create a new book', (done) => {

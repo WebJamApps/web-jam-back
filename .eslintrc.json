@@ -35,6 +35,12 @@
     "node/no-unpublished-require": 0,
     "security/detect-unsafe-regex": 0,
     "security/detect-object-injection": 0,
-    "prefer-destructuring": 0
+    "prefer-destructuring": 0,
+    "one-var-declaration-per-line": [0, "never"],
+    "one-var": [2, {
+      "var": "never",
+      "let": "always",
+      "const": "never"
+    }]
   }
 }
