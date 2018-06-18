@@ -6,13 +6,10 @@ describe('The Charity feature', () => {
   beforeEach(async () => {
     allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
     server = require('../../index'); // eslint-disable-line global-require
-    // global.server = require('../../index'); // eslint-disable-line global-require
-    // find = await sinon.mock(Charity1, 'find');
     create = await sinon.mock(Charity1, 'create');
   });
 
   afterEach(async () => {
-    // find.restore();
     create.restore();
   });
 

@@ -1,24 +1,51 @@
-// const User1 = require('../../model/user/user-schema');
-// const authUtils = require('../../auth/authUtils');
-//
-// describe('functional test for users', () => {
-//   beforeEach((done) => {
-//     // User1.collection.drop();
-//     // User1.ensureIndexes(() => {});
-//     sinon.mock(User1, 'find');
-//     sinon.mock(User1, 'create');
-//   });
-//
-//   it('should create a new user', (done) => {
-//     const User = new User1();
-//     User.name = 'foo';
-//     User.email = 'foo@example.com';
-//     User.save((err) => {
-//       const id = User._id;
-//       expect(id).to.not.be.null; // eslint-disable-line no-unused-expressions
-//       done();
-//     });
-//   });
+const User1 = require('../../model/user/user-schema');
+const authUtils = require('../../auth/authUtils');
+
+describe('functional test for users', () => {
+  let server, allowedUrl;
+  beforeEach((done) => {
+    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+    server = require('../../index'); // eslint-disable-line global-require
+    done();
+  });
+
+  it('finds a user by email', async () => {
+    await User1.remove({ email:'foo3@example.com' });
+    const User2 = new User1();
+    User2.name = 'foo';
+    User2.email = 'foo3@example.com';
+    await User2.save();
+    try {
+      const cb = await chai.request(server)
+        .post('/user')
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .send({ email: 'foo3@example.com' });
+      expect(cb).to.have.status(200);
+    } catch (e) { throw e; }
+  });
+  it('catches error on find a user by email', async () => {
+    await User1.remove({ email:'foo3@example.com' });
+    const User2 = new User1();
+    User2.name = 'foo';
+    User2.email = 'foo3@example.com';
+    await User2.save();
+    const uMock = sinon.mock(User1);
+    uMock
+      .expects('find')
+      .chain('exec')
+      .rejects(new Error({}));
+    try {
+      const cb = await chai.request(server)
+        .post('/user')
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .send({ email: 'foo3@example.com' });
+      expect(cb).to.have.status(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
+
 //
 //   it('should not update a user when using a ID that does not exist', (done) => {
 //     const Uid = '587298a376d5036c68b6ef12';
@@ -113,21 +140,7 @@
 //       });
 //   });
 //
-//   it('should find a user by email', (done) => {
-//     const User2 = new User1();
-//     User2.name = 'foo';
-//     User2.email = 'foo3@example.com';
-//     User2.save();
-//     chai.request(server)
-//       .post('/user/')
-//       .set({ origin: allowedUrl })
-//       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-//       .send({ email: 'foo3@example.com' })
-//       .end((err, res) => {
-//         expect(res).to.have.status(200);
-//         done();
-//       });
-//   });
+
 //
 //   it('should NOT find a user by id', (done) => {
 //     const id = '587298a376d5036c68b6ef12';
@@ -744,4 +757,4 @@
 //         });
 //     });
 //   });
-// });
+});
