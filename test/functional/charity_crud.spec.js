@@ -13,7 +13,7 @@ describe('The Charity feature', () => {
     create.restore();
   });
 
-  it('should create a new charity', async () => {
+  it('creates a new charity', async () => {
     try {
       const cb = await chai.request(server)
         .post('/charity/create')
@@ -34,7 +34,7 @@ describe('The Charity feature', () => {
   //   } catch (e) { throw e; }
   // });
 
-  it('should get the charity by its id', async () => {
+  it('gets the charity by its id', async () => {
     const Charity = new Charity1();
     Charity.charityName = 'foo';
     Charity.charityZipCode = '12345';
@@ -50,7 +50,7 @@ describe('The Charity feature', () => {
     Charity1.remove({ name:'foo' });
   });
 
-  it('should get the charity by its manager id', async () => {
+  it('gets the charity by manager id', async () => {
     const Charity = new Charity1();
     Charity.charityName = 'foo';
     Charity.charityZipCode = '12345';
@@ -66,7 +66,7 @@ describe('The Charity feature', () => {
     await Charity1.remove({ name:'foo' });
   });
 
-  it('should update the charity', async () => {
+  it('updates the charity', async () => {
     const Charity = new Charity1();
     Charity.charityName = 'fooberrypie3';
     Charity.charityZipCode = '12345';
@@ -83,7 +83,7 @@ describe('The Charity feature', () => {
     await Charity1.remove({ name:'barbasol' });
   });
 
-  it('should delete the charity', async () => {
+  it('deletes the charity', async () => {
     const Charity = new Charity1();
     Charity.charityName = 'fooberrypie4';
     Charity.charityZipCode = '12345';
@@ -95,7 +95,7 @@ describe('The Charity feature', () => {
         .set({ origin: allowedUrl })
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
         // .send({ charityName:'barbasol' });
-      expect(cb).to.have.status(204);
+      expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   //  await Charity1.remove({ name:'barbasol' });
   });

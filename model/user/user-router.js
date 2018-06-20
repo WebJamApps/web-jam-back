@@ -1,15 +1,12 @@
 const controller = require('./user-controller');
-const Router = require('express').Router;
-
-const router = new Router();
-
+const router = require('express').Router();
 
 router.route('/')
   .post((...args) => controller.find(...args)); // find by email
 
 router.route('/:id')
-  .put((...args) => controller.update(...args))
   .get((...args) => controller.findById(...args))
+  .put((...args) => controller.update(...args))
   .delete((...args) => controller.findByIdAndRemove(...args));
 
 module.exports = router;
