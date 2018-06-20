@@ -1,7 +1,5 @@
 const controller = require('./volOpp-controller');
-const Router = require('express').Router;
-
-const router = new Router();
+const router = require('express').Router();
 
 router.route('/getall')
   .get((...args) => controller.find(...args));

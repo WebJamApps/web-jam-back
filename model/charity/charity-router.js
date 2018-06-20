@@ -1,6 +1,5 @@
 const controller = require('./charity-controller');
-// const Router = require('express').Router;
-const router = require('../../lib/router-base');
+const router = require('express').Router();
 
 router.route('/create')
   .post((...args) => controller.create(...args));

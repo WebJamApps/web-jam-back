@@ -1,6 +1,4 @@
-const Router = require('express').Router;
-
-const router = new Router();
+const router = require('express').Router();
 const user = require('./model/user/user-router');
 const book = require('./model/book/book-router');
 const charity = require('./model/charity/charity-router');
