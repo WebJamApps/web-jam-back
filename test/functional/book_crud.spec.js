@@ -112,38 +112,36 @@ describe('The library feature', () => {
       });
   });
 
-  it('should modify a book', (done) => {
+  it('should modify a book', async () => {
+    await Book1.remove({ title:'Flow Measurement' });
     const Book = new Book1();
     Book.title = 'Flow Measurement';
     Book.type = 'hardback';
     Book.checkedOutBy = '123456';
-    Book.save();
-    chai.request(server)
-      .put('/book/' + Book.id)
-      .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-      .send({ checkedOutBy: '' })
-      .end((err, res) => {
-        expect(res).to.have.status(200);
-        expect(res.nModified > 0);
-        done();
-      });
+    const newBook = await Book.save();
+    try {
+      const cb = await chai.request(server)
+        .put('/book/' + newBook.id)
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .send({ checkedOutBy: '' });
+      expect(cb).to.have.status(200);
+      expect(cb.body.nModified > 0).to.equal(true);
+    } catch (e) { throw e; }
   });
-
-  it('should find the book by id', (done) => {
+  it('should find the book by id', async () => {
+    await Book1.remove({ title:'Flow Measurement' });
     const Book2 = new Book1();
     Book2.title = 'Flow Measurement';
     Book2.type = 'hardback';
     Book2.checkedOutBy = '123456';
-    // Book._id = '83';
-    Book2.save();
-    chai.request(server)
-      .get('/book/' + Book2.id)
-      .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ')
-      .end((err, res) => {
-        expect(res).to.have.status(200);
-        done();
-      });
+    const newBook = await Book2.save();
+    try {
+      const cb = await chai.request(server)
+        .get('/book/' + newBook._id)
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ');
+      expect(cb).to.have.status(200);
+    } catch (e) { throw e; }
   });
 });
