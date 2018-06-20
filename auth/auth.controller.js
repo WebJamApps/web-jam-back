@@ -37,16 +37,16 @@ exports.signup = function (req, res) {
       existingUser.resetCode = randomNumba;
       userSave = existingUser;
     }
-    return userSave.save(() => {
-      const mailbody = '<h1>Welcome ' + user.name +
+    return userSave.save()
+      .then((doc) => {
+        const mailbody = '<h1>Welcome ' + user.name +
       ' to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" ' +
       'href="' + frontURL + '/userutil/?email=' + user.email + '">link</a>, then enter the following code to verify your email: <br><br><strong>' +
       randomNumba + '</strong></p>';
-      authUtils.sendGridEmail(mailbody, user.email, 'Verify Your Email Address');
-      res.status(201).json({ email: user.email });
-    }).catch((err) => {
-      res.status(400).json({ message: 'New user failed to save to mongodb', error: err });
-    });
+        authUtils.sendGridEmail(mailbody, user.email, 'Verify Your Email Address');
+        res.status(201).json({ email: user.email, user: doc });
+      })
+      .catch((err) => { res.status(500).json({ message: 'New user failed to save to mongodb', error: err }); });
   });
 };
 

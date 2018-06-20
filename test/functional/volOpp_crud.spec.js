@@ -1,7 +1,7 @@
 const VolOpp1 = require('../../model/volOpp/volOpp-schema');
 const authUtils = require('../../auth/authUtils');
 
-let previousId = '';
+const previousId = '';
 describe('The volunteer opportunity feature', () => {
   let server, allowedUrl;
   beforeEach((done) => {
@@ -65,24 +65,22 @@ describe('The volunteer opportunity feature', () => {
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
-  it('should modify an event', (done) => {
+  it('update modify an event', async () => {
+    await VolOpp1.remove({ voName: 'paint' });
     const voOp3 = new VolOpp1();
     voOp3.voName = 'paint';
     voOp3.voCharityId = '44444';
     voOp3.voCharityName = 'painters';
-    voOp3.save();
-    const eventid = voOp3._id;
-    previousId = eventid;
-    chai.request(server)
-      .put('/volopp/' + eventid)
-      .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-      .send({ voCharityName: 'foobar' })
-      .end((err, res) => {
-        expect(res).to.have.status(200);
-        expect(res.nModified > 0);
-        done();
-      });
+    const newEvent = await voOp3.save();
+    try {
+      const cb = await chai.request(server)
+        .put('/volopp/' + newEvent._id)
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .send({ voCharityName: 'foobar' });
+      expect(cb).to.have.status(200);
+      expect(cb.body.nModified > 0);
+    } catch (e) { throw e; }
   });
   it('should respond with 404 error when update by id has an id that does not exist', (done) => {
     const voOp3 = new VolOpp1();
