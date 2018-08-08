@@ -4,25 +4,17 @@ const authUtils = require('./authUtils');
 
 let frontURL = config.frontURL;
 /* istanbul ignore if */
-if (process.env.NODE_ENV === 'production') {
-  frontURL = 'https://web-jam.com';
-}
+if (process.env.NODE_ENV === 'production') frontURL = 'https://web-jam.com';
 
 exports.signup = function (req, res) {
   const randomNumba = authUtils.generateCode(99999, 10000);
   const user = new User({
     name: req.body.name,
-    id: req.body.id,
     verifiedEmail: false,
     email: req.body.email,
     password: req.body.password,
     isPswdReset: false,
     resetCode: randomNumba,
-    first_name: req.body.first_name,
-    last_name: req.body.last_name,
-    interests: req.body.interests,
-    affiliation: req.body.affiliation,
-    organisms: req.body.organisms
   });
   User.findOne({ email: req.body.email }, (err, existingUser) => {
     if (existingUser && existingUser.verifiedEmail) {
@@ -78,7 +70,6 @@ exports.login = function (req, res) {
     } if (!user.verifiedEmail) {
       return res.status(401).json({ message: '<a href="/userutil">Verify</a> your email' });
     }
-    // authUtils.verifySaveUser(user, req, res);
     return user.comparePassword(req.body.password, (err, isMatch) => {
       if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
       return authUtils.saveSendToken(user, req, res);
@@ -88,7 +79,6 @@ exports.login = function (req, res) {
 
 exports.resetpass = function (req, res) {
   console.log('email:' + req.body.email);
-  // User.findOne({ $or:[{ email: req.body.email }, { id: req.body.email }] }, (err, user) => {
   User.findOne({ email: req.body.email }, (err, user) => {
     console.log(user);
     if (!user) {

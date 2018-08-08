@@ -42,9 +42,7 @@ class AuthUtils {
       html: bodyhtml
     };
     /* istanbul ignore if */
-    if (process.env.NODE_ENV !== 'test') {
-      sgMail.send(msg);
-    }
+    if (process.env.NODE_ENV !== 'test') sgMail.send(msg);
   }
 
   static generateCode(hi, low) {
@@ -52,25 +50,6 @@ class AuthUtils {
     const max = Math.floor(hi);
     return Math.floor(Math.random() * (max - min)) + min;
   }
-
-  // static verifySaveUser(user, req, res) {
-  //   // let hascode = false;
-  //   // let hasnewemail = false;
-  //   // if (user.resetCode !== '' && user.resetCode !== null && user.resetCode !== undefined) {
-  //   //   hascode = true;
-  //   // }
-  //   // if (user.changeemail !== null && user.changeemail !== '' && user.changeemail !== undefined) {
-  //   //   hasnewemail = true;
-  //   // }
-  //   // this checks if it is a brand new email that has not yet been verified
-  //   // if (hascode && !user.isPswdReset && !hasnewemail) {
-  //   //   return res.status(401).json({ message: 'Validate your email address or click forgot password link to reset' });
-  //   // }
-  //   user.comparePassword(req.body.password, (err, isMatch) => {
-  //     if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
-  //     this.saveSendToken(user, req, res);
-  //   });
-  // }
 
   static saveSendToken(user, req, res) {
     const userToken = { token: this.createJWT(user), email: user.email };
