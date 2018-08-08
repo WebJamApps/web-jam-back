@@ -6,17 +6,16 @@ const helmet = require('helmet');
 const bodyParser = require('body-parser');
 const morgan = require('morgan');
 const bluebird = require('bluebird');
-const config = require('./config');
-const routes = require('./routes');
 const cors = require('cors');
 const enforce = require('express-sslify');
+const config = require('./config');
+const routes = require('./routes');
 
-const corsOptions =
-  {
-    origin: JSON.parse(process.env.AllowUrl).urls,
-    credentials: true,
-    optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
-  };
+const corsOptions = {
+  origin: JSON.parse(process.env.AllowUrl).urls,
+  credentials: true,
+  optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
+};
 const app = express();
 
 /* istanbul ignore if */

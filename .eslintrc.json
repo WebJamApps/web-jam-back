@@ -2,6 +2,7 @@
   "plugins": ["node", "security"],
   "extends": ["plugin:node/recommended", "plugin:security/recommended", "airbnb"],
   "rules": {
+    "no-shadow": 0,
     "max-len": ["error", {
       "code": 150
     }],
@@ -15,7 +16,6 @@
       "allowShortCircuit": true
     }],
     "no-param-reassign": 0,
-    "no-shadow": 0,
     "guard-for-in": 0,
     "newline-per-chained-call": [2, {
       "ignoreChainWithDepth": 5

@@ -1,7 +1,7 @@
 const moment = require('moment');
 const jwt = require('jwt-simple');
-const config = require('../config');
 const sgMail = require('@sendgrid/mail');
+const config = require('../config');
 
 class AuthUtils {
   static createJWT(user) {
@@ -77,8 +77,7 @@ class AuthUtils {
     user.isPswdReset = false;
     user.resetCode = '';
     user.changeemail = '';
-    user.save(err =>
-      res.status(200).json(userToken));
+    user.save(err => res.status(200).json(userToken));
   }
 
   static checkEmailSyntax(req, res) {

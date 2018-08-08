@@ -1,5 +1,5 @@
-const controller = require('./user-controller');
 const router = require('express').Router();
+const controller = require('./user-controller');
 
 router.route('/')
   .post((...args) => controller.find(...args)); // find by email
