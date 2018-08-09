@@ -1,7 +1,7 @@
 const moment = require('moment');
 const jwt = require('jwt-simple');
-const config = require('../config');
 const sgMail = require('@sendgrid/mail');
+const config = require('../config');
 
 class AuthUtils {
   static createJWT(user) {
@@ -29,7 +29,7 @@ class AuthUtils {
       return res.status(401).send({ message: err.message });
     }
     req.user = payload.sub;
-    next();
+    return next();
   }
 
   static sendGridEmail(bodyhtml, toemail, subjectline) {
@@ -42,9 +42,7 @@ class AuthUtils {
       html: bodyhtml
     };
     /* istanbul ignore if */
-    if (process.env.NODE_ENV !== 'test') {
-      sgMail.send(msg);
-    }
+    if (process.env.NODE_ENV !== 'test') sgMail.send(msg);
   }
 
   static generateCode(hi, low) {
@@ -53,47 +51,27 @@ class AuthUtils {
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-  // static verifySaveUser(user, req, res) {
-  //   // let hascode = false;
-  //   // let hasnewemail = false;
-  //   // if (user.resetCode !== '' && user.resetCode !== null && user.resetCode !== undefined) {
-  //   //   hascode = true;
-  //   // }
-  //   // if (user.changeemail !== null && user.changeemail !== '' && user.changeemail !== undefined) {
-  //   //   hasnewemail = true;
-  //   // }
-  //   // this checks if it is a brand new email that has not yet been verified
-  //   // if (hascode && !user.isPswdReset && !hasnewemail) {
-  //   //   return res.status(401).json({ message: 'Validate your email address or click forgot password link to reset' });
-  //   // }
-  //   user.comparePassword(req.body.password, (err, isMatch) => {
-  //     if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
-  //     this.saveSendToken(user, req, res);
-  //   });
-  // }
-
   static saveSendToken(user, req, res) {
     const userToken = { token: this.createJWT(user), email: user.email };
     user.isPswdReset = false;
     user.resetCode = '';
     user.changeemail = '';
-    user.save(err =>
-      res.status(200).json(userToken));
-    }
-
-    static checkEmailSyntax(req, res) {
-      if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
-        return console.log('email is valid');
-      }
-      return res.status(409).json({ message: 'Email address is not a valid format' });
-    }
-
-    static setIfExists(item) {
-      if (item !== '' && item !== null && item !== undefined) {
-        return item;
-      }
-      return '';
-    }
+    user.save(err => res.status(200).json(userToken));
   }
 
-  module.exports = AuthUtils;
+  static checkEmailSyntax(req, res) {
+    if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
+      return console.log('email is valid');
+    }
+    return res.status(409).json({ message: 'Email address is not a valid format' });
+  }
+
+  static setIfExists(item) {
+    if (item !== '' && item !== null && item !== undefined) {
+      return item;
+    }
+    return '';
+  }
+}
+
+module.exports = AuthUtils;

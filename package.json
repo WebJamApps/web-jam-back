@@ -1,10 +1,10 @@
 {
   "name": "web-jam-back",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "8.11.1"
+    "node": ">=10.8.0"
   },
   "license": "MIT",
   "scripts": {
@@ -15,12 +15,14 @@
     "start": "node index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && npm run installglobals && yarn install",
     "debug": "node --inspect-brk index.js",
-    "mocha": "mocha  -r ./test/bootstrap.js test/**/*.js",
-    "test": "eslint . && istanbul  cover  ./node_modules/.bin/_mocha  -r ./test/bootstrap.js test/**/*.js  --coverage --dir ./coverage",
+    "test": "rm -rf coverage && nyc --reporter=html --reporter=lcov ./node_modules/.bin/_mocha --timeout 6000 -r ./test/bootstrap.js test/**/*.js --exit && eslint .",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
-    "eslint-fix": "./node_modules/eslint/bin/eslint.js --fix .",
+    "fix:lint": "./node_modules/eslint/bin/eslint.js --fix .",
     "snyk-protect": "snyk protect",
     "prepublish": "npm run snyk-protect"
+  },
+  "nyc": {
+    "exclude": ["**/*.spec.js", "test"]
   },
   "repository": {
     "type": "git",
@@ -33,32 +35,36 @@
     "bluebird": "^3.4.1",
     "body-parser": "^1.17.1",
     "cors": "^2.8.1",
-    "dotenv": "^2.0.0",
+    "dotenv": "^6.0.0",
     "express": "^4.15.2",
     "express-sslify": "^1.2.0",
     "helmet": "^3.6.1",
     "jwt-simple": "^0.5.0",
     "lodash": "^4.15.0",
     "moment": "^2.15.2",
-    "mongoose": "^4.10.0",
+    "mongoose": "^5.2.7",
     "morgan": "^1.8.1",
-    "request": "^2.78.0",
-    "snyk": "^1.69.10"
+    "request": "^2.87.0",
+    "request-promise": "4.2.2"
   },
   "devDependencies": {
-    "chai": "^3.5.0",
-    "chai-http": "^3.0.0",
-    "eslint": "^3.2.2",
-    "eslint-config-airbnb": "^14.1.0",
-    "eslint-plugin-import": "^2.2.0",
-    "eslint-plugin-jsx-a11y": "^4.0.0",
-    "eslint-plugin-react": "^6.0.0",
+    "chai": "^4.1.2",
+    "chai-http": "^4.0.0",
+    "eslint": "^5.3.0",
+    "eslint-config-airbnb": "^17.0.0",
+    "eslint-plugin-import": "^2.13.0",
+    "eslint-plugin-jsx-a11y": "^6.0.3",
+    "eslint-plugin-node": "^7.0.1",
+    "eslint-plugin-react": "^7.10.0",
+    "eslint-plugin-security": "^1.4.0",
     "istanbul": "^0.4.5",
-    "mocha": "^3.1.2",
-    "mockgoose": "^6.0.8",
-    "nock": "^9.0.13",
-    "nodemon": "^1.9.2",
-    "sinon": "^4.4.6"
+    "mocha": "^5.2.0",
+    "nock": "^9.2.6",
+    "nodemon": "^1.17.4",
+    "nyc": "^12.0.2",
+    "sinon": "^6.1.4",
+    "sinon-mongoose": "^2.1.1",
+    "snyk": "^1.90.0"
   },
   "snyk": true
 }

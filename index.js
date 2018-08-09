@@ -1,21 +1,22 @@
 
-const path       = require('path');
-const express    = require('express');
-const mongoose   = require('mongoose');
-const helmet     = require('helmet');
+const path = require('path');
+const express = require('express');
+const mongoose = require('mongoose');
+const helmet = require('helmet');
 const bodyParser = require('body-parser');
-const morgan     = require('morgan');
-const bluebird   = require('bluebird');
-const config = require('./config');
-const routes = require('./routes');
+const morgan = require('morgan');
+const bluebird = require('bluebird');
 const cors = require('cors');
 const enforce = require('express-sslify');
-const corsOptions =
-{ origin: JSON.parse(process.env.AllowUrl).urls,
+const config = require('./config');
+const routes = require('./routes');
+
+const corsOptions = {
+  origin: JSON.parse(process.env.AllowUrl).urls,
   credentials: true,
   optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
-const app  = express();
+const app = express();
 
 /* istanbul ignore if */
 if (process.env.NODE_ENV === 'production') {
@@ -26,8 +27,8 @@ app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
 
 // Handle rejected promises globally
 app.use((req, res, next) => {
+  /* istanbul ignore next */
   process.on('unhandledRejection', (reason, promise) => {
-    /* istanbul ignore next */
     next(new Error(reason));
   });
   next();
@@ -37,7 +38,6 @@ app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
 // mongoose.connect(process.env.MONGO_DB_URI);
 mongoose.connect(process.env.MONGO_DB_URI, {
-  useMongoClient: true
   /* other options */
 });
 app.use(helmet());
@@ -50,8 +50,12 @@ app.get('*', (request, response) => {
   response.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
 });
 
-app.listen(config.server.port, () => {
-  console.log(`Magic happens on port ${config.server.port}`);
-});
+// this if statement is only for mocha test that may spin up twice
+/* istanbul ignore if */
+if (!module.parent) {
+  app.listen(config.server.port, () => {
+    console.log(`Magic happens on port ${config.server.port}`);
+  });
+}
 
 module.exports = app;
