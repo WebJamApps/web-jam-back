@@ -1,8 +1,8 @@
 const sinon = require('sinon');
-const authUtils = require('../../auth/authUtils');
 const jwt = require('jwt-simple');
-const config = require('../../config');
 const moment = require('moment');
+const authUtils = require('../../auth/authUtils');
+const config = require('../../config');
 
 describe('The Unit Test for authUtils Module', () => {
   describe('createJWT', () => {

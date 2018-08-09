@@ -1,5 +1,5 @@
-const User = require('../model/user/user-schema');
 const request = require('request');
+const User = require('../model/user/user-schema');
 const authUtils = require('./authUtils');
 
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';

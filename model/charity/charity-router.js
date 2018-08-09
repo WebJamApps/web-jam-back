@@ -1,5 +1,5 @@
-const controller = require('./charity-controller');
 const router = require('express').Router();
+const controller = require('./charity-controller');
 
 router.route('/create')
   .post((...args) => controller.create(...args));

@@ -1,8 +1,8 @@
+const jwt = require('jwt-simple');
+const nock = require('nock');
 const google = require('../../auth/google');
 const User = require('../../model/user/user-schema');
-const jwt = require('jwt-simple');
 const config = require('../../config');
-const nock = require('nock');
 
 describe('The Unit Test for Google Module', () => {
   let userid;

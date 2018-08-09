@@ -4,25 +4,17 @@ const authUtils = require('./authUtils');
 
 let frontURL = config.frontURL;
 /* istanbul ignore if */
-if (process.env.NODE_ENV === 'production') {
-  frontURL = 'https://web-jam.com';
-}
+if (process.env.NODE_ENV === 'production') frontURL = 'https://web-jam.com';
 
 exports.signup = function (req, res) {
   const randomNumba = authUtils.generateCode(99999, 10000);
   const user = new User({
     name: req.body.name,
-    id: req.body.id,
     verifiedEmail: false,
     email: req.body.email,
     password: req.body.password,
     isPswdReset: false,
     resetCode: randomNumba,
-    first_name: req.body.first_name,
-    last_name: req.body.last_name,
-    interests: req.body.interests,
-    affiliation: req.body.affiliation,
-    organisms: req.body.organisms
   });
   User.findOne({ email: req.body.email }, (err, existingUser) => {
     if (existingUser && existingUser.verifiedEmail) {
@@ -39,10 +31,10 @@ exports.signup = function (req, res) {
     }
     return userSave.save()
       .then((doc) => {
-        const mailbody = '<h1>Welcome ' + user.name +
-      ' to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" ' +
-      'href="' + frontURL + '/userutil/?email=' + user.email + '">link</a>, then enter the following code to verify your email: <br><br><strong>' +
-      randomNumba + '</strong></p>';
+        const mailbody = '<h1>Welcome ' + user.name
+      + ' to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" '
+      + 'href="' + frontURL + '/userutil/?email=' + user.email + '">link</a>, then enter the following code to verify your email: <br><br><strong>'
+      + randomNumba + '</strong></p>';
         authUtils.sendGridEmail(mailbody, user.email, 'Verify Your Email Address');
         res.status(201).json({ email: user.email, user: doc });
       })
@@ -78,7 +70,6 @@ exports.login = function (req, res) {
     } if (!user.verifiedEmail) {
       return res.status(401).json({ message: '<a href="/userutil">Verify</a> your email' });
     }
-    // authUtils.verifySaveUser(user, req, res);
     return user.comparePassword(req.body.password, (err, isMatch) => {
       if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
       return authUtils.saveSendToken(user, req, res);
@@ -88,7 +79,6 @@ exports.login = function (req, res) {
 
 exports.resetpass = function (req, res) {
   console.log('email:' + req.body.email);
-  // User.findOne({ $or:[{ email: req.body.email }, { id: req.body.email }] }, (err, user) => {
   User.findOne({ email: req.body.email }, (err, user) => {
     console.log(user);
     if (!user) {
@@ -102,11 +92,11 @@ exports.resetpass = function (req, res) {
     user.isPswdReset = true;
     return user.save((err) => {
       res.status(201).json({ email: user.email });
-      const mailBody = '<h2>A password reset was requested for ' + user.name +
-      '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="' +
-      frontURL + '/userutil/?email=' + user.email + '&form=reset">' +
-      'link</a>, then enter the following code to reset your password: <br><br><strong>' +
-      randomNumba + '</strong></p><p><i>If a reset was requested in error, you can ignore this email and login to web-jam.com as usual.</i></p>';
+      const mailBody = '<h2>A password reset was requested for ' + user.name
+      + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="'
+      + frontURL + '/userutil/?email=' + user.email + '&form=reset">'
+      + 'link</a>, then enter the following code to reset your password: <br><br><strong>'
+      + randomNumba + '</strong></p><p><i>If a reset was requested in error, you can ignore this email and login to web-jam.com as usual.</i></p>';
       authUtils.sendGridEmail(mailBody, user.email, 'Password Reset');
     });
   });
@@ -147,11 +137,11 @@ exports.changeemail = function (req, res) {
       return existinguser.save((err) => {
         console.log(existinguser);
         res.status(201).json({ success: true });
-        const mailBody = '<h2>An Email Address Change was Requested for ' + existinguser.name +
-        '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="' +
-        frontURL + '/userutil/?changeemail=' + existinguser.changeemail + '">' +
-        'link</a>, then enter the following code to validate this new email: <br><br><strong>' +
-        existinguser.resetCode + '</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>';
+        const mailBody = '<h2>An Email Address Change was Requested for ' + existinguser.name
+        + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="'
+        + frontURL + '/userutil/?changeemail=' + existinguser.changeemail + '">'
+        + 'link</a>, then enter the following code to validate this new email: <br><br><strong>'
+        + existinguser.resetCode + '</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>';
         authUtils.sendGridEmail(mailBody, existinguser.changeemail, 'Email Change Request');
       });
     });

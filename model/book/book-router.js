@@ -1,5 +1,5 @@
-const controller = require('./book-controller');
 const router = require('express').Router();
+const controller = require('./book-controller');
 const authUtils = require('../../auth/authUtils');
 
 router.route('/getall')
