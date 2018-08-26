@@ -8,11 +8,7 @@
     "npm": ">=8.19.2 <9"
   },
   "files": [
-    "lib/",
-    "model/",
-    "auth/",
-    "config.js",
-    "routes.js"
+    "src/"
   ],
   "license": "MIT",
   "scripts": {
