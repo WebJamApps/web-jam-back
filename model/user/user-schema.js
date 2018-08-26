@@ -29,7 +29,7 @@ const userSchema = new Schema({
   volWorkOther:{ type: String, required: false }
 });
 
-userSchema.pre('save', function (next) {
+userSchema.pre('save', function pwEcrypt(next) {
   const user = this;
   if (!user.isModified('password') || user.password === '') {
     return next();
@@ -42,13 +42,13 @@ userSchema.pre('save', function (next) {
   });
 });
 
-userSchema.methods.comparePassword = function (password, done) {
+userSchema.methods.comparePassword = function comparePassword(password, done) {
   bcrypt.compare(password, this.password, (err, isMatch) => {
     done(err, isMatch);
   });
 };
 
-userSchema.methods.validateSignup = function () {
+userSchema.methods.validateSignup = function validateSignup() {
   let message = '';
   if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(this.email)) {
     console.log('email is valid');

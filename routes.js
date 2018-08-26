@@ -6,7 +6,7 @@ const volOpp = require('./model/volOpp/volOpp-router');
 const auth = require('./auth');
 const authUtils = require('./auth/authUtils');
 
-module.exports = function (app) {
+module.exports = function route(app) {
   app.use(router);
   router.use('/auth', auth);
   router.use('/user', authUtils.ensureAuthenticated, user);

@@ -6,7 +6,7 @@ let frontURL = config.frontURL;
 /* istanbul ignore if */
 if (process.env.NODE_ENV === 'production') frontURL = 'https://web-jam.com';
 
-exports.signup = function (req, res) {
+exports.signup = function signup(req, res) {
   const randomNumba = authUtils.generateCode(99999, 10000);
   const user = new User({
     name: req.body.name,
@@ -42,7 +42,7 @@ exports.signup = function (req, res) {
   });
 };
 
-exports.validemail = function (req, res) {
+exports.validemail = function validemail(req, res) {
   console.log('email:' + req.body.email + ' resetCode:' + req.body.resetCode);
   User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
     console.log(user);
@@ -58,7 +58,7 @@ exports.validemail = function (req, res) {
   });
 };
 
-exports.login = function (req, res) {
+exports.login = function login(req, res) {
   console.log('req body email' + req.body.email);
   let reqUserEmail = '';
   reqUserEmail = authUtils.setIfExists(req.body.email);
@@ -77,7 +77,7 @@ exports.login = function (req, res) {
   });
 };
 
-exports.resetpass = function (req, res) {
+exports.resetpass = function resetpass(req, res) {
   console.log('email:' + req.body.email);
   User.findOne({ email: req.body.email }, (err, user) => {
     console.log(user);
@@ -102,7 +102,7 @@ exports.resetpass = function (req, res) {
   });
 };
 
-exports.passwdreset = function (req, res) {
+exports.passwdreset = function passwdreset(req, res) {
   console.log('email:' + req.body.email + ' resetCode:' + req.body.resetCode);
   User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
     console.log(user);
@@ -121,7 +121,7 @@ exports.passwdreset = function (req, res) {
   });
 };
 
-exports.changeemail = function (req, res) {
+exports.changeemail = function changeemail(req, res) {
   console.log('request to change the email address');
   authUtils.checkEmailSyntax(req, res);
   User.findOne({ email: req.body.changeemail }, (err, user) => {
@@ -148,7 +148,7 @@ exports.changeemail = function (req, res) {
   });
 };
 
-exports.updateemail = function (req, res) {
+exports.updateemail = function updateemail(req, res) {
   console.log('validate with pin then change the email address');
   authUtils.checkEmailSyntax(req, res);
   User.findOne({ email: req.body.email }, (err, user) => {

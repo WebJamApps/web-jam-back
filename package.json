@@ -6,6 +6,7 @@
   "engines": {
     "node": "10.9.0"
   },
+  "files": ["lib/", "model/", "auth/", "config.js", "routes.js"],
   "license": "MIT",
   "scripts": {
     "installglobals": "npm install -g npm@latest",
@@ -15,8 +16,10 @@
     "start": "node index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && npm run installglobals && yarn install",
     "debug": "node --inspect-brk index.js",
-    "test": "rm -rf coverage && nyc --reporter=html --reporter=lcov ./node_modules/.bin/_mocha --timeout 6000 -r ./test/bootstrap.js test/**/*.js --exit && eslint .",
+    "test": "rm -rf coverage && npm run test:jest &&  npm run test:mocha && eslint .",
+    "test:mocha": "nyc ./node_modules/.bin/_mocha --timeout 6000 -r ./test/bootstrap.js test/**/*.js --exit",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/bootstrap.js test/**/*.js",
+    "test:jest": "cross-env NODE_ENV=test && jest --no-cache --config jest.config.json --notify",
     "fix:lint": "./node_modules/eslint/bin/eslint.js --fix .",
     "snyk-protect": "snyk protect",
     "prepublish": "npm run snyk-protect"
@@ -34,6 +37,7 @@
     "bcryptjs": "^2.4.3",
     "bluebird": "^3.5.1",
     "body-parser": "^1.17.1",
+    "cross-env": "latest",
     "cors": "^2.8.1",
     "dotenv": "latest",
     "express": "latest",
@@ -45,7 +49,8 @@
     "mongoose": "latest",
     "morgan": "^1.8.1",
     "request": "latest",
-    "request-promise": "latest"
+    "request-promise": "latest",
+    "snyk": "latest"
   },
   "devDependencies": {
     "chai": "latest",
@@ -57,14 +62,15 @@
     "eslint-plugin-node": "latest",
     "eslint-plugin-react": "latest",
     "eslint-plugin-security": "latest",
+    "jest": "latest",
+    "jest-cli": "latest",
     "istanbul": "latest",
     "mocha": "latest",
     "nock": "latest",
     "nodemon": "latest",
     "nyc": "latest",
     "sinon": "latest",
-    "sinon-mongoose": "latest",
-    "snyk": "latest"
+    "sinon-mongoose": "latest"
   },
   "snyk": true
 }
