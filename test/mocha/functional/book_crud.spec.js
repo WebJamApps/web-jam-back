@@ -1,11 +1,11 @@
-const Book1 = require('../../model/book/book-schema');
-const authUtils = require('../../auth/authUtils');
+const Book1 = require('../../../model/book/book-schema');
+const authUtils = require('../../../auth/authUtils');
 
 describe('The library feature', () => {
   let server, find, create, allowedUrl;
   beforeEach(async () => {
     allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-    server = require('../../index'); // eslint-disable-line global-require
+    server = require('../../../index'); // eslint-disable-line global-require
     // global.server = require('../../index'); // eslint-disable-line global-require
     find = await sinon.mock(Book1, 'find');
     create = await sinon.mock(Book1, 'create');

@@ -1,7 +1,5 @@
 {
   "report-dir": "./coverage/mocha",
-  "reporter": [
-    "lcov",
-    "html"
-  ]
+  "reporter": ["lcov", "json"],
+  "exclude": ["**/*.spec.js", "test"]
 }
