@@ -42,21 +42,21 @@ exports.signup = function signup(req, res) {
   });
 };
 
-exports.validemail = function validemail(req, res) {
-  console.log('email:' + req.body.email + ' resetCode:' + req.body.resetCode);
-  User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
-    console.log(user);
-    if (!user) {
-      return res.status(401).json({ message: 'incorrect email or code' });
-    }
-    user.resetCode = '';
-    user.isPswdReset = false;
-    user.verifiedEmail = true;
-    return user.save((err) => {
-      res.status(201).json({ success: true });
-    });
-  });
-};
+// exports.validemail = function validemail(req, res) {
+//   // console.log('email:' + req.body.email + ' resetCode:' + req.body.resetCode);
+//   return User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
+//     console.log(user);
+//     if (!user) {
+//       return res.status(401).json({ message: 'incorrect email or code' });
+//     }
+//     user.resetCode = '';
+//     user.isPswdReset = false;
+//     user.verifiedEmail = true;
+//     return user.save((err) => {
+//       res.status(201).json({ success: true });
+//     });
+//   });
+// };
 
 exports.login = function login(req, res) {
   console.log('req body email' + req.body.email);
