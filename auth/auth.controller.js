@@ -77,30 +77,30 @@ exports.login = function login(req, res) {
   });
 };
 
-exports.resetpass = function resetpass(req, res) {
-  console.log('email:' + req.body.email);
-  User.findOne({ email: req.body.email }, (err, user) => {
-    console.log(user);
-    if (!user) {
-      return res.status(401).json({ message: 'incorrect email address' });
-    }
-    if (!user.verifiedEmail) {
-      return res.status(401).json({ message: 'Verify your email address' });
-    }
-    const randomNumba = authUtils.generateCode(99999, 10000);
-    user.resetCode = randomNumba;
-    user.isPswdReset = true;
-    return user.save((err) => {
-      res.status(201).json({ email: user.email });
-      const mailBody = '<h2>A password reset was requested for ' + user.name
-      + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="'
-      + frontURL + '/userutil/?email=' + user.email + '&form=reset">'
-      + 'link</a>, then enter the following code to reset your password: <br><br><strong>'
-      + randomNumba + '</strong></p><p><i>If a reset was requested in error, you can ignore this email and login to web-jam.com as usual.</i></p>';
-      authUtils.sendGridEmail(mailBody, user.email, 'Password Reset');
-    });
-  });
-};
+// exports.resetpass = function resetpass(req, res) {
+//   console.log('email:' + req.body.email);
+//   User.findOne({ email: req.body.email }, (err, user) => {
+//     console.log(user);
+//     if (!user) {
+//       return res.status(401).json({ message: 'incorrect email address' });
+//     }
+//     if (!user.verifiedEmail) {
+//       return res.status(401).json({ message: 'Verify your email address' });
+//     }
+//     const randomNumba = authUtils.generateCode(99999, 10000);
+//     user.resetCode = randomNumba;
+//     user.isPswdReset = true;
+//     return user.save((err) => {
+//       res.status(201).json({ email: user.email });
+//       const mailBody = '<h2>A password reset was requested for ' + user.name
+//       + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="'
+//       + frontURL + '/userutil/?email=' + user.email + '&form=reset">'
+//       + 'link</a>, then enter the following code to reset your password: <br><br><strong>'
+//       + randomNumba + '</strong></p><p><i>If a reset was requested in error, you can ignore this email and login to web-jam.com as usual.</i></p>';
+//       authUtils.sendGridEmail(mailBody, user.email, 'Password Reset');
+//     });
+//   });
+// };
 
 exports.passwdreset = function passwdreset(req, res) {
   console.log('email:' + req.body.email + ' resetCode:' + req.body.resetCode);
