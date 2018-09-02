@@ -1,11 +1,11 @@
-const User1 = require('../../model/user/user-schema');
-const authUtils = require('../../auth/authUtils');
+const User1 = require('../../../model/user/user-schema');
+const authUtils = require('../../../auth/authUtils');
 
 describe('functional test for users', () => {
   let server, allowedUrl;
   beforeEach((done) => {
     allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-    server = require('../../index'); // eslint-disable-line global-require
+    server = require('../../../index'); // eslint-disable-line global-require
     done();
   });
 
