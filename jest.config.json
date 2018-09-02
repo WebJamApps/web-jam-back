@@ -1,0 +1,9 @@
+{
+  "verbose": true,
+  "bail": true,
+  "testPathIgnorePatterns": ["/node_modules/", "/test/mocha", "/frontend"],
+  "coverageDirectory": "coverage/jest",
+  "collectCoverage": true,
+  "testEnvironment": "node",
+  "testURL": "http://localhost/"
+}

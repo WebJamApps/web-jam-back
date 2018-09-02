@@ -1,12 +1,12 @@
-const VolOpp1 = require('../../model/volOpp/volOpp-schema');
-const authUtils = require('../../auth/authUtils');
+const VolOpp1 = require('../../../model/volOpp/volOpp-schema');
+const authUtils = require('../../../auth/authUtils');
 
 const previousId = '';
 describe('The volunteer opportunity feature', () => {
   let server, allowedUrl;
   beforeEach((done) => {
     allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-    server = require('../../index'); // eslint-disable-line global-require
+    server = require('../../../index'); // eslint-disable-line global-require
     done();
   });
   it('should create a new volunteer opportunity', (done) => {
