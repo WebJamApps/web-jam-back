@@ -21,17 +21,6 @@ describe('The Charity feature', () => {
       expect(cb).to.have.status(201);
     } catch (e) { throw e; }
   });
-
-  // it('should get the charities that are managed by this userid', async () => {
-  //   try {
-  //     const cb = await chai.request(server)
-  //       .get('/charity/1223')
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
-  //     expect(cb).to.have.status(200);
-  //   } catch (e) { throw e; }
-  // });
-
   it('gets the charity by its id', async () => {
     const Charity = new Charity1();
     Charity.charityName = 'foo';
@@ -45,7 +34,7 @@ describe('The Charity feature', () => {
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
-    Charity1.remove({ name:'foo' });
+    Charity1.deleteMany({});
   });
 
   it('gets the charity by manager id', async () => {
@@ -61,7 +50,7 @@ describe('The Charity feature', () => {
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
-    await Charity1.remove({ name:'foo' });
+    await Charity1.deleteMany({});
   });
 
   it('updates the charity', async () => {
@@ -78,7 +67,7 @@ describe('The Charity feature', () => {
         .send({ charityName:'barbasol' });
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
-    await Charity1.remove({ name:'barbasol' });
+    await Charity1.deleteMany({});
   });
 
   it('deletes the charity', async () => {
@@ -92,42 +81,7 @@ describe('The Charity feature', () => {
         .delete('/charity/' + Charity._id)
         .set({ origin: allowedUrl })
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
-        // .send({ charityName:'barbasol' });
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
-  //  await Charity1.remove({ name:'barbasol' });
   });
-  // it('should delete a charity', (done) => {
-  //   const Charity = new Charity1();
-  //   Charity.charityName = 'foo';
-  //   Charity.charityZipCode = '12345';
-  //   Charity.charityMngIds = ['12345'];
-  //   Charity.save();
-  //   chai.request(server)
-  //     .delete('/charity/' + Charity.id)
-  //     .set({ origin: allowedUrl })
-  //     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //     .end((err, res) => {
-  //       expect(res).to.have.status(204);
-  //       done();
-  //     });
-  // });
-
-  // it('should update a charity', (done) => {
-  //   const Charity2 = new Charity1();
-  //   Charity2.charityName = 'foo2';
-  //   Charity2.charityZipCode = '22222';
-  //   Charity2.charityMngIds = ['33333'];
-  //   Charity2.save();
-  //   chai.request(server)
-  //     .put('/charity/' + Charity2.id)
-  //     .set({ origin: allowedUrl })
-  //     .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //     .send({ charityName: 'foobar' })
-  //     .end((err, res) => {
-  //       expect(res).to.have.status(200);
-  //       expect(res.nModified > 0);
-  //       done();
-  //     });
-  // });
 });

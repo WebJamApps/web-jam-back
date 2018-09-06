@@ -51,7 +51,7 @@ describe('The volunteer opportunity feature', () => {
     });
   });
   it('should find the event by event id', async () => {
-    await VolOpp1.remove({ voName:'paint' });
+    await VolOpp1.deleteMany({});
     const voOp2 = new VolOpp1();
     voOp2.voName = 'paint';
     voOp2.voCharityId = '44444';
@@ -66,7 +66,7 @@ describe('The volunteer opportunity feature', () => {
     } catch (e) { throw e; }
   });
   it('update modify an event', async () => {
-    await VolOpp1.remove({ voName: 'paint' });
+    await VolOpp1.deleteMany({});
     const voOp3 = new VolOpp1();
     voOp3.voName = 'paint';
     voOp3.voCharityId = '44444';
@@ -100,7 +100,7 @@ describe('The volunteer opportunity feature', () => {
       });
   });
   it('should delete an event', async () => {
-    await VolOpp1.remove({ voName:'foo' });
+    await VolOpp1.deleteMany({});
     const event = new VolOpp1();
     event.voName = 'foo';
     event.voCharityId = '12345';

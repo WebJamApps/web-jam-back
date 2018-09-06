@@ -2,27 +2,16 @@ const Controller = require('../../lib/controller');
 const bookModel = require('./book-facade');
 
 class BookController extends Controller {
-  // find(req, res, next) {
-  //   return this.model.find(req.query)
-  //   .then((collection) => {
-  //     console.log(collection.length);
-  //     return res.status(200).json(collection);
-  //   });
-  // }
-
-  findCheckedOut(req, res, next) {
-    console.log('this is the user id: ' + req.params.id);
+  findCheckedOut(req, res) {
+    // console.log('this is the user id: ' + req.params.id);
     return this.model.find({ checkedOutBy:req.params.id })
-      .then((collection) => {
-        console.log(collection.length);
-        return res.status(200).json(collection);
-      });
+      .then(collection => res.status(200).json(collection));
   }
 
-  remove(req, res, next) {
-    return this.model.remove(req.query)
+  deleteMany(req, res) {
+    return this.model.deleteMany(req.query)
       .then((collection) => {
-        console.log(req.query);
+        // console.log(req.query);
         res.status(200).json(collection);
       });
   }

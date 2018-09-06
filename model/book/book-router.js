@@ -6,7 +6,7 @@ router.route('/getall')
   .get((...args) => controller.find(...args));
 
 router.route('/deleteall', authUtils.ensureAuthenticated)
-  .get((...args) => controller.remove(...args));
+  .delete((...args) => controller.deleteMany(...args));
 
 router.route('/create', authUtils.ensureAuthenticated)
   .post((...args) => controller.create(...args));

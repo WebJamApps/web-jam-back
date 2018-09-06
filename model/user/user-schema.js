@@ -51,7 +51,7 @@ userSchema.methods.comparePassword = function comparePassword(password, done) {
 userSchema.methods.validateSignup = function validateSignup() {
   let message = '';
   if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(this.email)) {
-    console.log('email is valid');
+    // console.log('email is valid');
   } else {
     message = 'Email address is invalid format';
   }

@@ -9,7 +9,7 @@ describe('functional test for users', () => {
     done();
   });
   it('finds a user by email', async () => {
-    await User1.remove({ email:'foo3@example.com' });
+    await User1.deleteMany({});
     const User2 = new User1();
     User2.name = 'foo';
     User2.email = 'foo3@example.com';
@@ -24,7 +24,7 @@ describe('functional test for users', () => {
     } catch (e) { throw e; }
   });
   it('catches error on find a user by email', async () => {
-    await User1.remove({ email:'foo3@example.com' });
+    await User1.deleteMany({});
     const User2 = new User1();
     User2.name = 'foo';
     User2.email = 'foo3@example.com';
@@ -45,7 +45,7 @@ describe('functional test for users', () => {
     uMock.restore();
   });
   it('finds a user by id', async () => {
-    await User1.remove({ email: 'foo3@example.com' });
+    await User1.deleteMany({});
     const User = new User1();
     User.name = 'foo';
     User.email = 'foo3@example.com';
@@ -59,7 +59,7 @@ describe('functional test for users', () => {
     } catch (e) { throw e; }
   });
   it('updates a user', async () => {
-    await User1.remove({ email: 'foo3@example.com' });
+    await User1.deleteMany({});
     const User = new User1();
     User.name = 'foo';
     User.email = 'foo3@example.com';
@@ -75,7 +75,7 @@ describe('functional test for users', () => {
     } catch (e) { throw e; }
   });
   it('deletes a user', async () => {
-    await User1.remove({ email: 'foo3@example.com' });
+    await User1.deleteMany({});
     const User = new User1();
     User.name = 'foo';
     User.email = 'foo3@example.com';
@@ -88,175 +88,6 @@ describe('functional test for users', () => {
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
-
-  //
-  //   it('should not update a user when using a ID that does not exist', (done) => {
-  //     const Uid = '587298a376d5036c68b6ef12';
-  //     chai.request(server)
-  //       .put('/user/' + Uid)
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //       .send({ userType: 'coolGuy' })
-  //       .end((err, res) => {
-  //         expect(res).to.have.status(404);
-  //         done();
-  //       });
-  //   });
-  //
-  //   it('should not update a user when the name is an empty string', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo';
-  //     User.email = 'foo2@example.com';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .put('/user/' + User._id)
-  //         .set({ origin: allowedUrl })
-  //         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //         .send({ name: '' })
-  //         .end((err, res) => {
-  //           expect(res).to.have.status(400);
-  //           expect(res.nModified === 0);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-
-  //   it('should delete a user', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo';
-  //     User.email = 'foo2@example.com';
-  //     User.save();
-  //     chai.request(server)
-  //       .delete('/user/' + User.id)
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //       .end((err, res) => {
-  //         expect(res).to.have.status(204);
-  //         done();
-  //       });
-  //   });
-  //
-  //   it('should not delete a user when id does not exist', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo';
-  //     User.email = 'foo2@example.com';
-  //     User.save();
-  //     chai.request(server)
-  //       .delete('/user/53cb6b9b4f4ddef1ad47f943')
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //       .end((err, res) => {
-  //         expect(res).to.have.status(404);
-  //         done();
-  //       });
-  //   });
-  //
-
-  //
-
-  //
-  //   it('should NOT find a user by id', (done) => {
-  //     const id = '587298a376d5036c68b6ef12';
-  //     chai.request(server)
-  //       .get('/user/' + id)
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //       .end((err, res) => {
-  //         expect(res).to.have.status(404);
-  //         done();
-  //       });
-  //   });
-  //
-  //   it('should return 404 error when Id not valid on update', (done) => {
-  //     const Uid = '5872';
-  //     chai.request(server)
-  //       .put('/user/' + Uid)
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //       .send({ alien: 'yes' })
-  //       .end((err, res) => {
-  //         expect(err).to.be.an('error');
-  //         expect(res).to.have.status(400);
-  //         done();
-  //       });
-  //   });
-  //
-  //   it('should throw an error in findById()', (done) => {
-  //     const id = 'TYgsfn';
-  //     chai.request(server)
-  //       .get('/user/' + id)
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //       .end((err, res) => {
-  //         expect(err).to.be.an('error');
-  //         done();
-  //       });
-  //   });
-  //
-  //   it('should return 404 error when Id not valid on delete', (done) => {
-  //     const Uid = '5872';
-  //     chai.request(server)
-  //       .delete('/user/' + Uid)
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //       .end((err, res) => {
-  //         expect(err).to.be.an('error');
-  //         expect(res).to.have.status(400);
-  //         done();
-  //       });
-  //   });
-  //
-  //   it('should get the new user by id', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo2';
-  //     User.email = 'foo2@example.com';
-  //     User.save((err) => {
-  //       const Uid = User._id;
-  //       chai.request(server)
-  //         .get('/user/' + Uid)
-  //         .set({ origin: allowedUrl })
-  //         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //         .end((err, res) => {
-  //           expect(res).to.have.status(200);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('should update the new user by id', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo3';
-  //     User.email = 'foo3@example.com';
-  //     User.save((err) => {
-  //       const Uid = User._id;
-  //       chai.request(server)
-  //         .put('/user/' + Uid)
-  //         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //         .send({ userType: 'Developer' })
-  //         .end((err, res) => {
-  //           expect(res).to.have.status(200);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('should delete the user by id', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo3';
-  //     User.email = 'foo3@example.com';
-  //     User.save((err) => {
-  //       const Uid = User._id;
-  //       chai.request(server)
-  //         .delete('/user/' + Uid)
-  //         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-  //         .end((err, res) => {
-  //           expect(res).to.have.status(204);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
   it('should signup the new user', async () => {
     try {
       const cb = await chai.request(server)
@@ -269,8 +100,7 @@ describe('functional test for users', () => {
   });
 
   it('should not signup the new user if the email already exists and has been verified', async () => {
-    await User1.remove({ name:'foo4' });
-    await User1.remove({ email:'foo4@example.com' });
+    await User1.deleteMany({});
     const User = new User1();
     User.name = 'foo4';
     User.email = 'foo4@example.com';
@@ -287,7 +117,7 @@ describe('functional test for users', () => {
   });
 
   it('allows signup the existing user if the email has not been verified', async () => {
-    await User1.remove({ email: 'foo4@example.com' });
+    await User1.deleteMany({});
     const User = new User1();
     User.name = 'foo4';
     User.email = 'foo4@example.com';
@@ -312,7 +142,7 @@ describe('functional test for users', () => {
   });
 
   it('should allow the user to login with email', async () => {
-    await User1.remove({ email: 'foo3@example.com' });
+    await User1.deleteMany({});
     const User = new User1();
     User.name = 'foo4';
     User.email = 'foo3@example.com';
