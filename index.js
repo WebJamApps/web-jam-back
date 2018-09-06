@@ -35,6 +35,7 @@ app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
 mongoose.connect(process.env.MONGO_DB_URI, { useNewUrlParser: true });
 mongoose.set('useCreateIndex', true);
+mongoose.set('useFindAndModify', false);
 app.use(helmet());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());

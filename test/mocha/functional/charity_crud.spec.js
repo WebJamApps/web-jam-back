@@ -1,18 +1,16 @@
+const server = require('../../../index');
 const Charity1 = require('../../../model/charity/charity-schema');
 const authUtils = require('../../../auth/authUtils');
 
 describe('The Charity feature', () => {
-  let server, create, allowedUrl;
+  let create, allowedUrl;
   beforeEach(async () => {
     allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-    server = require('../../../index'); // eslint-disable-line global-require
     create = await sinon.mock(Charity1, 'create');
   });
-
   afterEach(async () => {
     create.restore();
   });
-
   it('creates a new charity', async () => {
     try {
       const cb = await chai.request(server)

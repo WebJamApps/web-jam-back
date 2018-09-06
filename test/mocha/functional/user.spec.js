@@ -1,14 +1,13 @@
+const server = require('../../../index');
 const User1 = require('../../../model/user/user-schema');
 const authUtils = require('../../../auth/authUtils');
 
 describe('functional test for users', () => {
-  let server, allowedUrl;
+  let allowedUrl;
   beforeEach((done) => {
     allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-    server = require('../../../index'); // eslint-disable-line global-require
     done();
   });
-
   it('finds a user by email', async () => {
     await User1.remove({ email:'foo3@example.com' });
     const User2 = new User1();

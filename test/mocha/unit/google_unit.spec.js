@@ -6,7 +6,6 @@ const config = require('../../../config');
 
 describe('The Unit Test for Google Module', () => {
   let userid;
-
   before((done) => {
     const user = new User();
     user.name = 'foo';
@@ -16,7 +15,6 @@ describe('The Unit Test for Google Module', () => {
       done();
     });
   });
-
   it('should authenticate with existing user', (done) => {
     const sub = 'foo@example.com';
     const token = { access_token: 'access_token' };
