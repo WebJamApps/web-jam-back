@@ -32,7 +32,7 @@ class Google {
         User.findOne(filter, (err, existingUser) => {
           // console.log(existingUser);
           if (existingUser) {
-            console.log('user exists');
+            // console.log('user exists');
             existingUser.password = '';
             // force the name of the user to be the name from google account
             existingUser.name = profile.name;
@@ -46,7 +46,7 @@ class Google {
           user.isOhafUser = req.body.isOhafUser;
           user.verifiedEmail = true;
           return user.save((err) => {
-            console.log('token sent');
+            // console.log('token sent');
             res.send({ token: authUtils.createJWT(user) });
           });
         });

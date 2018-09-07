@@ -1,21 +1,18 @@
+const server = require('../../../index');
 const Book1 = require('../../../model/book/book-schema');
 const authUtils = require('../../../auth/authUtils');
 
 describe('The library feature', () => {
-  let server, find, create, allowedUrl;
+  let find, create, allowedUrl;
   beforeEach(async () => {
     allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-    server = require('../../../index'); // eslint-disable-line global-require
-    // global.server = require('../../index'); // eslint-disable-line global-require
     find = await sinon.mock(Book1, 'find');
     create = await sinon.mock(Book1, 'create');
   });
-
   afterEach(async () => {
     find.restore();
     create.restore();
   });
-
   it('should create a new book', (done) => {
     chai.request(server)
       .post('/book/create')
@@ -27,20 +24,17 @@ describe('The library feature', () => {
         done();
       });
   });
-
-  it('should remove all books', (done) => {
-    chai.request(server)
-      .get('/book/deleteall')
-      .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-      .send({})
-      .end((err, res) => {
-        console.log(res.status);
-        expect(res).to.have.status(200);
-        done();
-      });
+  it('should remove all books', async () => {
+    try {
+      const cb = await chai.request(server)
+        .delete('/book/deleteall')
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .send({});
+      expect(cb.status).to.equal(200);
+      // console.log(cb.body);
+    } catch (e) { throw e; }
   });
-
   it('should find checked out books', (done) => {
     const Book = new Book1();
     Book.title = 'foo2';
@@ -52,7 +46,7 @@ describe('The library feature', () => {
       .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
       .send({})
       .end((err, res) => {
-        console.log(res.status);
+        // console.log(res.status);
         expect(res).to.have.status(200);
         done();
       });
@@ -113,7 +107,7 @@ describe('The library feature', () => {
   });
 
   it('should modify a book', async () => {
-    await Book1.remove({ title:'Flow Measurement' });
+    await Book1.deleteMany({});
     const Book = new Book1();
     Book.title = 'Flow Measurement';
     Book.type = 'hardback';
@@ -126,11 +120,10 @@ describe('The library feature', () => {
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
         .send({ checkedOutBy: '' });
       expect(cb).to.have.status(200);
-      expect(cb.body.nModified > 0).to.equal(true);
     } catch (e) { throw e; }
   });
   it('should find the book by id', async () => {
-    await Book1.remove({ title:'Flow Measurement' });
+    await Book1.deleteMany({});
     const Book2 = new Book1();
     Book2.title = 'Flow Measurement';
     Book2.type = 'hardback';

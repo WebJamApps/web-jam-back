@@ -6,7 +6,7 @@ router.route('/')
 
 router.route('/:id')
   .get((...args) => controller.findById(...args))
-  .put((...args) => controller.update(...args))
+  .put((...args) => controller.findOneAndUpdate(...args))
   .delete((...args) => controller.findByIdAndRemove(...args));
 
 module.exports = router;

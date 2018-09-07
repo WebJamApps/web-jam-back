@@ -13,7 +13,6 @@ describe('The Unit Test for authUtils Module', () => {
       expect(jwt.decode(payload, config.hashString).sub).to.equal(user._id);
     });
   });
-
   describe('handleError', () => {
     it('should call res.send with err', () => {
       const err = 'err';
@@ -23,7 +22,6 @@ describe('The Unit Test for authUtils Module', () => {
       expect(send.args[0]).to.deep.equal([400, err]);
     });
   });
-
   describe('ensureAuthenticated', () => {
     it('should 401 without authorization', (done) => {
       const req = { headers: { authorization: false } };
@@ -55,11 +53,8 @@ describe('The Unit Test for authUtils Module', () => {
       };
       authUtils.ensureAuthenticated(req, res);
     });
-
     it('should 401 when exp <= moment().unix()', (done) => {
-      const payload = {
-        exp: moment().unix()
-      };
+      const payload = { exp: moment().unix() };
       const auth = jwt.encode(payload, config.hashString);
       const req = { headers: { authorization: 'Bearer ' + auth } };
       const res = {
@@ -75,7 +70,6 @@ describe('The Unit Test for authUtils Module', () => {
       };
       authUtils.ensureAuthenticated(req, res);
     });
-
     it('should call next when all is well', () => {
       const sub = 'test';
       const payload = {
