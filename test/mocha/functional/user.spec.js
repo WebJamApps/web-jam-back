@@ -71,7 +71,6 @@ describe('functional test for users', () => {
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
         .send({ name: 'foobar' });
       expect(cb).to.have.status(200);
-      expect(cb.body.nModified).to.equal(1);
     } catch (e) { throw e; }
   });
   it('deletes a user', async () => {

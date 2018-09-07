@@ -120,7 +120,6 @@ describe('The library feature', () => {
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
         .send({ checkedOutBy: '' });
       expect(cb).to.have.status(200);
-      expect(cb.body.nModified > 0).to.equal(true);
     } catch (e) { throw e; }
   });
   it('should find the book by id', async () => {
