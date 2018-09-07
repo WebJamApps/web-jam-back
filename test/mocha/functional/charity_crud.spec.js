@@ -22,6 +22,7 @@ describe('The Charity feature', () => {
     } catch (e) { throw e; }
   });
   it('gets the charity by its id', async () => {
+    await Charity1.deleteMany({});
     const Charity = new Charity1();
     Charity.charityName = 'foo';
     Charity.charityZipCode = '12345';
@@ -34,10 +35,10 @@ describe('The Charity feature', () => {
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
-    Charity1.deleteMany({});
   });
 
   it('gets the charity by manager id', async () => {
+    await Charity1.deleteMany({});
     const Charity = new Charity1();
     Charity.charityName = 'foo';
     Charity.charityZipCode = '12345';
@@ -50,10 +51,10 @@ describe('The Charity feature', () => {
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
-    await Charity1.deleteMany({});
   });
 
   it('updates the charity', async () => {
+    await Charity1.deleteMany({});
     const Charity = new Charity1();
     Charity.charityName = 'fooberrypie3';
     Charity.charityZipCode = '12345';
@@ -67,10 +68,10 @@ describe('The Charity feature', () => {
         .send({ charityName:'barbasol' });
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
-    await Charity1.deleteMany({});
   });
 
   it('deletes the charity', async () => {
+    await Charity1.deleteMany({});
     const Charity = new Charity1();
     Charity.charityName = 'fooberrypie4';
     Charity.charityZipCode = '12345';
