@@ -59,7 +59,7 @@ exports.signup = function signup(req, res) {
 // };
 
 exports.login = function login(req, res) {
-  console.log('req body email' + req.body.email);
+  // console.log('req body email' + req.body.email);
   let reqUserEmail = '';
   reqUserEmail = authUtils.setIfExists(req.body.email);
   User.findOne({ email: reqUserEmail }, '+password', (err, user) => {
@@ -103,9 +103,9 @@ exports.login = function login(req, res) {
 // };
 
 exports.passwdreset = function passwdreset(req, res) {
-  console.log('email:' + req.body.email + ' resetCode:' + req.body.resetCode);
+  // console.log('email:' + req.body.email + ' resetCode:' + req.body.resetCode);
   User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
-    console.log(user);
+    // console.log(user);
     if (!user) {
       return res.status(401).json({ message: 'incorrect email or code' });
     }
@@ -122,7 +122,7 @@ exports.passwdreset = function passwdreset(req, res) {
 };
 
 exports.changeemail = function changeemail(req, res) {
-  console.log('request to change the email address');
+  // console.log('request to change the email address');
   authUtils.checkEmailSyntax(req, res);
   User.findOne({ email: req.body.changeemail }, (err, user) => {
     if (user) {
@@ -135,7 +135,7 @@ exports.changeemail = function changeemail(req, res) {
       existinguser.resetCode = authUtils.generateCode(99999, 10000);
       existinguser.changeemail = req.body.changeemail;
       return existinguser.save((err) => {
-        console.log(existinguser);
+        // console.log(existinguser);
         res.status(201).json({ success: true });
         const mailBody = '<h2>An Email Address Change was Requested for ' + existinguser.name
         + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="'
@@ -149,7 +149,7 @@ exports.changeemail = function changeemail(req, res) {
 };
 
 exports.updateemail = function updateemail(req, res) {
-  console.log('validate with pin then change the email address');
+  // console.log('validate with pin then change the email address');
   authUtils.checkEmailSyntax(req, res);
   User.findOne({ email: req.body.email }, (err, user) => {
     if (!user) {

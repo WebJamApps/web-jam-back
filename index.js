@@ -1,4 +1,3 @@
-
 const path = require('path');
 const express = require('express');
 const mongoose = require('mongoose');
@@ -19,9 +18,7 @@ const corsOptions = {
 const app = express();
 
 /* istanbul ignore if */
-if (process.env.NODE_ENV === 'production') {
-  app.use(enforce.HTTPS({ trustProtoHeader: true }));
-}
+if (process.env.NODE_ENV === 'production') app.use(enforce.HTTPS({ trustProtoHeader: true }));
 
 app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
 
@@ -36,10 +33,9 @@ app.use((req, res, next) => {
 
 app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
-// mongoose.connect(process.env.MONGO_DB_URI);
-mongoose.connect(process.env.MONGO_DB_URI, {
-  /* other options */
-});
+mongoose.connect(process.env.MONGO_DB_URI, { useNewUrlParser: true });
+mongoose.set('useCreateIndex', true);
+mongoose.set('useFindAndModify', false);
 app.use(helmet());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());

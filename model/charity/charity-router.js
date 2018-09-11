@@ -7,7 +7,7 @@ router.route('/create')
 router.route('/:id')
   .get((...args) => controller.find(...args)) // the id for this get request is the manager id
   .delete((...args) => controller.findByIdAndRemove(...args))
-  .put((...args) => controller.update(...args));
+  .put((...args) => controller.findOneAndUpdate(...args));
 
 router.route('/find/:id')
   .get((...args) => controller.findById(...args));
