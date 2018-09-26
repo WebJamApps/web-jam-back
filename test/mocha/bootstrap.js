@@ -8,7 +8,7 @@ require('sinon-mongoose');
 
 mongoose.Promise = bluebird;
 process.env.NODE_ENV = 'test';
-process.env.MONGO_DB_URI = 'mongodb://developer:developer@ds147520.mlab.com:47520/web-jam-dev';
+process.env.MONGO_DB_URI = 'mongodb://testerOfTheYear:wj-te5ter!@ds115283.mlab.com:15283/web-jam-test';
 
 // SET MORE GLOBALS
 global.expect = chai.expect;
