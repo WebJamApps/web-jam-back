@@ -65,7 +65,7 @@ describe('The Charity feature', () => {
         .put('/charity/' + Charity._id)
         .set({ origin: allowedUrl })
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-        .send({ charityName:'barbasol' });
+        .send({ charityName: 'barbasol' });
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });

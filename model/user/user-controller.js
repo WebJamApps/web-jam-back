@@ -4,7 +4,7 @@ const userModel = require('./user-facade');
 
 class UserController extends Controller {
   find(req, res) {
-    return this.model.find({ email:req.body.email })
+    return this.model.find({ email: req.body.email })
       .then(collection => res.status(200).json(collection))
       .catch(err => res.status(500).json({ message: 'failed to find user by email', error: err }));
   }
@@ -15,10 +15,10 @@ class UserController extends Controller {
     //   myUser = await this.model.findOne({ email: req.body.email, resetCode: req.body.resetCode });
     // } catch (e) { return res.status(500).json({ message:e.message }); }
     // if (myUser === null || myUser === undefined) return res.status(401).json({ message: 'incorrect email or code' });
-    const update = { resetCode: '', isPswdReset:false, verifiedEmail:true };
+    const update = { resetCode: '', isPswdReset: false, verifiedEmail: true };
     try {
       updatedUser = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
-    } catch (e) { return res.status(500).json({ message:e.message }); }
+    } catch (e) { return res.status(500).json({ message: e.message }); }
     if (updatedUser === null || updatedUser === undefined) return res.status(401).json({ message: 'incorrect email or code' });
     return res.status(200).json(updatedUser);
   }
