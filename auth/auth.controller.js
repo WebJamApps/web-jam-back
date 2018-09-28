@@ -42,24 +42,7 @@ exports.signup = function signup(req, res) {
   });
 };
 
-// exports.validemail = function validemail(req, res) {
-//   // console.log('email:' + req.body.email + ' resetCode:' + req.body.resetCode);
-//   return User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
-//     console.log(user);
-//     if (!user) {
-//       return res.status(401).json({ message: 'incorrect email or code' });
-//     }
-//     user.resetCode = '';
-//     user.isPswdReset = false;
-//     user.verifiedEmail = true;
-//     return user.save((err) => {
-//       res.status(201).json({ success: true });
-//     });
-//   });
-// };
-
 exports.login = function login(req, res) {
-  // console.log('req body email' + req.body.email);
   let reqUserEmail = '';
   reqUserEmail = authUtils.setIfExists(req.body.email);
   User.findOne({ email: reqUserEmail }, '+password', (err, user) => {
@@ -77,35 +60,8 @@ exports.login = function login(req, res) {
   });
 };
 
-// exports.resetpass = function resetpass(req, res) {
-//   console.log('email:' + req.body.email);
-//   User.findOne({ email: req.body.email }, (err, user) => {
-//     console.log(user);
-//     if (!user) {
-//       return res.status(401).json({ message: 'incorrect email address' });
-//     }
-//     if (!user.verifiedEmail) {
-//       return res.status(401).json({ message: 'Verify your email address' });
-//     }
-//     const randomNumba = authUtils.generateCode(99999, 10000);
-//     user.resetCode = randomNumba;
-//     user.isPswdReset = true;
-//     return user.save((err) => {
-//       res.status(201).json({ email: user.email });
-//       const mailBody = '<h2>A password reset was requested for ' + user.name
-//       + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="'
-//       + frontURL + '/userutil/?email=' + user.email + '&form=reset">'
-//       + 'link</a>, then enter the following code to reset your password: <br><br><strong>'
-//       + randomNumba + '</strong></p><p><i>If a reset was requested in error, you can ignore this email and login to web-jam.com as usual.</i></p>';
-//       authUtils.sendGridEmail(mailBody, user.email, 'Password Reset');
-//     });
-//   });
-// };
-
 exports.passwdreset = function passwdreset(req, res) {
-  // console.log('email:' + req.body.email + ' resetCode:' + req.body.resetCode);
   User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
-    // console.log(user);
     if (!user) {
       return res.status(401).json({ message: 'incorrect email or code' });
     }
@@ -121,10 +77,11 @@ exports.passwdreset = function passwdreset(req, res) {
   });
 };
 
-exports.changeemail = function changeemail(req, res) {
-  // console.log('request to change the email address');
-  authUtils.checkEmailSyntax(req, res);
-  User.findOne({ email: req.body.changeemail }, (err, user) => {
+exports.changeemail = async function changeemail(req, res) {
+  try {
+    await authUtils.checkEmailSyntax(req);
+  } catch (e) { return res.status(400).json({ message: e.message }); }
+  return User.findOne({ email: req.body.changeemail }, (err, user) => {
     if (user) {
       return res.status(409).json({ message: 'Email address already exists' });
     }
@@ -135,7 +92,6 @@ exports.changeemail = function changeemail(req, res) {
       existinguser.resetCode = authUtils.generateCode(99999, 10000);
       existinguser.changeemail = req.body.changeemail;
       return existinguser.save((err) => {
-        // console.log(existinguser);
         res.status(201).json({ success: true });
         const mailBody = '<h2>An Email Address Change was Requested for ' + existinguser.name
         + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="'
@@ -148,10 +104,12 @@ exports.changeemail = function changeemail(req, res) {
   });
 };
 
-exports.updateemail = function updateemail(req, res) {
-  // console.log('validate with pin then change the email address');
-  authUtils.checkEmailSyntax(req, res);
-  User.findOne({ email: req.body.email }, (err, user) => {
+exports.updateemail = async function updateemail(req, res) {
+  // validate with pin then change the email address
+  try {
+    await authUtils.checkEmailSyntax(req);
+  } catch (e) { return res.status(400).json({ message: e.message }); }
+  return User.findOne({ email: req.body.email }, (err, user) => {
     if (!user) {
       return res.status(409).json({ message: 'User does not exist' });
     }
