@@ -4,7 +4,7 @@ const bookModel = require('./book-facade');
 class BookController extends Controller {
   findCheckedOut(req, res) {
     // console.log('this is the user id: ' + req.params.id);
-    return this.model.find({ checkedOutBy:req.params.id })
+    return this.model.find({ checkedOutBy: req.params.id })
       .then(collection => res.status(200).json(collection));
   }
 

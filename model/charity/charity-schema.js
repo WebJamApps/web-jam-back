@@ -11,7 +11,7 @@ const charitySchema = new Schema({
   charityEmail: { type: String, required: false },
   charityTypes: { type: [String], required: false },
   charityManagers: { type: [String], required: false },
-  charityMngIds:{ type: [String], required: true },
+  charityMngIds: { type: [String], required: true },
   charityTypeOther: { type: String, required: false }
 });
 

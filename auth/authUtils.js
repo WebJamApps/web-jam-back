@@ -59,11 +59,11 @@ class AuthUtils {
     user.save(err => res.status(200).json(userToken));
   }
 
-  static checkEmailSyntax(req, res) {
+  static checkEmailSyntax(req) {
     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
-      return console.log('email is valid');
+      return Promise.resolve(true);
     }
-    return res.status(409).json({ message: 'Email address is not a valid format' });
+    return Promise.reject(new Error('email address is not a valid format'));
   }
 
   static setIfExists(item) {

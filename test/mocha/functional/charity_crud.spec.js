@@ -1,15 +1,20 @@
-const server = require('../../../index');
+const EventEmitter = require('events');
 const Charity1 = require('../../../model/charity/charity-schema');
 const authUtils = require('../../../auth/authUtils');
+const server = require('../../../index');
 
+EventEmitter.defaultMaxListeners = 35;
+const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
 describe('The Charity feature', () => {
-  let create, allowedUrl;
-  beforeEach(async () => {
-    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
-    create = await sinon.mock(Charity1, 'create');
+  // let myEmitter;
+  beforeEach((done) => {
+    // myEmitter = new EventEmitter();
+    // myEmitter.setMaxListeners(myEmitter.getMaxListeners() + 11);
+    done();
   });
   afterEach(async () => {
-    create.restore();
+    await Charity1.deleteMany({});
+    // myEmitter.setMaxListeners(myEmitter.getMaxListeners() - 11);
   });
   it('creates a new charity', async () => {
     try {
@@ -22,7 +27,6 @@ describe('The Charity feature', () => {
     } catch (e) { throw e; }
   });
   it('gets the charity by its id', async () => {
-    await Charity1.deleteMany({});
     const Charity = new Charity1();
     Charity.charityName = 'foo';
     Charity.charityZipCode = '12345';
@@ -38,7 +42,6 @@ describe('The Charity feature', () => {
   });
 
   it('gets the charity by manager id', async () => {
-    await Charity1.deleteMany({});
     const Charity = new Charity1();
     Charity.charityName = 'foo';
     Charity.charityZipCode = '12345';
@@ -54,7 +57,6 @@ describe('The Charity feature', () => {
   });
 
   it('updates the charity', async () => {
-    await Charity1.deleteMany({});
     const Charity = new Charity1();
     Charity.charityName = 'fooberrypie3';
     Charity.charityZipCode = '12345';
@@ -65,13 +67,12 @@ describe('The Charity feature', () => {
         .put('/charity/' + Charity._id)
         .set({ origin: allowedUrl })
         .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
-        .send({ charityName:'barbasol' });
+        .send({ charityName: 'barbasol' });
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
 
   it('deletes the charity', async () => {
-    await Charity1.deleteMany({});
     const Charity = new Charity1();
     Charity.charityName = 'fooberrypie4';
     Charity.charityZipCode = '12345';
