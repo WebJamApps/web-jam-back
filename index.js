@@ -33,7 +33,10 @@ app.use((req, res, next) => {
 
 app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
-mongoose.connect(process.env.MONGO_DB_URI, { useNewUrlParser: true });
+let mongoDbUri = process.env.MONGO_DB_URI;
+/* istanbul ignore else */
+if (process.env.NODE_ENV === 'test') mongoDbUri = 'mongodb://testerOfTheYear:wj-te5ter!@ds115283.mlab.com:15283/web-jam-test';
+mongoose.connect(mongoDbUri, { useNewUrlParser: true });
 mongoose.set('useCreateIndex', true);
 mongoose.set('useFindAndModify', false);
 app.use(helmet());
