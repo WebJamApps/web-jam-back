@@ -1,3 +1,4 @@
+const EventEmitter = require('events');
 const jwt = require('jwt-simple');
 const nock = require('nock');
 const google = require('../../../auth/google');
@@ -14,6 +15,10 @@ describe('The Unit Test for Google Module', () => {
       userid = user._id.toString();
       done();
     });
+  });
+  after((done) => {
+    EventEmitter.defaultMaxListeners = 10;
+    done();
   });
   it('should authenticate with existing user', (done) => {
     const sub = 'foo@example.com';
