@@ -104,28 +104,28 @@ exports.changeemail = async function changeemail(req, res) {
   });
 };
 
-exports.updateemail = async function updateemail(req, res) {
-  // validate with pin then change the email address
-  try {
-    await authUtils.checkEmailSyntax(req);
-  } catch (e) { return res.status(400).json({ message: e.message }); }
-  return User.findOne({ email: req.body.email }, (err, user) => {
-    if (!user) {
-      return res.status(409).json({ message: 'User does not exist' });
-    }
-    if (user.resetCode !== req.body.resetCode) {
-      return res.status(409).json({ message: 'Reset code is wrong' });
-    }
-    if (user.changeemail !== req.body.changeemail) {
-      return res.status(409).json({ message: 'Reset email is not valid' });
-    }
-    user.resetCode = '';
-    user.email = req.body.changeemail;
-    user.changeemail = '';
-    return user.save(() => {
-      res.status(201).json({ success: true });
-    }).catch((err) => {
-      res.status(400).json({ message: 'Failed to save user to mongodb', error: err });
-    });
-  });
-};
+// exports.updateemail = async function updateemail(req, res) {
+//   // validate with pin then change the email address
+//   try {
+//     await authUtils.checkEmailSyntax(req);
+//   } catch (e) { return res.status(400).json({ message: e.message }); }
+//   return User.findOne({ email: req.body.email }, (err, user) => {
+//     if (!user) {
+//       return res.status(409).json({ message: 'User does not exist' });
+//     }
+//     if (user.resetCode !== req.body.resetCode) {
+//       return res.status(409).json({ message: 'Reset code is wrong' });
+//     }
+//     if (user.changeemail !== req.body.changeemail) {
+//       return res.status(409).json({ message: 'Reset email is not valid' });
+//     }
+//     user.resetCode = '';
+//     user.email = req.body.changeemail;
+//     user.changeemail = '';
+//     return user.save(() => {
+//       res.status(201).json({ success: true });
+//     }).catch((err) => {
+//       res.status(400).json({ message: 'Failed to save user to mongodb', error: err });
+//     });
+//   });
+// };
