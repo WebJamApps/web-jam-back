@@ -69,7 +69,8 @@
     "nodemon": "latest",
     "nyc": "latest",
     "sinon": "latest",
-    "sinon-mongoose": "latest"
+    "sinon-mongoose": "latest",
+    "supertest": "latest"
   },
   "snyk": true
 }
