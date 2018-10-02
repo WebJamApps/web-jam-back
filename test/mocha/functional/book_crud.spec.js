@@ -17,7 +17,7 @@ describe('The library feature', () => {
     chai.request(server)
       .post('/book/create')
       .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
       .send({ title: 'foobar', type: 'book' })
       .end((err, res) => {
         expect(res).to.have.status(201);
@@ -29,7 +29,7 @@ describe('The library feature', () => {
       const cb = await chai.request(server)
         .delete('/book/deleteall')
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({});
       expect(cb.status).to.equal(200);
       // console.log(cb.body);
@@ -43,7 +43,7 @@ describe('The library feature', () => {
     chai.request(server)
       .get('/book/findcheckedout/33333')
       .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
       .send({})
       .end((err, res) => {
         // console.log(res.status);
@@ -86,7 +86,7 @@ describe('The library feature', () => {
     chai.request(server)
       .post('/book/create')
       .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
       .send([{ title: 'foobar', type: 'book' }, { title: 'JFK', type: 'PDF' }])
       .end((err, res) => {
       // expect(res).to.have.status(201);
@@ -115,9 +115,9 @@ describe('The library feature', () => {
     const newBook = await Book.save();
     try {
       const cb = await chai.request(server)
-        .put('/book/' + newBook.id)
+        .put(`/book/${newBook.id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ checkedOutBy: '' });
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
@@ -131,7 +131,7 @@ describe('The library feature', () => {
     const newBook = await Book2.save();
     try {
       const cb = await chai.request(server)
-        .get('/book/' + newBook._id)
+        .get(`/book/${newBook._id}`)
         .set({ origin: allowedUrl })
         .set('authorization', 'Bearer ');
       expect(cb).to.have.status(200);

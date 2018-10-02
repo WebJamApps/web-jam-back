@@ -18,7 +18,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user')
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ email: 'foo3@example.com' });
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
@@ -38,7 +38,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user')
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ email: 'foo3@example.com' });
       expect(cb).to.have.status(500);
     } catch (e) { throw e; }
@@ -52,9 +52,9 @@ describe('functional test for users', () => {
     await User.save();
     try {
       const cb = await chai.request(server)
-        .get('/user/' + User._id)
+        .get(`/user/${User._id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
@@ -66,9 +66,9 @@ describe('functional test for users', () => {
     const newUser = await User.save();
     try {
       const cb = await chai.request(server)
-        .put('/user/' + newUser.id)
+        .put(`/user/${newUser.id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ name: 'foobar' });
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
@@ -81,9 +81,9 @@ describe('functional test for users', () => {
     const newUser = await User.save();
     try {
       const cb = await chai.request(server)
-        .delete('/user/' + newUser.id)
+        .delete(`/user/${newUser.id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });

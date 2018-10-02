@@ -53,7 +53,7 @@ app.get('*', (request, response) => {
 /* istanbul ignore if */
 if (!module.parent) {
   app.listen(config.server.port, () => {
-    console.log(`Magic happens on port ${config.server.port}`);
+    console.log(`Magic happens on port ${config.server.port}`); // eslint-disable-line no-console
   });
 }
 

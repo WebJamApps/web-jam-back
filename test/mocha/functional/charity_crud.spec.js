@@ -21,7 +21,7 @@ describe('The Charity feature', () => {
       const cb = await chai.request(server)
         .post('/charity/create')
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ charityName: 'homeless shelter', charityZipCode: '24153', charityMngIds: ['1223'] });
       expect(cb).to.have.status(201);
     } catch (e) { throw e; }
@@ -34,9 +34,9 @@ describe('The Charity feature', () => {
     await Charity.save();
     try {
       const cb = await chai.request(server)
-        .get('/charity/find/' + Charity._id)
+        .get(`/charity/find/${Charity._id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
@@ -49,9 +49,9 @@ describe('The Charity feature', () => {
     await Charity.save();
     try {
       const cb = await chai.request(server)
-        .get('/charity/' + Charity.charityMngIds[0])
+        .get(`/charity/${Charity.charityMngIds[0]}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
@@ -64,9 +64,9 @@ describe('The Charity feature', () => {
     await Charity.save();
     try {
       const cb = await chai.request(server)
-        .put('/charity/' + Charity._id)
+        .put(`/charity/${Charity._id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ charityName: 'barbasol' });
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
@@ -80,9 +80,9 @@ describe('The Charity feature', () => {
     await Charity.save();
     try {
       const cb = await chai.request(server)
-        .delete('/charity/' + Charity._id)
+        .delete(`/charity/${Charity._id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });

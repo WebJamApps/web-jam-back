@@ -31,10 +31,10 @@ exports.signup = function signup(req, res) {
     }
     return userSave.save()
       .then((doc) => {
-        const mailbody = '<h1>Welcome ' + user.name
-      + ' to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" '
-      + 'href="' + frontURL + '/userutil/?email=' + user.email + '">link</a>, then enter the following code to verify your email: <br><br><strong>'
-      + randomNumba + '</strong></p>';
+        const mailbody = `<h1>Welcome ${user.name
+        } to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" `
+      + `href="${frontURL}/userutil/?email=${user.email}">link</a>, then enter the following code to verify your email: <br><br><strong>${
+        randomNumba}</strong></p>`;
         authUtils.sendGridEmail(mailbody, user.email, 'Verify Your Email Address');
         res.status(201).json({ email: user.email, user: doc });
       })
@@ -93,11 +93,11 @@ exports.changeemail = async function changeemail(req, res) {
       existinguser.changeemail = req.body.changeemail;
       return existinguser.save((err) => {
         res.status(201).json({ success: true });
-        const mailBody = '<h2>An Email Address Change was Requested for ' + existinguser.name
-        + '.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="'
-        + frontURL + '/userutil/?changeemail=' + existinguser.changeemail + '">'
-        + 'link</a>, then enter the following code to validate this new email: <br><br><strong>'
-        + existinguser.resetCode + '</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>';
+        const mailBody = `<h2>An Email Address Change was Requested for ${existinguser.name
+        }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="${
+          frontURL}/userutil/?changeemail=${existinguser.changeemail}">`
+        + `link</a>, then enter the following code to validate this new email: <br><br><strong>${
+          existinguser.resetCode}</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>`;
         authUtils.sendGridEmail(mailBody, existinguser.changeemail, 'Email Change Request');
       });
     });

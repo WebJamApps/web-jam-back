@@ -6,7 +6,6 @@
     "max-len": ["error", {
       "code": 150
     }],
-    "no-console": 0,
     "comma-dangle": [0, "never"],
     "no-undef": [0, "never"],
     "no-underscore-dangle": [0, "never"],
@@ -26,7 +25,6 @@
     "no-continue": 0,
     "import/no-extraneous-dependencies": 0,
     "no-mixed-operators": 0,
-    "prefer-template": 0,
     "no-trailing-spaces": [1, {
       "skipBlankLines": true
     }],

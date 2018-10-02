@@ -13,7 +13,7 @@ describe('The volunteer opportunity feature', () => {
     chai.request(server)
       .post('/volopp/create')
       .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
       .send({ voName: 'clean the homeless shelter', voCharityId: '333333', voCharityName: 'Rescue Mission' })
       .end((err, res) => {
         expect(res).to.have.status(201);
@@ -28,7 +28,7 @@ describe('The volunteer opportunity feature', () => {
     chai.request(server)
       .get('/volopp/44444')
       .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
       .end((err, res) => {
         expect(res).to.have.status(200);
         done();
@@ -43,7 +43,7 @@ describe('The volunteer opportunity feature', () => {
       chai.request(server)
         .get('/volopp/getall')
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .end((err, res) => {
           expect(res).to.have.status(200);
           done();
@@ -59,9 +59,9 @@ describe('The volunteer opportunity feature', () => {
     const newEvent = await voOp2.save();
     try {
       const cb = await chai.request(server)
-        .get('/volopp/get/' + newEvent._id)
+        .get(`/volopp/get/${newEvent._id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
@@ -74,9 +74,9 @@ describe('The volunteer opportunity feature', () => {
     const newEvent = await voOp3.save();
     try {
       const cb = await chai.request(server)
-        .put('/volopp/' + newEvent._id)
+        .put(`/volopp/${newEvent._id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ voCharityName: 'foobar' });
       expect(cb).to.have.status(200);
       expect(cb.body.nModified > 0);
@@ -89,9 +89,9 @@ describe('The volunteer opportunity feature', () => {
     voOp3.voCharityName = 'painters';
     voOp3.save();
     chai.request(server)
-      .put('/volopp/' + previousId)
+      .put(`/volopp/${previousId}`)
       .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+      .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
       .send({ voCharityName: 'foobar' })
       .end((err, res) => {
         expect(res).to.have.status(404);
@@ -108,9 +108,9 @@ describe('The volunteer opportunity feature', () => {
     const newEvent = await event.save();
     try {
       const cb = await chai.request(server)
-        .delete('/volopp/' + newEvent._id)
+        .delete(`/volopp/${newEvent._id}`)
         .set({ origin: allowedUrl })
-        .set('authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'));
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });

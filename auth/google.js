@@ -7,7 +7,7 @@ const peopleApiUrl = 'https://www.googleapis.com/plus/v1/people/me/openIdConnect
 
 class Google {
   static authenticate(req, res) {
-    console.log(req.body);
+    // console.log(req.body);
     const params = {
       code: req.body.code,
       client_id: req.body.clientId,
@@ -22,7 +22,7 @@ class Google {
       // console.log(token);
       const accessToken = token.access_token;
       // console.log(accessToken);
-      const headers = { Authorization: 'Bearer ' + accessToken };
+      const headers = { Authorization: `Bearer ${accessToken}` };
 
       // Step 2. Retrieve profile information about the current user.
       const requestConfig = { url: peopleApiUrl, headers, json: true };

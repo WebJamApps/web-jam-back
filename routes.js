@@ -10,7 +10,7 @@ const authUtils = require('./auth/authUtils');
 module.exports = function route(app) {
   app.use(router);
   router.use('/auth', auth);
-  router.use('/user', authUtils.ensureAuthenticated, user);
+  router.use('/user', user);
   router.use('/book', book);
   router.use('/song', song);
   router.use('/charity', authUtils.ensureAuthenticated, charity);

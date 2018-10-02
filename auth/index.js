@@ -1,5 +1,5 @@
 const express = require('express');
-const userController = require('../model/user/user-controller');
+// const userController = require('../model/user/user-controller');
 // const authUtils = require('./authUtils');
 const authController = require('./auth.controller.js');
 // var meController = require('./me.controller.js');
@@ -14,14 +14,13 @@ const google = require('./google.js');
 // var foursquare = require('./foursquare');
 const router = express.Router();
 router.post('/signup', authController.signup);
-router.put('/validate-email', userController.validateEmail);
+// router.put('/validate-email', userController.validateEmail);
 router.post('/google', google.authenticate);
 router.post('/login', authController.login);
-router.put('/resetpass', userController.resetpass);
+// router.put('/resetpass', userController.resetpass);
 router.put('/passwdreset', authController.passwdreset);
 router.put('/changeemail', authController.changeemail); // request is made and verification pin is sent to new email,
 // new email is stored in user.changeemail field
-router.put('/updateemail', userController.updateemail); // pin is processed and old email is replaced with new email
 // router.post('/linkedin', linkedin.authenticate);
 // router.post('/twitter', twitter.authenticate);
 // router.post('/facebook', facebook.authenticate);
