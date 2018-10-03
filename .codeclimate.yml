@@ -23,16 +23,16 @@ checks:
       threshold: 300
 plugins:
   duplication:
-    enabled: true
+    enabled:              true
     checks:
       Similar Code:
-        enabled: true
+        enabled:          true
     config:
       languages:
         typescript:
           mass_threshold: 45
   fixme:
-    enabled: true
+    enabled:              true
 ratings:
   paths:
     - "**.js"
