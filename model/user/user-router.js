@@ -3,7 +3,7 @@ const controller = require('./user-controller');
 const authUtils = require('../../auth/authUtils');
 
 router.route('/')
-  .post(authUtils.ensureAuthenticated, (...args) => controller.find(...args)); // find by email
+  .post(authUtils.ensureAuthenticated, (...args) => controller.findByEmail(...args));
 
 router.route('/:id')
   .get(authUtils.ensureAuthenticated, (...args) => controller.findById(...args))

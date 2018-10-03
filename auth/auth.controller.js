@@ -60,19 +60,19 @@ exports.login = function login(req, res) {
   });
 };
 
-exports.passwdreset = function passwdreset(req, res) {
-  User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
-    if (!user) {
-      return res.status(401).json({ message: 'incorrect email or code' });
-    }
-    user.resetCode = '';
-    user.isPswdReset = false;
-    user.password = req.body.password;
-    if (user.password.length < 8) {
-      return res.status(401).send({ message: 'Password is not min 8 characters' });
-    }
-    return user.save((err) => {
-      res.status(201).json({ success: true });
-    });
-  });
-};
+// exports.passwdreset = function passwdreset(req, res) {
+//   User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
+//     if (!user) {
+//       return res.status(401).json({ message: 'incorrect email or code' });
+//     }
+//     user.resetCode = '';
+//     user.isPswdReset = false;
+//     user.password = req.body.password;
+//     if (user.password.length < 8) {
+//       return res.status(401).send({ message: 'Password is not min 8 characters' });
+//     }
+//     return user.save((err) => {
+//       res.status(201).json({ success: true });
+//     });
+//   });
+// };

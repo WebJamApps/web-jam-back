@@ -2,10 +2,16 @@ const Controller = require('../../lib/controller');
 const userModel = require('./user-facade');
 
 class UserController extends Controller {
-  find(req, res) {
-    return this.model.find({ email: req.body.email })
-      .then(collection => res.status(200).json(collection))
-      .catch(err => res.status(500).json({ message: 'failed to find user by email', error: err }));
+  async findByEmail(req, res) {
+    let user;
+    try {
+      user = await this.model.findOne({ email: req.body.email });
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (user === undefined || user === null || user._id === null || user._id === undefined) {
+      return res.status(400).json({ message: 'wrong email' });
+    }
+    user.password = '';
+    return res.status(200).json(user);
   }
 
   handleAuth(req, res) {
@@ -19,6 +25,7 @@ class UserController extends Controller {
       updatedUser = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
     } catch (e) { return res.status(500).json({ message: e.message }); }
     if (updatedUser === null || updatedUser === undefined) return res.status(400).json({ message: 'incorrect email or code' });
+    updatedUser.password = '';
     return res.status(200).json(updatedUser);
   }
 
@@ -44,10 +51,28 @@ class UserController extends Controller {
     try {
       updatedUser = await this.model.findOneAndUpdate({ email: req.body.email }, update);
     } catch (e) { return res.status(500).json({ message: e.message }); }
+    updatedUser.password = '';
     return res.status(200).json(updatedUser);
   }
 
-  async resetpswd(req, res) {
+  async pswdreset(req, res) { // changes the password after code is verified
+    if (req.body.password === null || req.body.password === undefined || req.body.password.length < 8) {
+      return res.status(400).send({ message: 'Password is not min 8 characters' });
+    }
+    let user;
+    const update = {};
+    update.resetCode = '';
+    update.isPswdReset = false;
+    update.password = req.body.password;
+    try {
+      user = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (user === null || user._id === null || user._id === undefined) return res.status(400).json({ message: 'wrong email or reset code' });
+    user.password = '';
+    return res.status(200).json(user);
+  }
+
+  async resetpswd(req, res) { // initial request to reset password
     let user;
     const updateUser = {};
     try {

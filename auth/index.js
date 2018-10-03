@@ -18,7 +18,7 @@ router.post('/signup', authController.signup);
 router.post('/google', google.authenticate);
 router.post('/login', authController.login);
 // router.put('/resetpass', userController.resetpass);
-router.put('/passwdreset', authController.passwdreset);
+// router.put('/passwdreset', authController.passwdreset);
 // router.put('/changeemail', authController.changeemail); // request is made and verification pin is sent to new email,
 // new email is stored in user.changeemail field
 // router.post('/linkedin', linkedin.authenticate);

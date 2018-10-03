@@ -31,9 +31,9 @@ describe('functional test for users', () => {
     await User2.save();
     const uMock = sinon.mock(User1);
     uMock
-      .expects('find')
+      .expects('findOne')
       .chain('exec')
-      .rejects(new Error({}));
+      .rejects(new Error('bad'));
     try {
       const cb = await chai.request(server)
         .post('/user')
@@ -41,6 +41,27 @@ describe('functional test for users', () => {
         .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ email: 'foo3@example.com' });
       expect(cb).to.have.status(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
+  it('returns error on find a user by email when no user is found', async () => {
+    await User1.deleteMany({});
+    const User2 = new User1();
+    User2.name = 'foo';
+    User2.email = 'foo3@example.com';
+    await User2.save();
+    const uMock = sinon.mock(User1);
+    uMock
+      .expects('findOne')
+      .chain('exec')
+      .resolves();
+    try {
+      const cb = await chai.request(server)
+        .post('/user')
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send({ email: 'foo3@example.com' });
+      expect(cb).to.have.status(400);
     } catch (e) { throw e; }
     uMock.restore();
   });
