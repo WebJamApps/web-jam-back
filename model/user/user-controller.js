@@ -26,9 +26,6 @@ class UserController extends Controller {
     let user, updatedUser;
     const update = {};
     try {
-      await this.authUtils.checkEmailSyntax(req);
-    } catch (e) { return res.status(400).json({ message: e.message }); }
-    try {
       user = await this.model.findOne({ email: req.body.email });
     } catch (e) {
       return res.status(500).json({ message: e.message });
