@@ -23,7 +23,7 @@ class UserController extends Controller {
   }
 
   async updateemail(req, res) { // validate with pin then change the email address
-    let user, updatedUser;
+    let user, updatedUser, fourHundred = '';
     const update = {};
     try {
       user = await this.model.findOne({ email: req.body.email });
@@ -31,14 +31,13 @@ class UserController extends Controller {
       return res.status(500).json({ message: e.message });
     }
     if (user === null || user === undefined || user._id === null || user._id === undefined) {
-      return res.status(400).json({ message: 'User does not exist' });
+      fourHundred = 'User does not exist';
+    } else if (user.resetCode !== req.body.resetCode) {
+      fourHundred = 'Reset code is wrong';
+    } else if (user.changeemail !== req.body.changeemail) {
+      fourHundred = 'Reset email is not valid';
     }
-    if (user.resetCode !== req.body.resetCode) {
-      return res.status(400).json({ message: 'Reset code is wrong' });
-    }
-    if (user.changeemail !== req.body.changeemail) {
-      return res.status(400).json({ message: 'Reset email is not valid' });
-    }
+    if (fourHundred !== '') return res.status(400).json({ message: fourHundred });
     update.resetCode = '';
     update.email = req.body.changeemail;
     update.changeemail = '';
