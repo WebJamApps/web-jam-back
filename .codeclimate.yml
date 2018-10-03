@@ -24,7 +24,7 @@ plugins:
     config:
       languages:
         javascript:
-          mass_threshold: 70
+          mass_threshold: 80
   fixme:
     enabled:              true
 ratings:
