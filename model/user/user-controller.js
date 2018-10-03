@@ -72,24 +72,30 @@ class UserController extends Controller {
     return res.status(200).json({ email: user.email });
   }
 
-  async changeemail(req, res) {
+  async validateChangeEmail(req) {
     let user1, user2;
+    try {
+      user1 = await this.model.findOne({ email: req.body.changeemail });
+    } catch (e) { return Promise.reject(e); }
+    if (user1 !== null) return Promise.reject(new Error('Email address already exists'));
+    try {
+      user2 = await this.model.find({ email: req.body.email });
+    } catch (e) { return Promise.reject(e); }
+    if (user2 === null || user2 === undefined || user2.length === 0) {
+      return Promise.reject(new Error('current user does not exist'));
+    }
+    return Promise.resolve(user2);
+  }
+
+  async changeemail(req, res) {
+    let user2;
     const updateUser = {};
     try {
       await this.authUtils.checkEmailSyntax(req);
     } catch (e) { return res.status(400).json({ message: e.message }); }
     try {
-      user1 = await this.model.findOne({ email: req.body.changeemail });
+      user2 = await this.validateChangeEmail(req);
     } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (user1 !== null) {
-      return res.status(409).json({ message: 'Email address already exists' });
-    }
-    try {
-      user2 = await this.model.find({ email: req.body.email });
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (user2 === null || user2 === undefined || user2.length === 0) {
-      return res.status(400).json({ message: 'current user does not exist' });
-    }
     updateUser.resetCode = this.authUtils.generateCode(99999, 10000);
     updateUser.changeemail = req.body.changeemail;
     try {

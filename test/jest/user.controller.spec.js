@@ -291,7 +291,7 @@ describe.only('User Controller', () => {
         .put('/user/auth/changeemail')
         .set({ origin: allowedUrl })
         .send({ email: 'old@wold.com', changeemail: 'j@jb.com' });
-      expect(cb.status).toBe(409);
+      expect(cb.status).toBe(500);
     } catch (e) { throw e; }
   });
   it('returns find error when handles request to change the user email', async () => {
@@ -322,7 +322,7 @@ describe.only('User Controller', () => {
         .put('/user/auth/changeemail')
         .set({ origin: allowedUrl })
         .send({ email: 'old@wold.com', changeemail: 'j@jb.com' });
-      expect(cb.status).toBe(400);
+      expect(cb.status).toBe(500);
     } catch (e) { throw e; }
     uMock.restore();
   });
