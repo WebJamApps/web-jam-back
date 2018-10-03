@@ -1,6 +1,5 @@
 const Controller = require('../../lib/controller');
 const userModel = require('./user-facade');
-const authUtils = require('../../auth/authUtils');
 
 class UserController extends Controller {
   find(req, res) { // TODO make this a get with query and also update frontend fetch request
@@ -27,7 +26,7 @@ class UserController extends Controller {
     let user, updatedUser;
     const update = {};
     try {
-      await authUtils.checkEmailSyntax(req);
+      await this.authUtils.checkEmailSyntax(req);
     } catch (e) { return res.status(400).json({ message: e.message }); }
     try {
       user = await this.model.findOne({ email: req.body.email });
@@ -62,7 +61,7 @@ class UserController extends Controller {
       return res.status(400).json({ message: 'incorrect email address' });
     }
     if (!user.verifiedEmail) return res.status(401).json({ message: 'Verify your email address' });
-    const randomNumba = authUtils.generateCode(99999, 10000);
+    const randomNumba = this.authUtils.generateCode(99999, 10000);
     updateUser.resetCode = randomNumba;
     updateUser.isPswdReset = true;
     try {
@@ -75,6 +74,38 @@ class UserController extends Controller {
           randomNumba}</strong></p><p><i>If a reset was requested in error, you can ignore this email and login to web-jam.com as usual.</i></p>`;
     this.authUtils.sendGridEmail(mailBody, user.email, 'Password Reset');
     return res.status(200).json({ email: user.email });
+  }
+
+  async changeemail(req, res) {
+    let user1, user2;
+    const updateUser = {};
+    try {
+      await this.authUtils.checkEmailSyntax(req);
+    } catch (e) { return res.status(400).json({ message: e.message }); }
+    try {
+      user1 = await this.model.findOne({ email: req.body.changeemail });
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (user1 !== null) {
+      return res.status(409).json({ message: 'Email address already exists' });
+    }
+    try {
+      user2 = await this.model.find({ email: req.body.email });
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (user2 === null || user2 === undefined || user2.length === 0) {
+      return res.status(400).json({ message: 'current user does not exist' });
+    }
+    updateUser.resetCode = this.authUtils.generateCode(99999, 10000);
+    updateUser.changeemail = req.body.changeemail;
+    try {
+      await this.model.findOneAndUpdate({ email: req.body.email }, updateUser);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    const mailBody = `<h2>Email Address Change Request for ${user2.name
+    }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="${
+      process.env.frontURL}/userutil/?changeemail=${updateUser.changeemail}">`
+          + `link</a>, then enter the following code to validate this new email: <br><br><strong>${
+            updateUser.resetCode}</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>`;
+    this.authUtils.sendGridEmail(mailBody, updateUser.changeemail, 'Web Jam LLC User Account - Email Change Request');
+    return res.status(200).json({ success: true });
   }
 }
 

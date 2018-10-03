@@ -77,32 +77,32 @@ exports.passwdreset = function passwdreset(req, res) {
   });
 };
 
-exports.changeemail = async function changeemail(req, res) {
-  try {
-    await authUtils.checkEmailSyntax(req);
-  } catch (e) { return res.status(400).json({ message: e.message }); }
-  return User.findOne({ email: req.body.changeemail }, (err, user) => {
-    if (user) {
-      return res.status(409).json({ message: 'Email address already exists' });
-    }
-    return User.findOne({ email: req.body.email }, (err, existinguser) => {
-      if (!existinguser) {
-        return res.status(409).json({ message: 'current user does not exist' });
-      }
-      existinguser.resetCode = authUtils.generateCode(99999, 10000);
-      existinguser.changeemail = req.body.changeemail;
-      return existinguser.save((err) => {
-        res.status(201).json({ success: true });
-        const mailBody = `<h2>An Email Address Change was Requested for ${existinguser.name
-        }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="${
-          frontURL}/userutil/?changeemail=${existinguser.changeemail}">`
-        + `link</a>, then enter the following code to validate this new email: <br><br><strong>${
-          existinguser.resetCode}</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>`;
-        authUtils.sendGridEmail(mailBody, existinguser.changeemail, 'Email Change Request');
-      });
-    });
-  });
-};
+// exports.changeemail = async function changeemail(req, res) {
+//   try {
+//     await authUtils.checkEmailSyntax(req);
+//   } catch (e) { return res.status(400).json({ message: e.message }); }
+//   return User.findOne({ email: req.body.changeemail }, (err, user) => {
+//     if (user) {
+//       return res.status(409).json({ message: 'Email address already exists' });
+//     }
+//     return User.findOne({ email: req.body.email }, (err, existinguser) => {
+//       if (!existinguser) {
+//         return res.status(409).json({ message: 'current user does not exist' });
+//       }
+//       existinguser.resetCode = authUtils.generateCode(99999, 10000);
+//       existinguser.changeemail = req.body.changeemail;
+//       return existinguser.save((err) => {
+//         res.status(201).json({ success: true });
+//         const mailBody = `<h2>An Email Address Change was Requested for ${existinguser.name
+//         }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="${
+//           frontURL}/userutil/?changeemail=${existinguser.changeemail}">`
+//         + `link</a>, then enter the following code to validate this new email: <br><br><strong>${
+//           existinguser.resetCode}</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>`;
+//         authUtils.sendGridEmail(mailBody, existinguser.changeemail, 'Email Change Request');
+//       });
+//     });
+//   });
+// };
 
 // exports.updateemail = async function updateemail(req, res) {
 //   // validate with pin then change the email address
