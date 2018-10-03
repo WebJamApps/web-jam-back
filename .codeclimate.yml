@@ -1,28 +1,38 @@
----
+version:                  "2"
 checks:
+  return-statements:
+    config:
+      threshold:          5
   method-lines:
     config:
-      threshold: 30
-engines:
+      threshold:          30
+  similar-code:
+    config:
+      threshold:          100
+  method-complexity:
+    config:
+      threshold:          10
+  argument-count:
+    config:
+      threshold:          5
+plugins:
   duplication:
-    enabled: true
+    enabled:              true
     checks:
       Similar Code:
-        enabled: true
+        enabled:          true
     config:
       languages:
         javascript:
-          mass_threshold: 50
-  eslint:
-    enabled: true
+          mass_threshold: 60
   fixme:
-    enabled: true
+    enabled:              true
 ratings:
   paths:
   - "**.js"
   - "**.jsx"
-exclude_paths:
-- test/
-- node_modules/
-- coverage/
-- frontend/
+exclude_patterns:
+- "test/"
+- "**/node_modules/"
+- "coverage/"
+- "frontend/"
