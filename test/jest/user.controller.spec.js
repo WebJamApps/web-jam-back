@@ -235,4 +235,111 @@ describe.only('User Controller', () => {
     } catch (e) { throw e; }
     uMock.restore();
   });
+  it('handles request to change the user email', async () => {
+    await user.create({
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+    });
+    let cb;
+    try {
+      cb = await request(server)
+        .put('/user/auth/changeemail')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', changeemail: 'j@jb.com' });
+      expect(cb.status).toBe(200);
+      expect(cb.body.success).toBe(true);
+    } catch (e) { throw e; }
+  });
+  it('returns bad email syntax error when handles request to change the user email', async () => {
+    await user.create({
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+    });
+    let cb;
+    try {
+      cb = await request(server)
+        .put('/user/auth/changeemail')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', changeemail: 'booya' });
+      expect(cb.status).toBe(400);
+    } catch (e) { throw e; }
+  });
+  it('returns findOne error for changeemail when handles request to change the user email', async () => {
+    await user.create({
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+    });
+    let cb;
+    const uMock = sinon.mock(user);
+    uMock.expects('findOne').chain('exec').rejects(new Error('bad'));
+    try {
+      cb = await request(server)
+        .put('/user/auth/changeemail')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', changeemail: 'j@jb.com' });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
+  it('returns error for changeemail if email already exists when handles request to change the user email', async () => {
+    await user.create({
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+    });
+    await user.create({
+      name: 'Jay Beetle', email: 'j@jb.com', verifiedEmail: true
+    });
+    let cb;
+    try {
+      cb = await request(server)
+        .put('/user/auth/changeemail')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', changeemail: 'j@jb.com' });
+      expect(cb.status).toBe(409);
+    } catch (e) { throw e; }
+  });
+  it('returns find error when handles request to change the user email', async () => {
+    await user.create({
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+    });
+    let cb;
+    const uMock = sinon.mock(user);
+    uMock.expects('find').chain('exec').rejects(new Error('bad'));
+    try {
+      cb = await request(server)
+        .put('/user/auth/changeemail')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', changeemail: 'j@jb.com' });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
+  it('returns error if user is not found when handles request to change the user email', async () => {
+    await user.create({
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+    });
+    let cb;
+    const uMock = sinon.mock(user);
+    uMock.expects('find').chain('exec').resolves();
+    try {
+      cb = await request(server)
+        .put('/user/auth/changeemail')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', changeemail: 'j@jb.com' });
+      expect(cb.status).toBe(400);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
+  it('returns findOneAndUpdate error when handles request to change the user email', async () => {
+    await user.create({
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+    });
+    let cb;
+    const uMock = sinon.mock(user);
+    uMock.expects('findOneAndUpdate').chain('exec').rejects(new Error('bad'));
+    try {
+      cb = await request(server)
+        .put('/user/auth/changeemail')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', changeemail: 'j@jb.com' });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
 });
