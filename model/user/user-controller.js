@@ -67,7 +67,7 @@ class UserController extends Controller {
     try {
       user = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
     } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (user === null || user._id === null || user._id === undefined) return res.status(400).json({ message: 'wrong email or reset code' });
+    if (user === null || user._id === null || user._id === undefined) return res.status(401).json({ message: 'wrong email or reset code' });
     user.password = '';
     return res.status(200).json(user);
   }

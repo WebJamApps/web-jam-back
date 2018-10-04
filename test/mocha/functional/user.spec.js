@@ -8,6 +8,9 @@ describe('functional test for users', () => {
     allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
     done();
   });
+  afterEach(async () => {
+    await User1.deleteMany({});
+  });
   it('finds a user by email', async () => {
     await User1.deleteMany({});
     const User2 = new User1();
@@ -178,6 +181,26 @@ describe('functional test for users', () => {
     } catch (e) { throw e; }
   });
 
+  it('returns findOne error when user login with email', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    User.verifiedEmail = true;
+    User.resetCode = '';
+    await User.save();
+    const uMock = sinon.mock(User1);
+    uMock.expects('findOne').chain('exec').rejects(new Error('bad'));
+    try {
+      const cb = await chai.request(server)
+        .post('/user/auth/login')
+        .send({ email: 'foo3@example.com', password: 'lottanumbers35555' });
+      expect(cb).to.have.status(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
+
   it('should not allow the user to login with incorrect email', (done) => {
     const User = new User1();
     User.name = 'foo4';
@@ -211,61 +234,58 @@ describe('functional test for users', () => {
         });
     });
   });
-  //
-  //   it('should not allow the user to login with no password in user document', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo4';
-  //     User.email = 'foo3@example.com';
-  //     User.password = '';
-  //     // User.id = 'yoyo23';
-  //     User.resetCode = '';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .post('/auth/login')
-  //         .send({ password: 'lottanumbers35555', email: 'foo3@example.com' })
-  //         .end((err, resp) => {
-  //           expect(resp).to.have.status(401);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('should not allow the user to login with correct email but incorect password', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo4';
-  //     User.email = 'foo3@example.com';
-  //     User.password = 'lottanumbers35555';
-  //     User.verifiedEmail = true;
-  //     // User.id = 'yoyo23';
-  //     User.resetCode = '';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .post('/auth/login')
-  //         .send({ email: 'foo3@example.com', password: 'fewnumbers33' })
-  //         .end((err, resp) => {
-  //           expect(resp).to.have.status(401);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('prevents user to login without email varification', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo4';
-  //     User.email = 'foo3@example.com';
-  //     User.password = 'lottanumbers35555';
-  //     // User.id = 'yoyo23';
-  //     User.resetCode = '12345';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .post('/auth/login')
-  //         .send({ email: 'foo3@example.com', password: 'lottanumbers35555' })
-  //         .end((err, resp) => {
-  //           expect(resp).to.have.status(401);
-  //           done();
-  //         });
-  //     });
-  //   });
+  it('should not allow the user to login with no password in user document', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo3@example.com';
+    User.password = '';
+    User.resetCode = '';
+    await User.save();
+    let cb;
+    try {
+      cb = await chai.request(server)
+        .post('/user/auth/login')
+        .send({ password: 'lottanumbers35555', email: 'foo3@example.com' });
+      expect(cb).to.have.status(401);
+    } catch (e) { throw e; }
+  });
+
+  it('should not allow the user to login with correct email but incorect password', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    User.verifiedEmail = true;
+    User.resetCode = '';
+    await User.save();
+    let cb;
+    try {
+      cb = await chai.request(server)
+        .post('/user/auth/login')
+        .send({ email: 'foo3@example.com', password: 'fewnumbers33' });
+      expect(cb).to.have.status(401);
+    } catch (e) { throw e; }
+    await User1.deleteMany({});
+  });
+
+  it('prevents user to login without email varification', (done) => {
+    const User = new User1();
+    User.name = 'foo4';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    User.resetCode = '12345';
+    User.save((err) => {
+      chai.request(server)
+        .post('/user/auth/login')
+        .send({ email: 'foo3@example.com', password: 'lottanumbers35555' })
+        .end((err, resp) => {
+          expect(resp).to.have.status(401);
+          done();
+        });
+    });
+  });
   //
   //   it('should allow the user to login after requesting a password reset', (done) => {
   //     const User = new User1();
@@ -446,40 +466,59 @@ describe('functional test for users', () => {
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
-//
-//   it('does not reset the password with an invalid code', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.resetCode = '12345';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/passwdreset')
-//         .send({ email: 'foo3@example.com', password: 'gygygygy', resetCode: '11111' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(401);
-//           done();
-//         });
-//     });
-//   });
-//
-//   it('does not reset the password with an invalid password', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.resetCode = '12345';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/passwdreset')
-//         .send({ email: 'foo3@example.com', password: 'gyg', resetCode: '12345' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(401);
-//           done();
-//         });
-//     });
-//   });
+  it('does not reset the password with an invalid code', (done) => {
+    const User = new User1();
+    User.name = 'foo3';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    User.resetCode = '12345';
+    User.save((err) => {
+      chai.request(server)
+        .put('/user/auth/pswdreset')
+        .send({ email: 'foo3@example.com', password: 'gygygygy', resetCode: '11111' })
+        .end((err, res) => {
+          expect(res).to.have.status(401);
+          done();
+        });
+    });
+  });
+
+  it('does not reset the password with an invalid password', (done) => {
+    const User = new User1();
+    User.name = 'foo3';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    User.resetCode = '12345';
+    User.save((err) => {
+      chai.request(server)
+        .put('/user/auth/pswdreset')
+        .send({ email: 'foo3@example.com', password: 'gyg', resetCode: '12345' })
+        .end((err, res) => {
+          expect(res).to.have.status(400);
+          done();
+        });
+    });
+  });
+
+  it('catches findOneAndUpdate error when reset the password', (done) => {
+    const User = new User1();
+    User.name = 'foo3';
+    User.email = 'foo3@example.com';
+    User.password = 'lottanumbers35555';
+    User.resetCode = '12345';
+    const uMock = sinon.mock(User1);
+    uMock.expects('findOneAndUpdate').chain('exec').rejects(new Error('bad'));
+    User.save((err) => {
+      chai.request(server)
+        .put('/user/auth/pswdreset')
+        .send({ email: 'foo3@example.com', password: 'gyggyggyg', resetCode: '12345' })
+        .end((err, res) => {
+          expect(res).to.have.status(500);
+          uMock.restore();
+          done();
+        });
+    });
+  });
 //
 //   it('sends a varification email for change email request', (done) => {
 //     const User = new User1();
