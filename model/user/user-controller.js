@@ -136,7 +136,7 @@ class UserController extends Controller {
   }
 
   async login(req, res) {
-    let user;
+    let user, fourOone = '';
     const reqUserEmail = this.authUtils.setIfExists(req.body.email);
     const myPassword = this.authUtils.setIfExists(req.body.password);
     if (reqUserEmail === '' || myPassword === '') return res.status(400).json({ message: 'email and password are required' });
@@ -144,12 +144,11 @@ class UserController extends Controller {
       user = await this.model.findOne({ email: reqUserEmail });
     } catch (e) { return res.status(500).json({ message: e.message }); }
     if (user === undefined || user === null || user._id === undefined || user._id === null) {
-      return res.status(401).json({ message: 'Wrong email address' });
-    } if (user.password === '' || user.password === null || user.password === undefined) {
-      return res.status(401).json({ message: 'Please reset your password' });
-    } if (!user.verifiedEmail) {
-      return res.status(401).json({ message: '<a href="/userutil">Verify</a> your email' });
-    }
+      fourOone = 'Wrong email address';
+    } else if (user.password === '' || user.password === null || user.password === undefined) {
+      fourOone = 'Please reset your password';
+    } else if (!user.verifiedEmail) fourOone = '<a href="/userutil">Verify</a> your email';
+    if (fourOone !== '') return res.status(401).json({ message: fourOone });
     return user.comparePassword(req.body.password, (err, isMatch) => {
       if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
       return this.authUtils.saveSendToken(user, req, res);
