@@ -1,5 +1,6 @@
 const Controller = require('../../lib/controller');
 const userModel = require('./user-facade');
+// const UserSchema = require('./user-schema');
 
 class UserController extends Controller {
   async findByEmail(req, res) {
@@ -154,6 +155,41 @@ class UserController extends Controller {
       return this.authUtils.saveSendToken(user, req, res);
     });
   }
-}
 
+  async signup(req, res) {
+    let existingUser, userSave;
+    const randomNumba = this.authUtils.generateCode(99999, 10000);
+    const user = {
+      name: req.body.name,
+      verifiedEmail: false,
+      email: req.body.email,
+      password: req.body.password,
+      isPswdReset: false,
+      resetCode: randomNumba,
+    };
+    const validData = this.model.validateSignup(user);
+    if (validData !== '') return res.status(409).send({ message: validData });
+    try {
+      existingUser = await this.model.findOne({ email: req.body.email });
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (existingUser && existingUser.verifiedEmail) {
+      return res.status(409).send({ message: 'This email address has already been registered.' });
+    }
+    if (existingUser && !existingUser.verifiedEmail) {
+      try {
+        await this.model.findByIdAndRemove(existingUser._id);
+      } catch (e) { return res.status(500).json({ message: e.message }); }
+    }
+    try {
+      userSave = await this.model.create(user);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    const mailbody = `<h1>Welcome ${userSave.name
+    } to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" `
+        + `href="${process.env.frontURL}/userutil/?email=${userSave.email}">link</a>, then enter the following code to verify your email:`
+        + `<br><br><strong>${randomNumba}</strong></p>`;
+    this.authUtils.sendGridEmail(mailbody, userSave.email, 'Verify Your Email Address');
+    userSave.password = '';
+    return res.status(201).json(userSave);
+  }
+}
 module.exports = new UserController(userModel);

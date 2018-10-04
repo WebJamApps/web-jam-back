@@ -111,17 +111,56 @@ describe('functional test for users', () => {
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
-  it('should signup the new user', async () => {
+  it('signs up the new user', async () => {
     try {
       const cb = await chai.request(server)
-        .post('/auth/signup')
+        .post('/user/auth/signup')
         .send({
-          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555', id: 'yoyo23'
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
         });
       expect(cb).to.have.status(201);
     } catch (e) { throw e; }
   });
-
+  it('returns db.create error when signs up the new user', async () => {
+    const uMock = sinon.mock(User1);
+    uMock.expects('create').rejects(new Error('bad'));
+    try {
+      const cb = await chai.request(server)
+        .post('/user/auth/signup')
+        .send({
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+        });
+      expect(cb).to.have.status(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
+  it('returns findOne error when signs up the new user', async () => {
+    const uMock = sinon.mock(User1);
+    uMock.expects('findOne').chain('exec').rejects(new Error('bad'));
+    try {
+      const cb = await chai.request(server)
+        .post('/user/auth/signup')
+        .send({
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+        });
+      expect(cb).to.have.status(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
+  it('returns findByIdAndRemove error when signs up the existing user', async () => {
+    await User1.create({ name: 'foowee', email: 'foo3@example.com', verifiedEmail: false });
+    const uMock = sinon.mock(User1);
+    uMock.expects('findByIdAndRemove').chain('exec').rejects(new Error('bad'));
+    try {
+      const cb = await chai.request(server)
+        .post('/user/auth/signup')
+        .send({
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+        });
+      expect(cb).to.have.status(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
   it('should not signup the new user if the email already exists and has been verified', async () => {
     await User1.deleteMany({});
     const User = new User1();
@@ -131,7 +170,7 @@ describe('functional test for users', () => {
     await User.save();
     try {
       const cb = await chai.request(server)
-        .post('/auth/signup')
+        .post('/user/auth/signup')
         .send({
           email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
@@ -148,7 +187,7 @@ describe('functional test for users', () => {
     await User.save();
     try {
       const cb = await chai.request(server)
-        .post('/auth/signup')
+        .post('/user/auth/signup')
         .send({ email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555' });
       expect(cb).to.have.status(201);
     } catch (e) { throw e; }
@@ -156,7 +195,7 @@ describe('functional test for users', () => {
 
   it('should not signup the new user if the name, password, or email is not valid', (done) => {
     chai.request(server)
-      .post('/auth/signup')
+      .post('/user/auth/signup')
       .send({ email: 'foo4example.com', password: '00' })
       .end((err, res) => {
         expect(res).to.have.status(409);

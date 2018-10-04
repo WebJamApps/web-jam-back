@@ -1,30 +1,31 @@
+const sinon = require('sinon');
+require('sinon-mongoose');
 const server = require('../../../index');
 const Book1 = require('../../../model/book/book-schema');
 const authUtils = require('../../../auth/authUtils');
 
 describe('The library feature', () => {
-  let find, create, allowedUrl;
+  let find, allowedUrl;
   beforeEach(async () => {
+    await Book1.deleteMany({});
     allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
     find = await sinon.mock(Book1, 'find');
-    create = await sinon.mock(Book1, 'create');
   });
   afterEach(async () => {
     find.restore();
-    create.restore();
   });
-  it('should create a new book', (done) => {
-    chai.request(server)
-      .post('/book/create')
-      .set({ origin: allowedUrl })
-      .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-      .send({ title: 'foobar', type: 'book' })
-      .end((err, res) => {
-        expect(res).to.have.status(201);
-        done();
-      });
+  it('creates a new book', async () => {
+    let cb;
+    try {
+      cb = await chai.request(server)
+        .post('/book/create')
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send({ title: 'foobar', type: 'book' });
+      expect(cb).to.have.status(201);
+    } catch (e) { throw e; }
   });
-  it('should remove all books', async () => {
+  it('deletes all books', async () => {
     try {
       const cb = await chai.request(server)
         .delete('/book/deleteall')
@@ -32,10 +33,9 @@ describe('The library feature', () => {
         .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({});
       expect(cb.status).to.equal(200);
-      // console.log(cb.body);
     } catch (e) { throw e; }
   });
-  it('should find checked out books', (done) => {
+  it('finds the checked out books', (done) => {
     const Book = new Book1();
     Book.title = 'foo2';
     Book.type = 'paperback';
@@ -52,21 +52,7 @@ describe('The library feature', () => {
       });
   });
 
-  //
-  // it('should raise error when no books are found', (done) => {
-  //   Book1.collection.drop();
-  //   chai.request(server)
-  //   .get('/book/getall')
-  //   .set({ origin: allowedUrl })
-  //   .set('authorization', 'Bearer ')
-  //   .end((err, res) => {
-  //     expect(res).to.have.status(500);
-  //     console.log(typeof res);
-  //     done();
-  //   });
-  // });
-
-  it('should return all books', (done) => {
+  it('returns all books', (done) => {
     const Book = new Book1();
     Book.title = 'foo2book';
     Book.type = 'pdf';
@@ -81,7 +67,19 @@ describe('The library feature', () => {
         });
     });
   });
-
+  it('returns error on db.find when getting all books', async () => {
+    const bMock = sinon.mock(Book1);
+    bMock.expects('find').chain('exec').rejects(new Error('bad'));
+    let cb;
+    try {
+      cb = await chai.request(server)
+        .get('/book/getall')
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ');
+      expect(cb).to.have.status(500);
+    } catch (e) { throw e; }
+    bMock.restore();
+  });
   it('should post an array of new books', (done) => {
     chai.request(server)
       .post('/book/create')

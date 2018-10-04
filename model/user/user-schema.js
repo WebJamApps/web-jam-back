@@ -48,20 +48,4 @@ userSchema.methods.comparePassword = function comparePassword(password, done) {
   });
 };
 
-userSchema.methods.validateSignup = function validateSignup() {
-  let message = '';
-  if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(this.email)) {
-    // the email is valid
-  } else {
-    message = 'Email address is invalid format';
-  }
-  if (this.password.length < 8) {
-    message = 'Password is not min 8 characters';
-  }
-  if (this.name === '' || this.name === null || this.name === undefined) {
-    message = 'User Name is missing';
-  }
-  return message;
-};
-
 module.exports = mongoose.model('User', userSchema);

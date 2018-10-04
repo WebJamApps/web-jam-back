@@ -1,7 +1,7 @@
 const express = require('express');
 // const userController = require('../model/user/user-controller');
 // const authUtils = require('./authUtils');
-const authController = require('./auth.controller.js');
+// const authController = require('./auth.controller.js');
 // var meController = require('./me.controller.js');
 // var identSrv = require('./identSrv.js');
 const google = require('./google.js');
@@ -13,9 +13,7 @@ const google = require('./google.js');
 // var yahoo = require('./yahoo.js');
 // var foursquare = require('./foursquare');
 const router = express.Router();
-router.post('/signup', authController.signup);
 router.post('/google', google.authenticate);
-// router.post('/login', authController.login);
 // router.post('/linkedin', linkedin.authenticate);
 // router.post('/twitter', twitter.authenticate);
 // router.post('/facebook', facebook.authenticate);
