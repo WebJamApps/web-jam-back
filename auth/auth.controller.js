@@ -2,9 +2,7 @@ const config = require('../config');
 const User = require('../model/user/user-schema');
 const authUtils = require('./authUtils');
 
-let frontURL = config.frontURL;
-/* istanbul ignore if */
-if (process.env.NODE_ENV === 'production') frontURL = 'https://web-jam.com';
+const frontURL = config.frontURL;
 
 exports.signup = function signup(req, res) {
   const randomNumba = authUtils.generateCode(99999, 10000);
@@ -41,38 +39,3 @@ exports.signup = function signup(req, res) {
       .catch((err) => { res.status(500).json({ message: 'New user failed to save to mongodb', error: err }); });
   });
 };
-
-exports.login = function login(req, res) {
-  let reqUserEmail = '';
-  reqUserEmail = authUtils.setIfExists(req.body.email);
-  User.findOne({ email: reqUserEmail }, '+password', (err, user) => {
-    if (!user) {
-      return res.status(401).json({ message: 'Wrong email address' });
-    } if (user.password === '' || user.password === null || user.password === undefined) {
-      return res.status(401).json({ message: 'Please reset your password' });
-    } if (!user.verifiedEmail) {
-      return res.status(401).json({ message: '<a href="/userutil">Verify</a> your email' });
-    }
-    return user.comparePassword(req.body.password, (err, isMatch) => {
-      if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
-      return authUtils.saveSendToken(user, req, res);
-    });
-  });
-};
-
-// exports.passwdreset = function passwdreset(req, res) {
-//   User.findOne({ email: req.body.email, resetCode: req.body.resetCode }, (err, user) => {
-//     if (!user) {
-//       return res.status(401).json({ message: 'incorrect email or code' });
-//     }
-//     user.resetCode = '';
-//     user.isPswdReset = false;
-//     user.password = req.body.password;
-//     if (user.password.length < 8) {
-//       return res.status(401).send({ message: 'Password is not min 8 characters' });
-//     }
-//     return user.save((err) => {
-//       res.status(201).json({ success: true });
-//     });
-//   });
-// };

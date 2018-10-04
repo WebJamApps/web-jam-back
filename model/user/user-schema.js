@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const userSchema = new Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: false, select: false },
+  password: { type: String, required: false },
   resetCode: { type: String, required: false },
   isPswdReset: { type: Boolean, required: false },
   verifiedEmail: { type: Boolean, required: false },
@@ -51,7 +51,7 @@ userSchema.methods.comparePassword = function comparePassword(password, done) {
 userSchema.methods.validateSignup = function validateSignup() {
   let message = '';
   if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(this.email)) {
-    // console.log('email is valid');
+    // the email is valid
   } else {
     message = 'Email address is invalid format';
   }
