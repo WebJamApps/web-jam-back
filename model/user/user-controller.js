@@ -156,8 +156,22 @@ class UserController extends Controller {
     });
   }
 
+  async finishSignup(res, user, randomNumba) {
+    let userSave;
+    try {
+      userSave = await this.model.create(user);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    const mailbody = `<h1>Welcome ${userSave.name
+    } to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" `
+        + `href="${process.env.frontURL}/userutil/?email=${userSave.email}">link</a>, then enter the following code to verify your email:`
+        + `<br><br><strong>${randomNumba}</strong></p>`;
+    this.authUtils.sendGridEmail(mailbody, userSave.email, 'Verify Your Email Address');
+    userSave.password = '';
+    return res.status(201).json(userSave);
+  }
+
   async signup(req, res) {
-    let existingUser, userSave;
+    let existingUser;
     const randomNumba = this.authUtils.generateCode(99999, 10000);
     const user = {
       name: req.body.name,
@@ -180,16 +194,7 @@ class UserController extends Controller {
         await this.model.findByIdAndRemove(existingUser._id);
       } catch (e) { return res.status(500).json({ message: e.message }); }
     }
-    try {
-      userSave = await this.model.create(user);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    const mailbody = `<h1>Welcome ${userSave.name
-    } to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" `
-        + `href="${process.env.frontURL}/userutil/?email=${userSave.email}">link</a>, then enter the following code to verify your email:`
-        + `<br><br><strong>${randomNumba}</strong></p>`;
-    this.authUtils.sendGridEmail(mailbody, userSave.email, 'Verify Your Email Address');
-    userSave.password = '';
-    return res.status(201).json(userSave);
+    return this.finishSignup(res, user, randomNumba);
   }
 }
 module.exports = new UserController(userModel);
