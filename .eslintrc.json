@@ -13,17 +13,10 @@
     "no-unused-expressions": [2, {
       "allowShortCircuit": true
     }],
-    "no-param-reassign": 0,
     "guard-for-in": 0,
-    "newline-per-chained-call": [2, {
-      "ignoreChainWithDepth": 5
-    }],
     "no-continue": 0,
     "import/no-extraneous-dependencies": 0,
     "no-mixed-operators": 0,
-    "no-trailing-spaces": [1, {
-      "skipBlankLines": true
-    }],
     "security/detect-unsafe-regex": 0,
     "security/detect-object-injection": 0,
     "prefer-destructuring": 0,

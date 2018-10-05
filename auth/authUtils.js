@@ -53,9 +53,9 @@ class AuthUtils {
 
   static saveSendToken(user, req, res) {
     const userToken = { token: this.createJWT(user), email: user.email };
-    user.isPswdReset = false;
-    user.resetCode = '';
-    user.changeemail = '';
+    user.isPswdReset = false; // eslint-disable-line no-param-reassign
+    user.resetCode = ''; // eslint-disable-line no-param-reassign
+    user.changeemail = ''; // eslint-disable-line no-param-reassign
     user.save((err) => {
       if (err) return res.status(500).json({ message: err.message });
       return res.status(200).json(userToken);
