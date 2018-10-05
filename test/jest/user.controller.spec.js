@@ -1,4 +1,5 @@
 const request = require('supertest');
+const EventEmitter = require('events');
 const sinon = require('sinon');
 const server = require('../../index');
 const user = require('../../model/user/user-schema');
@@ -6,11 +7,12 @@ require('sinon-mongoose');
 
 const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
 
-describe.only('User Controller', () => {
+describe('User Controller', () => {
   beforeEach(async () => {
     await user.deleteMany({});
   });
   afterAll(async () => {
+    EventEmitter.defaultMaxListeners = 10;
     await user.deleteMany({});
   });
   it('validates email', async () => {
