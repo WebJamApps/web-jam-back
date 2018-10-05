@@ -12,7 +12,7 @@ describe('The Song API', () => {
       const cb = await chai.request(server)
         .post('/song/')
         .set({ origin: allowedUrl })
-        .set('Authorization', 'Bearer ' + authUtils.createJWT('foo2@example.com'))
+        .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({
           title: 'foobar', url: 'http://foo.com', category: 'original', author: 'booya', performer: 'howdy boys'
         });

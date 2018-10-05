@@ -51,14 +51,6 @@ class AuthUtils {
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-  static saveSendToken(user, req, res) {
-    const userToken = { token: this.createJWT(user), email: user.email };
-    user.isPswdReset = false;
-    user.resetCode = '';
-    user.changeemail = '';
-    user.save(err => res.status(200).json(userToken));
-  }
-
   static checkEmailSyntax(req) {
     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
       return Promise.resolve(true);

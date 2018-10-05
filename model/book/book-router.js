@@ -12,7 +12,7 @@ router.route('/create', authUtils.ensureAuthenticated)
   .post((...args) => controller.create(...args));
 
 router.route('/:id', authUtils.ensureAuthenticated)
-  .put((...args) => controller.findOneAndUpdate(...args))
+  .put((...args) => controller.findByIdAndUpdate(...args))
   .get((...args) => controller.findById(...args));
 
 router.route('/findcheckedout/:id', authUtils.ensureAuthenticated)
