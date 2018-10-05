@@ -1,6 +1,6 @@
+const bcrypt = require('bcryptjs');
 const Model = require('../../lib/facade');
 const userSchema = require('./user-schema');
-
 
 class UserModel extends Model {
   validateSignup(obj) { // eslint-disable-line class-methods-use-this
@@ -18,6 +18,15 @@ class UserModel extends Model {
     }
     return message;
   }
-}
 
+  comparePassword(password, userP) { // eslint-disable-line class-methods-use-this
+    return new Promise((resolve, reject) => {
+      bcrypt.compare(password, userP, (err, isMatch) => {
+        if (err) return reject(err);
+        if (!isMatch) return resolve(false);
+        return resolve(true);
+      });
+    });
+  }
+}
 module.exports = new UserModel(userSchema);

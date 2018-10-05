@@ -42,10 +42,10 @@ userSchema.pre('save', function pwEcrypt(next) {
   });
 });
 
-userSchema.methods.comparePassword = function comparePassword(password, done) {
-  bcrypt.compare(password, this.password, (err, isMatch) => {
-    done(err, isMatch);
-  });
-};
+// userSchema.methods.comparePassword = function comparePassword(password, done) {
+//   bcrypt.compare(password, this.password, (err, isMatch) => {
+//     done(err, isMatch);
+//   });
+// };
 
 module.exports = mongoose.model('User', userSchema);

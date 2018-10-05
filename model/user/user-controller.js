@@ -1,6 +1,5 @@
 const Controller = require('../../lib/controller');
 const userModel = require('./user-facade');
-// const UserSchema = require('./user-schema');
 
 class UserController extends Controller {
   async findByEmail(req, res) {
@@ -136,8 +135,20 @@ class UserController extends Controller {
     return res.status(200).json({ success: true });
   }
 
+  async saveSendToken(user, req, res) {
+    const userToken = { token: this.createJWT(user), email: user.email };
+    user.isPswdReset = false; // eslint-disable-line no-param-reassign
+    user.resetCode = ''; // eslint-disable-line no-param-reassign
+    user.changeemail = ''; // eslint-disable-line no-param-reassign
+    user.save((err) => {
+      if (err) return res.status(500).json({ message: err.message });
+      return res.status(200).json(userToken);
+    });
+  }
+
   async login(req, res) {
-    let user, fourOone = '';
+    let user, fourOone = '', isPW, loginUser;
+    const updateData = {};
     const reqUserEmail = this.authUtils.setIfExists(req.body.email);
     const myPassword = this.authUtils.setIfExists(req.body.password);
     if (reqUserEmail === '' || myPassword === '') return res.status(400).json({ message: 'email and password are required' });
@@ -150,10 +161,19 @@ class UserController extends Controller {
       fourOone = 'Please reset your password';
     } else if (!user.verifiedEmail) fourOone = '<a href="/userutil">Verify</a> your email';
     if (fourOone !== '') return res.status(401).json({ message: fourOone });
-    return user.comparePassword(req.body.password, (err, isMatch) => {
-      if (!isMatch) { return res.status(401).json({ message: 'Wrong password' }); }
-      return this.authUtils.saveSendToken(user, req, res);
-    });
+    try {
+      isPW = await this.model.comparePassword(req.body.password, user.password);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (!isPW) return res.status(401).json({ message: 'Wrong password' });
+    updateData.isPswdReset = false;
+    updateData.resetCode = '';
+    updateData.changeemail = '';
+    try {
+      loginUser = await this.model.findByIdAndUpdate(user._id, updateData);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    loginUser.password = '';
+    const userToken = { token: this.authUtils.createJWT(loginUser), email: loginUser.email };
+    return res.status(200).json(userToken);
   }
 
   async finishSignup(res, user, randomNumba) {

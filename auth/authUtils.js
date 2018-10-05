@@ -51,16 +51,16 @@ class AuthUtils {
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-  static saveSendToken(user, req, res) {
-    const userToken = { token: this.createJWT(user), email: user.email };
-    user.isPswdReset = false; // eslint-disable-line no-param-reassign
-    user.resetCode = ''; // eslint-disable-line no-param-reassign
-    user.changeemail = ''; // eslint-disable-line no-param-reassign
-    user.save((err) => {
-      if (err) return res.status(500).json({ message: err.message });
-      return res.status(200).json(userToken);
-    });
-  }
+  // static saveSendToken(user, req, res) {
+  //   const userToken = { token: this.createJWT(user), email: user.email };
+  //   user.isPswdReset = false; // eslint-disable-line no-param-reassign
+  //   user.resetCode = ''; // eslint-disable-line no-param-reassign
+  //   user.changeemail = ''; // eslint-disable-line no-param-reassign
+  //   user.save((err) => {
+  //     if (err) return res.status(500).json({ message: err.message });
+  //     return res.status(200).json(userToken);
+  //   });
+  // }
 
   static checkEmailSyntax(req) {
     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
