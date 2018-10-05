@@ -246,7 +246,7 @@ describe('functional test for users', () => {
     User.email = 'foo3@example.com';
     User.password = 'lottanumbers35555';
     User.resetCode = '';
-    User.save((err) => {
+    User.save(() => {
       chai.request(server)
         .post('/user/auth/login')
         .send({ password: 'lottanumbers35555', email: 'foogie@yoyo.com' })
@@ -263,7 +263,7 @@ describe('functional test for users', () => {
     User.email = 'foo3@example.com';
     User.password = 'lottanumbers35555';
     User.resetCode = '';
-    User.save((err) => {
+    User.save(() => {
       chai.request(server)
         .post('/user/auth/login')
         .send({ password: 'lottanumbers35555', email: '' })
@@ -315,7 +315,7 @@ describe('functional test for users', () => {
     User.email = 'foo3@example.com';
     User.password = 'lottanumbers35555';
     User.resetCode = '12345';
-    User.save((err) => {
+    User.save(() => {
       chai.request(server)
         .post('/user/auth/login')
         .send({ email: 'foo3@example.com', password: 'lottanumbers35555' })
@@ -325,170 +325,6 @@ describe('functional test for users', () => {
         });
     });
   });
-  //
-  //   it('should allow the user to login after requesting a password reset', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo4';
-  //     User.email = 'foo3@example.com';
-  //     User.password = 'lottanumbers35555';
-  //     User.resetCode = '12345';
-  //     User.verifiedEmail = true;
-  //     User.isPswdReset = true;
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .post('/auth/login')
-  //         .send({ email: 'foo3@example.com', password: 'lottanumbers35555' })
-  //         .end((err, resp) => {
-  //           expect(resp).to.have.status(200);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('should allow the user to login with their old email after requesting a change email', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo4';
-  //     User.email = 'foo3@example.com';
-  //     User.password = 'lottanumbers35555';
-  //     User.resetCode = '12345';
-  //     User.verifiedEmail = true;
-  //     User.changeemail = 'foo@bar.com';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .post('/auth/login')
-  //         .send({ email: 'foo3@example.com', password: 'lottanumbers35555' })
-  //         .end((err, resp) => {
-  //           expect(resp).to.have.status(200);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('should not login the user when email does not exist', (done) => {
-  //     chai.request(server)
-  //       .post('/auth/login')
-  //       .set({ origin: allowedUrl })
-  //       .send({ email: 'yoyo@example.com', password: 'lottanumbers35555' })
-  //       .end((err, res) => {
-  //         expect(res).to.have.status(401);
-  //         done();
-  //       });
-  //   });
-  //
-  //   it('should not login the user with incorrect password', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo3';
-  //     User.email = 'foo3@example.com';
-  //     User.password = 'lottanumbers35555';
-  //     User.resetCode = '';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .post('/auth/login')
-  //         .send({ email: 'foo3@example.com', password: 'notlottanumbers5' })
-  //         .end((err, resp) => {
-  //           expect(resp).to.have.status(401);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('should not login the user when email has not been verified', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo3';
-  //     User.email = 'foo3@example.com';
-  //     User.password = 'lottanumbers35555';
-  //     User.resetCode = '12345';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .post('/auth/login')
-  //         .set({ origin: allowedUrl })
-  //         .send({ email: 'foo3@example.com', password: 'notlottanumbers5' })
-  //         .end((err, resp) => {
-  //           expect(resp).to.have.status(401);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('should validate the new user email', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo3';
-  //     User.email = 'foo3@example.com';
-  //     User.resetCode = '12345';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .put('/auth/validemail')
-  //         .send({ email: 'foo3@example.com', resetCode: '12345' })
-  //         .end((err, res) => {
-  //           expect(res).to.have.status(201);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('should not validate the new user email with incorrect code', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo3';
-  //     User.email = 'foo3@example.com';
-  //     User.resetCode = '12345';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .put('/auth/validemail')
-  //         .send({ email: 'foo3@example.com', resetCode: '12222' })
-  //         .end((err, res) => {
-  //           expect(res).to.have.status(401);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('handles a reset password request with a valid email', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo3';
-  //     User.email = 'foo3@example.com';
-  //     User.verifiedEmail = true;
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .put('/auth/resetpass')
-  //         .send({ email: 'foo3@example.com' })
-  //         .end((err, res) => {
-  //           expect(res).to.have.status(201);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('does not allow a reset password request with an unverified email', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo3';
-  //     User.email = 'foo3@example.com';
-  //     User.verifiedEmail = false;
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .put('/auth/resetpass')
-  //         .send({ email: 'foo3@example.com' })
-  //         .end((err, res) => {
-  //           expect(res).to.have.status(401);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
-  //   it('does not allow a reset password request with an invalid email', (done) => {
-  //     const User = new User1();
-  //     User.name = 'foo3';
-  //     User.email = 'foo3@example.com';
-  //     User.save((err) => {
-  //       chai.request(server)
-  //         .put('/auth/resetpass')
-  //         .send({ email: 'foosy4@example.com' })
-  //         .end((err, res) => {
-  //           expect(res).to.have.status(401);
-  //           done();
-  //         });
-  //     });
-  //   });
-  //
   it('resets the password', async () => {
     await User1.deleteMany({});
     const User = new User1();
@@ -511,7 +347,7 @@ describe('functional test for users', () => {
     User.email = 'foo3@example.com';
     User.password = 'lottanumbers35555';
     User.resetCode = '12345';
-    User.save((err) => {
+    User.save(() => {
       chai.request(server)
         .put('/user/auth/pswdreset')
         .send({ email: 'foo3@example.com', password: 'gygygygy', resetCode: '11111' })
@@ -528,7 +364,7 @@ describe('functional test for users', () => {
     User.email = 'foo3@example.com';
     User.password = 'lottanumbers35555';
     User.resetCode = '12345';
-    User.save((err) => {
+    User.save(() => {
       chai.request(server)
         .put('/user/auth/pswdreset')
         .send({ email: 'foo3@example.com', password: 'gyg', resetCode: '12345' })
@@ -547,7 +383,7 @@ describe('functional test for users', () => {
     User.resetCode = '12345';
     const uMock = sinon.mock(User1);
     uMock.expects('findOneAndUpdate').chain('exec').rejects(new Error('bad'));
-    User.save((err) => {
+    User.save(() => {
       chai.request(server)
         .put('/user/auth/pswdreset')
         .send({ email: 'foo3@example.com', password: 'gyggyggyg', resetCode: '12345' })

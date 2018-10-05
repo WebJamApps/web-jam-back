@@ -56,7 +56,10 @@ class AuthUtils {
     user.isPswdReset = false;
     user.resetCode = '';
     user.changeemail = '';
-    user.save(err => res.status(200).json(userToken));
+    user.save((err) => {
+      if (err) return res.status(500).json({ message: err.message });
+      return res.status(200).json(userToken);
+    });
   }
 
   static checkEmailSyntax(req) {

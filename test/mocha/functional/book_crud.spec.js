@@ -56,7 +56,7 @@ describe('The library feature', () => {
     const Book = new Book1();
     Book.title = 'foo2book';
     Book.type = 'pdf';
-    Book.save((err) => {
+    Book.save(() => {
       chai.request(server)
         .get('/book/getall')
         .set({ origin: allowedUrl })
@@ -87,7 +87,8 @@ describe('The library feature', () => {
       .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
       .send([{ title: 'foobar', type: 'book' }, { title: 'JFK', type: 'PDF' }])
       .end((err, res) => {
-      // expect(res).to.have.status(201);
+        expect(res).to.have.status(201);
+        if (err) { throw err; }
         done();
       });
   });

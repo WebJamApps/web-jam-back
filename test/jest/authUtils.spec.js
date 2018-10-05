@@ -1,11 +1,8 @@
+const EventEmitter = require('events');
 const AuthUtils = require('../../auth/authUtils');
 
+EventEmitter.defaultMaxListeners = Infinity;
 describe('the authUtils', () => {
-  // let au;
-  // // const res = { status(code) { return { json(obj) { return obj; } }; } };
-  // beforeEach((done) => {
-  //   au = new AuthUtils();
-  // });
   it('validates email syntax', async () => {
     try {
       const cb = await AuthUtils.checkEmailSyntax({ body: { changeemail: 'j@jb.com' } });

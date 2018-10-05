@@ -39,7 +39,7 @@ describe('The volunteer opportunity feature', () => {
     voOp4.voName = 'paint';
     voOp4.voCharityId = '44444';
     voOp4.voCharityName = 'painters';
-    voOp4.save((err) => {
+    voOp4.save(() => {
       chai.request(server)
         .get('/volopp/getall')
         .set({ origin: allowedUrl })

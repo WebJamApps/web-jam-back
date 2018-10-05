@@ -3,7 +3,7 @@ const Charity1 = require('../../../model/charity/charity-schema');
 const authUtils = require('../../../auth/authUtils');
 const server = require('../../../index');
 
-EventEmitter.defaultMaxListeners = 35;
+EventEmitter.defaultMaxListeners = Infinity;
 const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
 describe('The Charity feature', () => {
   // let myEmitter;

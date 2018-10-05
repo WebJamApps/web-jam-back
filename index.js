@@ -26,6 +26,7 @@ app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
 app.use((req, res, next) => {
   /* istanbul ignore next */
   process.on('unhandledRejection', (reason, promise) => {
+    console.log(promise); // eslint-disable-line no-console
     next(new Error(reason));
   });
   next();
