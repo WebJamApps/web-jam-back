@@ -3,6 +3,7 @@ const EventEmitter = require('events');
 const sinon = require('sinon');
 const server = require('../../index');
 const user = require('../../model/user/user-schema');
+const google = require('../../auth/google');
 require('sinon-mongoose');
 
 const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
@@ -343,5 +344,18 @@ describe('User Controller', () => {
       expect(cb.status).toBe(500);
     } catch (e) { throw e; }
     uMock.restore();
+  });
+  it('authenticates with google', async () => {
+    let cb;
+    const gMock = sinon.mock(google);
+    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    try {
+      cb = await request(server)
+        .post('/user/auth/google')
+        .set({ origin: allowedUrl })
+        .send({ });
+      expect(cb.status).toBe(201);
+    } catch (e) { throw e; }
+    gMock.restore();
   });
 });
