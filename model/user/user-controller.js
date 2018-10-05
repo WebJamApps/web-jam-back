@@ -212,7 +212,7 @@ class UserController extends Controller {
     return this.finishSignup(res, user, randomNumba);
   }
 
-  async Google(req, res) {
+  async google(req, res) {
     let newUser, existingUser, profile;
     try {
       profile = await google.authenticate(req);
@@ -235,7 +235,7 @@ class UserController extends Controller {
       newUser = await this.model.create(user);
     } catch (e) { return res.status(500).json({ message: e.message }); }
     newUser.password = '';
-    return res.status(201).json({ email: newUser.email, token: authUtils.createJWT(newUser) });
+    return res.status(201).json({ email: newUser.email, token: this.authUtils.createJWT(newUser) });
   }
 }
 module.exports = new UserController(userModel);
