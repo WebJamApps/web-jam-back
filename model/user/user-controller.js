@@ -136,9 +136,23 @@ class UserController extends Controller {
     return res.status(200).json({ success: true });
   }
 
-  async login(req, res) {
-    let user, fourOone = '', isPW, loginUser;
+  async finishLogin(res, isPW, user) {
+    let loginUser;
     const updateData = {};
+    if (!isPW) return res.status(401).json({ message: 'Wrong password' });
+    updateData.isPswdReset = false;
+    updateData.resetCode = '';
+    updateData.changeemail = '';
+    try {
+      loginUser = await this.model.findByIdAndUpdate(user._id, updateData);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    loginUser.password = '';
+    const userToken = { token: this.authUtils.createJWT(loginUser), email: loginUser.email };
+    return res.status(200).json(userToken);
+  }
+
+  async login(req, res) {
+    let user, fourOone = '', isPW;
     const reqUserEmail = this.authUtils.setIfExists(req.body.email);
     const myPassword = this.authUtils.setIfExists(req.body.password);
     if (reqUserEmail === '' || myPassword === '') return res.status(400).json({ message: 'email and password are required' });
@@ -154,16 +168,7 @@ class UserController extends Controller {
     try {
       isPW = await this.model.comparePassword(req.body.password, user.password);
     } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (!isPW) return res.status(401).json({ message: 'Wrong password' });
-    updateData.isPswdReset = false;
-    updateData.resetCode = '';
-    updateData.changeemail = '';
-    try {
-      loginUser = await this.model.findByIdAndUpdate(user._id, updateData);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    loginUser.password = '';
-    const userToken = { token: this.authUtils.createJWT(loginUser), email: loginUser.email };
-    return res.status(200).json(userToken);
+    return this.finishLogin(res, isPW, user);
   }
 
   async finishSignup(res, user, randomNumba) {
