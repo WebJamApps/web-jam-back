@@ -1,5 +1,6 @@
 const Controller = require('../../lib/controller');
 const userModel = require('./user-facade');
+const google = require('../../auth/google');
 
 class UserController extends Controller {
   async findByEmail(req, res) {
@@ -135,17 +136,6 @@ class UserController extends Controller {
     return res.status(200).json({ success: true });
   }
 
-  async saveSendToken(user, req, res) {
-    const userToken = { token: this.createJWT(user), email: user.email };
-    user.isPswdReset = false; // eslint-disable-line no-param-reassign
-    user.resetCode = ''; // eslint-disable-line no-param-reassign
-    user.changeemail = ''; // eslint-disable-line no-param-reassign
-    user.save((err) => {
-      if (err) return res.status(500).json({ message: err.message });
-      return res.status(200).json(userToken);
-    });
-  }
-
   async login(req, res) {
     let user, fourOone = '', isPW, loginUser;
     const updateData = {};
@@ -215,6 +205,32 @@ class UserController extends Controller {
       } catch (e) { return res.status(500).json({ message: e.message }); }
     }
     return this.finishSignup(res, user, randomNumba);
+  }
+
+  async Google(req, res) {
+    let newUser, existingUser, profile;
+    try {
+      profile = await google.authenticate(req);
+    } catch (e) { res.status(500).json({ message: e.message }); }
+    // Step 3. Create a new user account or return an existing one.
+    const update = {};
+    update.password = '';
+    update.name = profile.name; // force the name of the user to be the name from google account
+    update.verifiedEmail = true;
+    try {
+      existingUser = await this.model.findOneAndUpdate({ email: profile.email }, update);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (existingUser) return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
+    const user = {};
+    user.name = profile.name;
+    user.email = profile.email;
+    user.isOhafUser = req.body.isOhafUser;
+    user.verifiedEmail = true;
+    try {
+      newUser = await this.model.create(user);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    newUser.password = '';
+    return res.status(201).json({ email: newUser.email, token: authUtils.createJWT(newUser) });
   }
 }
 module.exports = new UserController(userModel);

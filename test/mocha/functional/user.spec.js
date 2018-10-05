@@ -108,6 +108,7 @@ describe('functional test for users', () => {
         .delete(`/user/${newUser.id}`)
         .set({ origin: allowedUrl })
         .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      expect(cb.body.message).to.equal('User delete was successful');
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
