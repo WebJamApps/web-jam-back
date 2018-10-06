@@ -216,7 +216,7 @@ class UserController extends Controller {
     let newUser, existingUser, profile;
     try {
       profile = await google.authenticate(req);
-    } catch (e) { res.status(500).json({ message: e.message }); }
+    } catch (e) { return res.status(500).json({ message: e.message }); }
     // Step 3. Create a new user account or return an existing one.
     const update = {};
     update.password = '';
