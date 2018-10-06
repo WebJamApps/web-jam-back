@@ -70,4 +70,35 @@ describe('The Unit Test for Google Module', () => {
     };
     await google.authenticate(req, res);
   });
+  it('returns google api error from post to get the token', async () => {
+    const sub = 'foo2@example.com';
+    nock('https://accounts.google.com')
+      .post('/o/oauth2/token')
+      .replyWithError(500);
+    const profile = { email: sub, name: 'bob' };
+    nock('https://www.googleapis.com')
+      .get('/plus/v1/people/me/openIdConnect')
+      .reply(200, profile);
+    const req = { body: {} };
+    try {
+      await google.authenticate(req);
+    } catch (e) {
+      expect(e.message).to.equal('Error: 500');
+    }
+  });
+  it('returns google api error from get user profile', async () => {
+    const token = { access_token: 'access_token' };
+    nock('https://accounts.google.com')
+      .post('/o/oauth2/token')
+      .reply(200, token);
+    nock('https://www.googleapis.com')
+      .get('/plus/v1/people/me/openIdConnect')
+      .replyWithError(500);
+    const req = { body: {} };
+    try {
+      await google.authenticate(req);
+    } catch (e) {
+      expect(e.message).to.equal('Error: 500');
+    }
+  });
 });
