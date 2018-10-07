@@ -82,6 +82,22 @@ describe('functional test for users', () => {
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
+  it('finds a user by id and removes the password before returning the user', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo3@example.com';
+    User.password = 'superSecure';
+    await User.save();
+    try {
+      const cb = await chai.request(server)
+        .get(`/user/${User._id}`)
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      expect(cb).to.have.status(200);
+      expect(cb.body.password).to.equal('');
+    } catch (e) { throw e; }
+  });
   it('updates a user', async () => {
     await User1.deleteMany({});
     const User = new User1();
@@ -178,7 +194,6 @@ describe('functional test for users', () => {
       expect(cb).to.have.status(409);
     } catch (e) { throw e; }
   });
-
   it('allows signup the existing user if the email has not been verified', async () => {
     await User1.deleteMany({});
     const User = new User1();
@@ -193,7 +208,6 @@ describe('functional test for users', () => {
       expect(cb).to.have.status(201);
     } catch (e) { throw e; }
   });
-
   it('should not signup the new user if the name, password, or email is not valid', (done) => {
     chai.request(server)
       .post('/user/auth/signup')
@@ -203,7 +217,6 @@ describe('functional test for users', () => {
         done();
       });
   });
-
   it('allows the user to login with email', async () => {
     await User1.deleteMany({});
     const User = new User1();
@@ -220,7 +233,6 @@ describe('functional test for users', () => {
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
-
   it('returns findOne error when user login with email', async () => {
     await User1.deleteMany({});
     const User = new User1();
@@ -240,7 +252,6 @@ describe('functional test for users', () => {
     } catch (e) { throw e; }
     uMock.restore();
   });
-
   it('should not allow the user to login with incorrect email', (done) => {
     const User = new User1();
     User.name = 'foo4';
@@ -257,7 +268,6 @@ describe('functional test for users', () => {
         });
     });
   });
-
   it('should not allow the user to login with no email provided', (done) => {
     const User = new User1();
     User.name = 'foo4';
@@ -290,7 +300,6 @@ describe('functional test for users', () => {
       expect(cb).to.have.status(401);
     } catch (e) { throw e; }
   });
-
   it('should not allow the user to login with correct email but incorect password', async () => {
     await User1.deleteMany({});
     const User = new User1();
@@ -309,7 +318,6 @@ describe('functional test for users', () => {
     } catch (e) { throw e; }
     await User1.deleteMany({});
   });
-
   it('prevents user to login without email varification', (done) => {
     const User = new User1();
     User.name = 'foo4';
@@ -358,7 +366,6 @@ describe('functional test for users', () => {
         });
     });
   });
-
   it('does not reset the password with an invalid password', (done) => {
     const User = new User1();
     User.name = 'foo3';
@@ -375,7 +382,6 @@ describe('functional test for users', () => {
         });
     });
   });
-
   it('catches findOneAndUpdate error when reset the password', (done) => {
     const User = new User1();
     User.name = 'foo3';
@@ -395,142 +401,4 @@ describe('functional test for users', () => {
         });
     });
   });
-//
-//   it('sends a varification email for change email request', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/changeemail')
-//         .send({ email: 'foo3@example.com', changeemail: 'foo4@foo.com' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(201);
-//           done();
-//         });
-//     });
-//   });
-//
-//   it('does not allow change email to an already existing email', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/changeemail')
-//         .send({ email: 'foo3@example.com', changeemail: 'foo3@example.com' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(409);
-//           done();
-//         });
-//     });
-//   });
-//
-//   it('does not allow change email to a non existing user', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/changeemail')
-//         .send({ email: 'foo4@example.com', changeemail: 'foo4@example.com' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(409);
-//           done();
-//         });
-//     });
-//   });
-//
-//   it('updates the email to the new email when pin is correct', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.resetCode = '12345';
-//     User.changeemail = 'foo@bar.com';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/updateemail')
-//         .send({ email: 'foo3@example.com', changeemail: 'foo@bar.com', resetCode: '12345' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(201);
-//           done();
-//         });
-//     });
-//   });
-//
-//   it('does not update the email to the new email when email is not valid format', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.resetCode = '12345';
-//     User.changeemail = 'foo@bar.com';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/updateemail')
-//         .send({ email: 'foo3@example.com', changeemail: 'foobar.com', resetCode: '12345' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(409);
-//           done();
-//         });
-//     });
-//   });
-//
-//   it('does not update the email to the new email when current email does not exist', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.resetCode = '12345';
-//     User.changeemail = 'foo@bar.com';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/updateemail')
-//         .send({ email: 'foo@example.com', changeemail: 'foo@bar.com', resetCode: '12345' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(409);
-//           done();
-//         });
-//     });
-//   });
-//
-//   it('does not update the email to the new email when the reset code is not correct', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.resetCode = '12345';
-//     User.changeemail = 'foo@bar.com';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/updateemail')
-//         .send({ email: 'foo3@example.com', changeemail: 'foo@bar.com', resetCode: '12347' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(409);
-//           done();
-//         });
-//     });
-//   });
-//
-//   it('does not update the email to the new email when the changeemail does not match', (done) => {
-//     const User = new User1();
-//     User.name = 'foo3';
-//     User.email = 'foo3@example.com';
-//     User.password = 'lottanumbers35555';
-//     User.resetCode = '12345';
-//     User.changeemail = 'foo@bar.com';
-//     User.save((err) => {
-//       chai.request(server)
-//         .put('/auth/updateemail')
-//         .send({ email: 'foo3@example.com', changeemail: 'foo12@bar.com', resetCode: '12345' })
-//         .end((err, res) => {
-//           expect(res).to.have.status(409);
-//           done();
-//         });
-//     });
-//   });
 });

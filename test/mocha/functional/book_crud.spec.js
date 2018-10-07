@@ -1,4 +1,5 @@
 const sinon = require('sinon');
+const mongoose = require('mongoose');
 require('sinon-mongoose');
 const server = require('../../../index');
 const Book1 = require('../../../model/book/book-schema');
@@ -46,7 +47,6 @@ describe('The library feature', () => {
       .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
       .send({})
       .end((err, res) => {
-        // console.log(res.status);
         expect(res).to.have.status(200);
         done();
       });
@@ -80,7 +80,7 @@ describe('The library feature', () => {
     } catch (e) { throw e; }
     bMock.restore();
   });
-  it('should post an array of new books', (done) => {
+  it('should post an array of new books to be created', (done) => {
     chai.request(server)
       .post('/book/create')
       .set({ origin: allowedUrl })
@@ -92,8 +92,34 @@ describe('The library feature', () => {
         done();
       });
   });
-
-  // when you call with a non-existent path, be sure to get a 404.
+  it('returns db.create error when posts an array of new books to be created', async () => {
+    const bMock = sinon.mock(Book1);
+    bMock.expects('create').rejects(new Error('bad'));
+    let cb;
+    try {
+      cb = await chai.request(server)
+        .post('/book/create')
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send([{ title: 'foobar', type: 'book' }, { title: 'JFK', type: 'PDF' }]);
+      expect(cb.status).to.equal(500);
+    } catch (e) { throw e; }
+    bMock.restore();
+  });
+  it('returns db.create error when posts a single books to be created', async () => {
+    const bMock = sinon.mock(Book1);
+    bMock.expects('create').rejects(new Error('bad'));
+    let cb;
+    try {
+      cb = await chai.request(server)
+        .post('/book/create')
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send({ title: 'foobar', type: 'book' });
+      expect(cb.status).to.equal(500);
+    } catch (e) { throw e; }
+    bMock.restore();
+  });
   it('should pass for the error', (done) => {
     chai.request(server)
       .put('/book/johnny')
@@ -104,7 +130,6 @@ describe('The library feature', () => {
         done();
       });
   });
-
   it('should modify a book', async () => {
     await Book1.deleteMany({});
     const Book = new Book1();
@@ -121,7 +146,7 @@ describe('The library feature', () => {
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
-  it('should find the book by id', async () => {
+  it('finds the book by id', async () => {
     await Book1.deleteMany({});
     const Book2 = new Book1();
     Book2.title = 'Flow Measurement';
@@ -134,6 +159,26 @@ describe('The library feature', () => {
         .set({ origin: allowedUrl })
         .set('authorization', 'Bearer ');
       expect(cb).to.have.status(200);
+    } catch (e) { throw e; }
+  });
+  it('returns error when the id is bogas for find the book by id', async () => {
+    await Book1.deleteMany({});
+    try {
+      const cb = await chai.request(server)
+        .get('/book/bogas')
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ');
+      expect(cb).to.have.status(400);
+    } catch (e) { throw e; }
+  });
+  it('returns error when find the book by id returns nothing', async () => {
+    await Book1.deleteMany({});
+    try {
+      const cb = await chai.request(server)
+        .get(`/book/${mongoose.Types.ObjectId()}`)
+        .set({ origin: allowedUrl })
+        .set('authorization', 'Bearer ');
+      expect(cb).to.have.status(400);
     } catch (e) { throw e; }
   });
 });
