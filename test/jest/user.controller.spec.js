@@ -1,6 +1,7 @@
 const request = require('supertest');
 const EventEmitter = require('events');
 const sinon = require('sinon');
+const bcrypt = require('bcryptjs');
 const server = require('../../index');
 const user = require('../../model/user/user-schema');
 const google = require('../../auth/google');
@@ -252,6 +253,38 @@ describe('User Controller', () => {
       expect(cb.body.success).toBe(true);
     } catch (e) { throw e; }
   });
+  it('returns error from comparing passwords on login', async () => {
+    await user.create({
+      name: 'Justin Bieber', password: 'booyaaaaaaaa', email: 'old@wold.com', verifiedEmail: true
+    });
+    let cb;
+    const bMock = sinon.mock(bcrypt);
+    bMock.expects('compare').yields(new Error('bad'));
+    try {
+      cb = await request(server)
+        .post('/user/auth/login')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', password: 'booyaaaaaaaa' });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    bMock.restore();
+  });
+  it('returns findByIdAndUpdate error from login', async () => {
+    await user.create({
+      name: 'Justin Bieber', password: 'booyaaaaaaaa', email: 'old@wold.com', verifiedEmail: true
+    });
+    let cb;
+    const bMock = sinon.mock(user);
+    bMock.expects('findByIdAndUpdate').chain('exec').rejects(new Error('bad'));
+    try {
+      cb = await request(server)
+        .post('/user/auth/login')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', password: 'booyaaaaaaaa' });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    bMock.restore();
+  });
   it('returns bad email syntax error when handles request to change the user email', async () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
@@ -355,6 +388,65 @@ describe('User Controller', () => {
         .set({ origin: allowedUrl })
         .send({ });
       expect(cb.status).toBe(201);
+    } catch (e) { throw e; }
+    gMock.restore();
+  });
+  it('returns db.create error when authenticates with google', async () => {
+    let cb;
+    const gMock = sinon.mock(google);
+    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    const uMock = sinon.mock(user);
+    uMock.expects('create').rejects(new Error('bad'));
+    try {
+      cb = await request(server)
+        .post('/user/auth/google')
+        .set({ origin: allowedUrl })
+        .send({ });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    gMock.restore();
+    uMock.restore();
+  });
+  it('returns google api error when authenticates with google', async () => {
+    let cb;
+    const gMock = sinon.mock(google);
+    gMock.expects('authenticate').rejects(new Error('bad'));
+    try {
+      cb = await request(server)
+        .post('/user/auth/google')
+        .set({ origin: allowedUrl })
+        .send({ });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    gMock.restore();
+  });
+  it('returns findOneAndUpdate error when authenticates with google', async () => {
+    let cb;
+    const gMock = sinon.mock(google);
+    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    const uMock = sinon.mock(user);
+    uMock.expects('findOneAndUpdate').chain('exec').rejects(new Error('bad'));
+    try {
+      cb = await request(server)
+        .post('/user/auth/google')
+        .set({ origin: allowedUrl })
+        .send({ });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+    gMock.restore();
+  });
+  it('authenticates with google for an existing user', async () => {
+    await user.create({ name: 'Josh', email: 'j@js.com' });
+    let cb;
+    const gMock = sinon.mock(google);
+    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    try {
+      cb = await request(server)
+        .post('/user/auth/google')
+        .set({ origin: allowedUrl })
+        .send({ });
+      expect(cb.status).toBe(200);
     } catch (e) { throw e; }
     gMock.restore();
   });
