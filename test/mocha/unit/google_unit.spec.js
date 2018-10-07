@@ -88,6 +88,7 @@ describe('The Unit Test for Google Module', () => {
   });
   it('returns google api error from get user profile', async () => {
     const token = { access_token: 'access_token' };
+    nock.cleanAll();
     nock('https://accounts.google.com')
       .post('/o/oauth2/token')
       .reply(200, token);
@@ -99,6 +100,22 @@ describe('The Unit Test for Google Module', () => {
       await google.authenticate(req);
     } catch (e) {
       expect(e.message).to.equal('Error: 500');
+    }
+  });
+  it('returns google api error from get user profile when profile is null', async () => {
+    const token = { access_token: 'access_token' };
+    nock.cleanAll();
+    nock('https://accounts.google.com')
+      .post('/o/oauth2/token')
+      .reply(200, token);
+    nock('https://www.googleapis.com')
+      .get('/plus/v1/people/me/openIdConnect')
+      .reply(200);
+    const req = { body: {} };
+    try {
+      await google.authenticate(req);
+    } catch (e) {
+      expect(e.message).to.equal('failed to retrieve user profile from Google');
     }
   });
 });
