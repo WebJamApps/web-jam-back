@@ -113,6 +113,88 @@ describe('functional test for users', () => {
       expect(cb).to.have.status(200);
     } catch (e) { throw e; }
   });
+  it('updates a user and overwrites the password', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo3@example.com';
+    User.password = 'superSecure';
+    const newUser = await User.save();
+    try {
+      const cb = await chai.request(server)
+        .put(`/user/${newUser.id}`)
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send({ name: 'foobar' });
+      expect(cb).to.have.status(200);
+      expect(cb.body.password).to.equal('');
+    } catch (e) { throw e; }
+  });
+  it('catches findByIdAndUpdate error', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo3@example.com';
+    User.password = 'superSecure';
+    const newUser = await User.save();
+    const uMock = sinon.mock(User1);
+    uMock.expects('findByIdAndUpdate').chain('exec').rejects(new Error('bad'));
+    try {
+      const cb = await chai.request(server)
+        .put(`/user/${newUser.id}`)
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send({ name: 'foobar' });
+      expect(cb).to.have.status(500);
+    } catch (e) { throw e; }
+    uMock.restore();
+  });
+  it('prevents updating a userType that is not valid', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo3@example.com';
+    const newUser = await User.save();
+    try {
+      const cb = await chai.request(server)
+        .put(`/user/${newUser.id}`)
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send({ name: 'foobar', userType: 'booya' });
+      expect(cb).to.have.status(400);
+    } catch (e) { throw e; }
+  });
+  it('prevents updating when name is empty string', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo3@example.com';
+    const newUser = await User.save();
+    try {
+      const cb = await chai.request(server)
+        .put(`/user/${newUser.id}`)
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send({ name: '', userType: 'Charity' });
+      expect(cb).to.have.status(400);
+    } catch (e) { throw e; }
+  });
+  it('returns error on findByIdAndUpdate when none is found', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo3@example.com';
+    const newUser = await User.save();
+    await User1.deleteMany({});
+    try {
+      const cb = await chai.request(server)
+        .put(`/user/${newUser.id}`)
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send({ name: 'Bob', userType: 'Charity' });
+      expect(cb).to.have.status(400);
+    } catch (e) { throw e; }
+  });
   it('deletes a user', async () => {
     await User1.deleteMany({});
     const User = new User1();
@@ -126,6 +208,31 @@ describe('functional test for users', () => {
         .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
       expect(cb.body.message).to.equal('User delete was successful');
       expect(cb).to.have.status(200);
+    } catch (e) { throw e; }
+  });
+  it('returns error when deletes a user but none is found', async () => {
+    await User1.deleteMany({});
+    const User = new User1();
+    User.name = 'foo';
+    User.email = 'foo3@example.com';
+    const newUser = await User.save();
+    await User1.deleteMany({});
+    try {
+      const cb = await chai.request(server)
+        .delete(`/user/${newUser.id}`)
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      expect(cb).to.have.status(400);
+    } catch (e) { throw e; }
+  });
+  it('returns error on deletes a user with bogas id', async () => {
+    await User1.deleteMany({});
+    try {
+      const cb = await chai.request(server)
+        .delete('/user/bogas')
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      expect(cb).to.have.status(400);
     } catch (e) { throw e; }
   });
   it('signs up the new user', async () => {
