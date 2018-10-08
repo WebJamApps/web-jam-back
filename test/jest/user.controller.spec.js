@@ -177,6 +177,38 @@ describe('User Controller', () => {
       expect(cb.body.email).toBe('old@wold.com');
     } catch (e) { throw e; }
   });
+  it('returns gensalt error on password reset', async () => {
+    await user.create({
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true, password: 'oldoldoldold'
+    });
+    let cb;
+    const bMock = sinon.mock(bcrypt);
+    bMock.expects('genSalt').yields(new Error('bad'));
+    try {
+      cb = await request(server)
+        .put('/user/auth/pswdreset')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', password: 'superSecure' });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    bMock.restore();
+  });
+  it('returns hash error on password reset', async () => {
+    await user.create({
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true, password: 'oldoldoldold'
+    });
+    let cb;
+    const bMock = sinon.mock(bcrypt);
+    bMock.expects('hash').yields(new Error('bad'));
+    try {
+      cb = await request(server)
+        .put('/user/auth/pswdreset')
+        .set({ origin: allowedUrl })
+        .send({ email: 'old@wold.com', password: 'superSecure' });
+      expect(cb.status).toBe(500);
+    } catch (e) { throw e; }
+    bMock.restore();
+  });
   it('returns findOne error on resets the password', async () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true

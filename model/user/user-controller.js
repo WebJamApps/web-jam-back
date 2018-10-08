@@ -60,11 +60,14 @@ class UserController extends Controller {
     if (req.body.password === null || req.body.password === undefined || req.body.password.length < 8) {
       return res.status(400).send({ message: 'Password is not min 8 characters' });
     }
-    let user;
+    let user, encrypted;
     const update = {};
     update.resetCode = '';
     update.isPswdReset = false;
-    update.password = req.body.password;
+    try {
+      encrypted = await this.model.encryptPswd(req.body.password);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    update.password = encrypted;
     try {
       user = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
     } catch (e) { return res.status(500).json({ message: e.message }); }

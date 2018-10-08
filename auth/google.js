@@ -1,11 +1,8 @@
 const rp = require('request-promise');
-// const UserSchema = require('../model/user/user-schema');
-// const authUtils = require('./authUtils');
 
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';
 const peopleApiUrl = 'https://www.googleapis.com/plus/v1/people/me/openIdConnect';
 
-// class Google {
 exports.authenticate = async function authenticate(req) {
   let token, profile;
   const params = {
@@ -19,7 +16,6 @@ exports.authenticate = async function authenticate(req) {
   try {
     token = await rp.post(accessTokenUrl, { json: true, form: params });
   } catch (e) { return Promise.reject(e); }
-  // request.post(accessTokenUrl, { json: true, form: params }, (err, response, token) => {
   const accessToken = token.access_token;
   const headers = { Authorization: `Bearer ${accessToken}` };
   // Step 2. Retrieve profile information about the current user.

@@ -23,4 +23,4 @@
 // router.post('/foursquare', foursquare.authenticate);
 // router.post('/identSrv', identSrv.authenticate);
 // router.get('/unlink/:provider', meController.unlink);
-module.exports = router;
+// module.exports = router;
