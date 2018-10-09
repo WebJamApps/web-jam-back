@@ -28,5 +28,15 @@ class UserModel extends Model {
       });
     });
   }
+
+  encryptPswd(password) { // eslint-disable-line class-methods-use-this
+    return new Promise((resolve, reject) => bcrypt.genSalt(10, (err, salt) => {
+      if (err) return reject(err);
+      return bcrypt.hash(password, salt, (err, hash) => {
+        if (err) return reject(err);
+        return resolve(hash);
+      });
+    }));
+  }
 }
 module.exports = new UserModel(userSchema);
