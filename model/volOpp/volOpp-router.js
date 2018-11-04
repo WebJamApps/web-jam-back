@@ -12,7 +12,7 @@ router.route('/:id')
   .delete((...args) => controller.findByIdAndRemove(...args))
   .put((...args) => controller.findByIdAndUpdate(...args));
 
-router.route('/get/:id')
+router.route('/get/:id') // get id is the volopp id
   .get((...args) => controller.findById(...args));
 
 module.exports = router;
