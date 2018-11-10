@@ -1,12 +1,11 @@
 {
-  "plugins": ["node", "security"],
-  "extends": ["plugin:node/recommended", "plugin:security/recommended", "airbnb"],
+  "plugins": ["node", "security", "jest"],
+  "extends": ["plugin:node/recommended", "plugin:security/recommended", "airbnb", "plugin:jest/recommended"],
   "rules": {
     "no-shadow": 0,
     "max-len": ["error", {
       "code": 150
     }],
-    "no-console": 0,
     "comma-dangle": [0, "never"],
     "no-undef": [0, "never"],
     "no-underscore-dangle": [0, "never"],
@@ -14,25 +13,14 @@
     "no-unused-expressions": [2, {
       "allowShortCircuit": true
     }],
-    "no-param-reassign": 0,
     "guard-for-in": 0,
-    "newline-per-chained-call": [2, {
-      "ignoreChainWithDepth": 5
-    }],
-    "no-unused-vars": [2, {
-      "vars": "all",
-      "args": "none"
-    }],
     "no-continue": 0,
     "import/no-extraneous-dependencies": 0,
     "no-mixed-operators": 0,
-    "prefer-template": 0,
-    "no-trailing-spaces": [1, {
-      "skipBlankLines": true
-    }],
     "security/detect-unsafe-regex": 0,
     "security/detect-object-injection": 0,
     "prefer-destructuring": 0,
+    "jest/valid-expect": 0,
     "one-var-declaration-per-line": [0, "never"],
     "one-var": [2, {
       "var": "never",

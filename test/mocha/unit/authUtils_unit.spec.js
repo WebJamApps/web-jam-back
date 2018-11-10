@@ -56,7 +56,7 @@ describe('The Unit Test for authUtils Module', () => {
     it('should 401 when exp <= moment().unix()', (done) => {
       const payload = { exp: moment().unix() };
       const auth = jwt.encode(payload, config.hashString);
-      const req = { headers: { authorization: 'Bearer ' + auth } };
+      const req = { headers: { authorization: `Bearer ${auth}` } };
       const res = {
         status(num) {
           expect(num).to.equal(401);
@@ -77,7 +77,7 @@ describe('The Unit Test for authUtils Module', () => {
         exp: moment().add(14, 'days').unix()
       };
       const auth = jwt.encode(payload, config.hashString);
-      const req = { headers: { authorization: 'Bearer ' + auth } };
+      const req = { headers: { authorization: `Bearer ${auth}` } };
       const next = sinon.spy();
       authUtils.ensureAuthenticated(req, null, next);
       expect(req.user).to.equal(sub);

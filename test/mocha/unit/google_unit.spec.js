@@ -1,73 +1,121 @@
 const EventEmitter = require('events');
 const jwt = require('jwt-simple');
 const nock = require('nock');
+const sinon = require('sinon');
+require('sinon-mongoose');
 const google = require('../../../auth/google');
 const User = require('../../../model/user/user-schema');
 const config = require('../../../config');
 
 describe('The Unit Test for Google Module', () => {
-  let userid;
-  before((done) => {
-    const user = new User();
-    user.name = 'foo';
-    user.email = 'foo@example.com';
-    user.save((err) => {
-      userid = user._id.toString();
-      done();
-    });
+  before(async () => {
+    await User.deleteMany({});
+    EventEmitter.defaultMaxListeners = Infinity;
   });
-  after((done) => {
+  after(async () => {
+    await User.deleteMany({});
     EventEmitter.defaultMaxListeners = 10;
-    done();
   });
-  it('should authenticate with existing user', (done) => {
+  it('authenticates with existing google user', async () => {
+    uMock = sinon.mock(User);
+    uMock.expects('findOneAndUpdate').chain('exec').resolves({ _id: '4444' });
     const sub = 'foo@example.com';
     const token = { access_token: 'access_token' };
     nock('https://accounts.google.com')
       .post('/o/oauth2/token')
       .reply(200, token);
-
-    const profile = { email: sub };
+    const profile = { email: sub, name: 'judy' };
     nock('https://www.googleapis.com')
       .get('/plus/v1/people/me/openIdConnect')
       .reply(200, profile);
-
     const req = { body: {} };
     const res = {
-      send: (msg) => {
-        expect(msg).to.have.property('token');
-        // const payload = jwt.decode(msg.token, config.hashString);
-        // expect(payload.sub).to.equal(userid);
-        done();
+      status() {
+        return {
+          json(obj) {
+            expect(obj.token.length).to.be.gt(20);
+            uMock.restore();
+          }
+        };
       }
     };
-
-    google.authenticate(req, res);
+    await google.authenticate(req, res);
   });
 
-  it('should create a new user and authenticate', (done) => {
+  it('should create a new user and authenticate', async () => {
+    uMock = sinon.mock(User);
+    uMock.expects('create').resolves({ _id: '123' });
     const sub = 'foo2@example.com';
     const token = { access_token: 'access_token' };
     nock('https://accounts.google.com')
       .post('/o/oauth2/token')
       .reply(200, token);
-
-    const profile = { email: sub };
+    const profile = { email: sub, name: 'bob' };
     nock('https://www.googleapis.com')
       .get('/plus/v1/people/me/openIdConnect')
       .reply(200, profile);
-
     const req = { body: {} };
     const res = {
-      send: (msg) => {
-        expect(msg).to.have.property('token');
-        // Make sure our token contains a new user id, different from existing userid
-        const payload = jwt.decode(msg.token, config.hashString);
-        expect(payload.sub).to.not.equal(userid);
-        done();
+      status() {
+        return {
+          json(obj) {
+            expect(obj.token.length).to.be.gt(20);
+            // Make sure our token contains a new user id, different from existing userid
+            const payload = jwt.decode(obj.token, config.hashString);
+            expect(payload.sub).to.equal('123');
+            uMock.restore();
+          }
+        };
       }
     };
-
-    google.authenticate(req, res);
+    await google.authenticate(req, res);
+  });
+  it('returns google api error from post to get the token', async () => {
+    const sub = 'foo2@example.com';
+    nock('https://accounts.google.com')
+      .post('/o/oauth2/token')
+      .replyWithError(500);
+    const profile = { email: sub, name: 'bob' };
+    nock('https://www.googleapis.com')
+      .get('/plus/v1/people/me/openIdConnect')
+      .reply(200, profile);
+    const req = { body: {} };
+    try {
+      await google.authenticate(req);
+    } catch (e) {
+      expect(e.message).to.equal('Error: 500');
+    }
+  });
+  it('returns google api error from get user profile', async () => {
+    const token = { access_token: 'access_token' };
+    nock.cleanAll();
+    nock('https://accounts.google.com')
+      .post('/o/oauth2/token')
+      .reply(200, token);
+    nock('https://www.googleapis.com')
+      .get('/plus/v1/people/me/openIdConnect')
+      .replyWithError(500);
+    const req = { body: {} };
+    try {
+      await google.authenticate(req);
+    } catch (e) {
+      expect(e.message).to.equal('Error: 500');
+    }
+  });
+  it('returns google api error from get user profile when profile is null', async () => {
+    const token = { access_token: 'access_token' };
+    nock.cleanAll();
+    nock('https://accounts.google.com')
+      .post('/o/oauth2/token')
+      .reply(200, token);
+    nock('https://www.googleapis.com')
+      .get('/plus/v1/people/me/openIdConnect')
+      .reply(200);
+    const req = { body: {} };
+    try {
+      await google.authenticate(req);
+    } catch (e) {
+      expect(e.message).to.equal('failed to retrieve user profile from Google');
+    }
   });
 });

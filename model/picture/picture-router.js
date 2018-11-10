@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const controller = require('./song-controller');
+const controller = require('./picture-controller');
 const authUtils = require('../../auth/authUtils');
 
 router.route('/')

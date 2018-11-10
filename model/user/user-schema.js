@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 const userSchema = new Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: false, select: false },
+  password: { type: String, required: false },
   resetCode: { type: String, required: false },
   isPswdReset: { type: Boolean, required: false },
   verifiedEmail: { type: Boolean, required: false },
@@ -42,26 +42,10 @@ userSchema.pre('save', function pwEcrypt(next) {
   });
 });
 
-userSchema.methods.comparePassword = function comparePassword(password, done) {
-  bcrypt.compare(password, this.password, (err, isMatch) => {
-    done(err, isMatch);
-  });
-};
-
-userSchema.methods.validateSignup = function validateSignup() {
-  let message = '';
-  if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(this.email)) {
-    // console.log('email is valid');
-  } else {
-    message = 'Email address is invalid format';
-  }
-  if (this.password.length < 8) {
-    message = 'Password is not min 8 characters';
-  }
-  if (this.name === '' || this.name === null || this.name === undefined) {
-    message = 'User Name is missing';
-  }
-  return message;
-};
+// userSchema.methods.comparePassword = function comparePassword(password, done) {
+//   bcrypt.compare(password, this.password, (err, isMatch) => {
+//     done(err, isMatch);
+//   });
+// };
 
 module.exports = mongoose.model('User', userSchema);

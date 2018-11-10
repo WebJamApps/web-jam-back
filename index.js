@@ -26,6 +26,7 @@ app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
 app.use((req, res, next) => {
   /* istanbul ignore next */
   process.on('unhandledRejection', (reason, promise) => {
+    console.log(promise); // eslint-disable-line no-console
     next(new Error(reason));
   });
   next();
@@ -53,7 +54,7 @@ app.get('*', (request, response) => {
 /* istanbul ignore if */
 if (!module.parent) {
   app.listen(config.server.port, () => {
-    console.log(`Magic happens on port ${config.server.port}`);
+    console.log(`Magic happens on port ${config.server.port}`); // eslint-disable-line no-console
   });
 }
 
