@@ -13,7 +13,6 @@
   <li><a href="http://joshandmariamusic.com">joshandmariamusic.com</a></li>
 <li><a href="https://www.web-jam.com/library">Web Jam Library</a></li>
 </ul>
-
 <h3>Install</h3>
 <ui>
 <li>clone this repo</li>
