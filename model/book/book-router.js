@@ -5,6 +5,9 @@ const authUtils = require('../../auth/authUtils');
 router.route('/getall')
   .get((...args) => controller.find(...args));
 
+router.route('/getHomeContent')
+  .get((...args) => controller.findByType(...args));
+
 router.route('/deleteall', authUtils.ensureAuthenticated)
   .delete((...args) => controller.deleteMany(...args));
 
