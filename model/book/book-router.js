@@ -4,7 +4,8 @@ const authUtils = require('../../auth/authUtils');
 
 router.route('/getall')
   .get((...args) => controller.find(...args));
-
+router.route('/homepage')
+  .put((...args) => controller.updateHomePage(...args));
 router.route('/getHomeContent')
   .get((...args) => controller.findByType(...args));
 
