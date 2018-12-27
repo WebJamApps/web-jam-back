@@ -1,5 +1,9 @@
 const mongoose = require('mongoose');
 
+const options = {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+};
+
 const Schema = mongoose.Schema;
 
 const bookSchema = new Schema({
@@ -17,6 +21,6 @@ const bookSchema = new Schema({
   comments: { type: String, required: false },
   checkedOutBy: { type: String, required: false },
   checkedOutByName: { type: String, required: false }
-});
+}, options);
 
 module.exports = mongoose.model('Book', bookSchema);
