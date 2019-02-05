@@ -47,7 +47,7 @@
     "morgan": "latest",
     "request": "latest",
     "request-promise": "latest",
-    "snyk": "latest"
+    "snyk": "1.124.1"
   },
   "devDependencies": {
     "chai": "latest",
