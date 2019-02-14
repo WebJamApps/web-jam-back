@@ -10,6 +10,8 @@ router.route('/getHomeContent')
   .get((...args) => controller.findByType(...args));
 router.route('/getYouthContent')
   .get((...args) => controller.findByType2(...args));
+router.route('/getFamilyContent')
+  .get((...args) => controller.findByType3(...args));
 router.route('/deleteall', authUtils.ensureAuthenticated)
   .delete((...args) => controller.deleteMany(...args));
 
