@@ -58,6 +58,16 @@ class BookController extends Controller {
     if (updatedBook === null || updatedBook === undefined) return res.status(400).json({ message: 'invalid request' });
     return res.status(200).json(updatedBook);
   }
+
+  async updateYouthPage(req, res) {
+    let updatedBook;
+    const update = req.body;
+    try {
+      updatedBook = await this.model.findOneAndUpdate({ type: 'youthPageContent' }, update);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (updatedBook === null || updatedBook === undefined) return res.status(400).json({ message: 'invalid request' });
+    return res.status(200).json(updatedBook);
+  }
   // .then((doc) => {
   //   if (!doc) {
   //     return res.status(404).send({ message: 'Delete id is invalid' });

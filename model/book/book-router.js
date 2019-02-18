@@ -6,6 +6,8 @@ router.route('/getall')
   .get((...args) => controller.find(...args));
 router.route('/homepage')
   .put((...args) => controller.updateHomePage(...args));
+router.route('/youthpage')
+  .put((...args) => controller.updateYouthPage(...args));
 router.route('/getHomeContent')
   .get((...args) => controller.findByType(...args));
 router.route('/getYouthContent')
