@@ -27,11 +27,53 @@ class BookController extends Controller {
     return res.status(200).json(book);
   }
 
+  async findByType2(req, res) {
+    let book;
+    try {
+      book = await this.model.findOne({ type: 'youthPageContent' });
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (book === undefined || book === null || book._id === null || book._id === undefined) {
+      return res.status(400).json({ message: 'invalid request' });
+    }
+    return res.status(200).json(book);
+  }
+
+  async findByType3(req, res) {
+    let book;
+    try {
+      book = await this.model.findOne({ type: 'familyPageContent' });
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (book === undefined || book === null || book._id === null || book._id === undefined) {
+      return res.status(400).json({ message: 'invalid request' });
+    }
+    return res.status(200).json(book);
+  }
+
   async updateHomePage(req, res) {
     let updatedBook;
     const update = req.body;
     try {
       updatedBook = await this.model.findOneAndUpdate({ type: 'homePageContent' }, update);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (updatedBook === null || updatedBook === undefined) return res.status(400).json({ message: 'invalid request' });
+    return res.status(200).json(updatedBook);
+  }
+
+  async updateYouthPage(req, res) {
+    let updatedBook;
+    const update = req.body;
+    try {
+      updatedBook = await this.model.findOneAndUpdate({ type: 'youthPageContent' }, update);
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (updatedBook === null || updatedBook === undefined) return res.status(400).json({ message: 'invalid request' });
+    return res.status(200).json(updatedBook);
+  }
+
+  async updateFamilyPage(req, res) {
+    let updatedBook;
+    const update = req.body;
+    try {
+      updatedBook = await this.model.findOneAndUpdate({ type: 'familyPageContent' }, update);
     } catch (e) { return res.status(500).json({ message: e.message }); }
     if (updatedBook === null || updatedBook === undefined) return res.status(400).json({ message: 'invalid request' });
     return res.status(200).json(updatedBook);

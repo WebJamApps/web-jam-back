@@ -4,7 +4,7 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=11.4.0"
+    "node": ">=11.9.0"
   },
   "files": ["lib/", "model/", "auth/", "config.js", "routes.js"],
   "license": "MIT",
@@ -47,7 +47,7 @@
     "morgan": "latest",
     "request": "latest",
     "request-promise": "latest",
-    "snyk": "latest"
+    "snyk": "1.124.1"
   },
   "devDependencies": {
     "chai": "latest",
