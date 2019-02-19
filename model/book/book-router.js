@@ -8,6 +8,8 @@ router.route('/homepage')
   .put((...args) => controller.updateHomePage(...args));
 router.route('/youthpage')
   .put((...args) => controller.updateYouthPage(...args));
+router.route('/familypage')
+  .put((...args) => controller.updateFamilyPage(...args));
 router.route('/getHomeContent')
   .get((...args) => controller.findByType(...args));
 router.route('/getYouthContent')
