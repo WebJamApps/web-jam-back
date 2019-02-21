@@ -16,6 +16,19 @@ class BookController extends Controller {
       });
   }
 
+  async getYouthPics(req, res) {
+    console.log('get youth pics');
+    let book;
+    try {
+      book = await this.model.find({ type: 'youthPics' });
+    } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (book === undefined || book === null || book.length === 0) {
+      return res.status(400).json({ message: 'invalid request' });
+    }
+    console.log(book);
+    return res.status(200).json(book);
+  }
+
   async findByType(req, res) {
     let book;
     try {
