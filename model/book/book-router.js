@@ -18,6 +18,8 @@ router.route('/getFamilyContent')
   .get((...args) => controller.findByType3(...args));
 router.route('/getYouthPics')
   .get((...args) => controller.getYouthPics(...args));
+router.route('/getFamilyPics')
+  .get((...args) => controller.getFamilyPics(...args));
 router.route('/deleteall', authUtils.ensureAuthenticated)
   .delete((...args) => controller.deleteMany(...args));
 
