@@ -27,18 +27,18 @@ class BookController extends Controller {
   //   return res.status(200).json(book);
   // }
 
-  async getFamilyPics(req, res) {
-    console.log('get youth pics');
-    let book;
-    try {
-      book = await this.model.find({ type: 'familyPics' });
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (book === undefined || book === null || book.length === 0) {
-      return res.status(400).json({ message: 'invalid request' });
-    }
-    console.log(book);
-    return res.status(200).json(book);
-  }
+  // async getFamilyPics(req, res) {
+  //   console.log('get youth pics');
+  //   let book;
+  //   try {
+  //     book = await this.model.find({ type: 'familyPics' });
+  //   } catch (e) { return res.status(500).json({ message: e.message }); }
+  //   if (book === undefined || book === null || book.length === 0) {
+  //     return res.status(400).json({ message: 'invalid request' });
+  //   }
+  //   console.log(book);
+  //   return res.status(200).json(book);
+  // }
 
   // async findByType(req, res) {
   //   let book;
@@ -62,16 +62,16 @@ class BookController extends Controller {
   //   return res.status(200).json(book);
   // }
 
-  async findByType3(req, res) {
-    let book;
-    try {
-      book = await this.model.findOne({ type: 'familyPageContent' });
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (book === undefined || book === null || book._id === null || book._id === undefined) {
-      return res.status(400).json({ message: 'invalid request' });
-    }
-    return res.status(200).json(book);
-  }
+  // async findByType3(req, res) {
+  //   let book;
+  //   try {
+  //     book = await this.model.findOne({ type: 'familyPageContent' });
+  //   } catch (e) { return res.status(500).json({ message: e.message }); }
+  //   if (book === undefined || book === null || book._id === null || book._id === undefined) {
+  //     return res.status(400).json({ message: 'invalid request' });
+  //   }
+  //   return res.status(200).json(book);
+  // }
 
   async updateHomePage(req, res) {
     let updatedBook;

@@ -16,12 +16,12 @@ router.route('/familypage')
 //   .get((...args) => controller.findByType(...args));
 // router.route('/getYouthContent')
 //   .get((...args) => controller.findByType2(...args));
-router.route('/getFamilyContent')
-  .get((...args) => controller.findByType3(...args));
+// router.route('/getFamilyContent')
+//   .get((...args) => controller.findByType3(...args));
 // router.route('/getYouthPics')
 //   .get((...args) => controller.getYouthPics(...args));
-router.route('/getFamilyPics')
-  .get((...args) => controller.getFamilyPics(...args));
+// router.route('/getFamilyPics')
+//   .get((...args) => controller.getFamilyPics(...args));
 router.route('/deleteall', authUtils.ensureAuthenticated)
   .delete((...args) => controller.deleteMany(...args));
 router.route('/findOne')
