@@ -12,10 +12,10 @@ router.route('/youthpage')
   .put((...args) => controller.updateYouthPage(...args));
 router.route('/familypage')
   .put((...args) => controller.updateFamilyPage(...args));
-router.route('/getHomeContent')
-  .get((...args) => controller.findByType(...args));
-router.route('/getYouthContent')
-  .get((...args) => controller.findByType2(...args));
+// router.route('/getHomeContent')
+//   .get((...args) => controller.findByType(...args));
+// router.route('/getYouthContent')
+//   .get((...args) => controller.findByType2(...args));
 router.route('/getFamilyContent')
   .get((...args) => controller.findByType3(...args));
 router.route('/getYouthPics')
