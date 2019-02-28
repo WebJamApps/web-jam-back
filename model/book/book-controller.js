@@ -3,7 +3,6 @@ const bookModel = require('./book-facade');
 
 class BookController extends Controller {
   findCheckedOut(req, res) {
-    // console.log('this is the user id: ' + req.params.id);
     return this.model.find({ checkedOutBy: req.params.id })
       .then(collection => res.status(200).json(collection));
   }
@@ -11,7 +10,6 @@ class BookController extends Controller {
   deleteMany(req, res) {
     return this.model.deleteMany(req.query)
       .then((collection) => {
-        // console.log(req.query);
         res.status(200).json(collection);
       });
   }

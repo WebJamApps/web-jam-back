@@ -2,6 +2,8 @@ const router = require('express').Router();
 const controller = require('./book-controller');
 const authUtils = require('../../auth/authUtils');
 
+router.route('/')
+  .get((...args) => controller.find(...args));
 router.route('/getall')
   .get((...args) => controller.find(...args));
 router.route('/homepage')
@@ -22,7 +24,8 @@ router.route('/getFamilyPics')
   .get((...args) => controller.getFamilyPics(...args));
 router.route('/deleteall', authUtils.ensureAuthenticated)
   .delete((...args) => controller.deleteMany(...args));
-
+router.route('/findOne')
+  .get((...args) => controller.findOne(...args));
 router.route('/create', authUtils.ensureAuthenticated)
   .post((...args) => controller.create(...args));
 
