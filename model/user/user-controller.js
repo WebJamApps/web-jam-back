@@ -35,27 +35,18 @@ class UserController extends Controller {
   }
 
   async updateemail(req, res) { // validate with pin then change the email address
-    let user, updatedUser, fourHundred = '';
+    let updatedUser;
     const update = {};
-    try {
-      user = await this.model.findOne({ email: req.body.email });
-    } catch (e) {
-      return res.status(500).json({ message: e.message });
-    }
-    if (user === null || user === undefined || user._id === null || user._id === undefined) {
-      fourHundred = 'User does not exist';
-    } else if (user.resetCode !== req.body.resetCode) {
-      fourHundred = 'Reset code is wrong';
-    } else if (user.changeemail !== req.body.changeemail) {
-      fourHundred = 'Reset email is not valid';
-    }
-    if (fourHundred !== '') return res.status(400).json({ message: fourHundred });
+    const matcher = { email: req.body.email };
+    matcher.resetCode = req.body.resetCode;
+    matcher.changeemail = req.body.changeemail;
     update.resetCode = '';
     update.email = req.body.changeemail;
     update.changeemail = '';
     try {
-      updatedUser = await this.model.findOneAndUpdate({ email: req.body.email }, update);
+      updatedUser = await this.model.findOneAndUpdate(matcher, update);
     } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (updatedUser === null || updatedUser === undefined) return res.status(400).json({ message: 'invalid change email request' });
     updatedUser.password = '';
     return res.status(200).json(updatedUser);
   }
@@ -78,19 +69,20 @@ class UserController extends Controller {
   async resetpswd(req, res) { // initial request to reset password
     let user;
     const updateUser = {};
-    try {
-      user = await this.model.findOne({ email: req.body.email });
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (user === null || user === undefined || user.id === null || user._id === undefined) {
-      return res.status(400).json({ message: 'incorrect email address' });
-    }
-    if (!user.verifiedEmail) return res.status(401).json({ message: 'Verify your email address' });
+    // try {
+    //   user = await this.model.findOne({ email: req.body.email });
+    // } catch (e) { return res.status(500).json({ message: e.message }); }
+    // if (user === null || user === undefined || user.id === null || user._id === undefined) {
+    //   return res.status(400).json({ message: 'incorrect email address' });
+    // }
+    // if (!user.verifiedEmail) return res.status(401).json({ message: 'Verify your email address' });
     const randomNumba = this.authUtils.generateCode(99999, 10000);
     updateUser.resetCode = randomNumba;
     updateUser.isPswdReset = true;
     try {
-      await this.model.findOneAndUpdate({ _id: user._id }, updateUser);
+      user = await this.model.findOneAndUpdate({ email: req.body.email, verifiedEmail: true }, updateUser);
     } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (user === null || user === undefined) return res.status(400).json({ message: 'invalid reset password request' });
     const mailBody = `<h2>A password reset was requested for ${user.name
     }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="`
         + `${process.env.frontURL}/userutil/?email=${user.email}&form=reset">`
