@@ -19,15 +19,26 @@ class UserController extends Controller {
     return this[req.params.id](req, res);
   }
 
-  async validateemail(req, res) {
+  async authFindOneAndUpdate(matcher, update, res) {
     let updatedUser;
-    const update = { resetCode: '', isPswdReset: false, verifiedEmail: true };
     try {
-      updatedUser = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
+      updatedUser = await this.model.findOneAndUpdate(matcher, update);
     } catch (e) { return res.status(500).json({ message: e.message }); }
     if (updatedUser === null || updatedUser === undefined) return res.status(400).json({ message: 'incorrect email or code' });
     updatedUser.password = '';
     return res.status(200).json(updatedUser);
+  }
+
+  validateemail(req, res) {
+    // let updatedUser;
+    const update = { resetCode: '', isPswdReset: false, verifiedEmail: true };
+    return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
+    // try {
+    //   updatedUser = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
+    // } catch (e) { return res.status(500).json({ message: e.message }); }
+    // if (updatedUser === null || updatedUser === undefined) return res.status(400).json({ message: 'incorrect email or code' });
+    // updatedUser.password = '';
+    // return res.status(200).json(updatedUser);
   }
 
   async updateemail(req, res) { // validate with pin then change the email address
@@ -60,7 +71,7 @@ class UserController extends Controller {
     if (req.body.password === null || req.body.password === undefined || req.body.password.length < 8) {
       return res.status(400).send({ message: 'Password is not min 8 characters' });
     }
-    let user, encrypted;
+    let encrypted;
     const update = {};
     update.resetCode = '';
     update.isPswdReset = false;
@@ -68,12 +79,13 @@ class UserController extends Controller {
       encrypted = await this.model.encryptPswd(req.body.password);
     } catch (e) { return res.status(500).json({ message: e.message }); }
     update.password = encrypted;
-    try {
-      user = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (user === null || user._id === null || user._id === undefined) return res.status(401).json({ message: 'wrong email or reset code' });
-    user.password = '';
-    return res.status(200).json(user);
+    return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
+    // try {
+    //   user = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
+    // } catch (e) { return res.status(500).json({ message: e.message }); }
+    // if (user === null || user._id === null || user._id === undefined) return res.status(401).json({ message: 'wrong email or reset code' });
+    // user.password = '';
+    // return res.status(200).json(user);
   }
 
   async resetpswd(req, res) { // initial request to reset password

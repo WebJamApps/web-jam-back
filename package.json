@@ -9,6 +9,7 @@
   "files": ["lib/", "model/", "auth/", "config.js", "routes.js"],
   "license": "MIT",
   "scripts": {
+    "cc": "codeclimate analyze -f html > codeclimate.html",
     "installglobals": "npm install -g npm@latest && npm install -g yarn@latest",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
