@@ -468,7 +468,7 @@ describe('functional test for users', () => {
         .put('/user/auth/pswdreset')
         .send({ email: 'foo3@example.com', password: 'gygygygy', resetCode: '11111' })
         .end((err, res) => {
-          expect(res).to.have.status(401);
+          expect(res).to.have.status(400);
           done();
         });
     });

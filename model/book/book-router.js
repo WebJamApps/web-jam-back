@@ -4,10 +4,6 @@ const authUtils = require('../../auth/authUtils');
 const routeUtils = require('../../lib/routeUtils');
 
 routeUtils.setRoot(router, controller, authUtils);
-// router.route('/')
-//   .get((...args) => controller.find(...args))
-//   .post(authUtils.ensureAuthenticated, (...args) => controller.create(...args))
-//   .delete(authUtils.ensureAuthenticated, (...args) => controller.deleteMany(...args));
 
 router.route('/one')
   .get((...args) => controller.findOne(...args))

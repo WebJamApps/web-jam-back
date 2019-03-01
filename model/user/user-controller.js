@@ -30,15 +30,8 @@ class UserController extends Controller {
   }
 
   validateemail(req, res) {
-    // let updatedUser;
     const update = { resetCode: '', isPswdReset: false, verifiedEmail: true };
     return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
-    // try {
-    //   updatedUser = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
-    // } catch (e) { return res.status(500).json({ message: e.message }); }
-    // if (updatedUser === null || updatedUser === undefined) return res.status(400).json({ message: 'incorrect email or code' });
-    // updatedUser.password = '';
-    // return res.status(200).json(updatedUser);
   }
 
   async updateemail(req, res) { // validate with pin then change the email address
@@ -80,12 +73,6 @@ class UserController extends Controller {
     } catch (e) { return res.status(500).json({ message: e.message }); }
     update.password = encrypted;
     return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
-    // try {
-    //   user = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
-    // } catch (e) { return res.status(500).json({ message: e.message }); }
-    // if (user === null || user._id === null || user._id === undefined) return res.status(401).json({ message: 'wrong email or reset code' });
-    // user.password = '';
-    // return res.status(200).json(user);
   }
 
   async resetpswd(req, res) { // initial request to reset password
