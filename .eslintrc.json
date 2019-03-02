@@ -1,6 +1,6 @@
 {
-  "plugins": ["node", "security", "jest"],
-  "extends": ["plugin:node/recommended", "plugin:security/recommended", "airbnb", "plugin:jest/recommended"],
+  "plugins": ["node", "security", "jest", "mocha"],
+  "extends": ["plugin:mocha/recommended", "plugin:node/recommended", "plugin:security/recommended", "airbnb", "plugin:jest/recommended"],
   "rules": {
     "no-multiple-empty-lines": [
       "error",
