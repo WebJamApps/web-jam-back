@@ -2,7 +2,6 @@ const server = require('../../../index');
 const VolOpp1 = require('../../../model/volOpp/volOpp-schema');
 const authUtils = require('../../../auth/authUtils');
 
-const previousId = '';
 describe('The volunteer opportunity feature', () => {
   let allowedUrl;
   beforeEach((done) => {
@@ -82,22 +81,16 @@ describe('The volunteer opportunity feature', () => {
       expect(cb.body.nModified > 0);
     } catch (e) { throw e; }
   });
-  it('should respond with 404 error when update by id has an id that does not exist', (done) => {
-    const voOp3 = new VolOpp1();
-    voOp3.voName = 'paint';
-    voOp3.voCharityId = '44444';
-    voOp3.voCharityName = 'painters';
-    voOp3.save();
-    chai.request(server)
-      .put(`/volopp/${previousId}`)
-      .set({ origin: allowedUrl })
-      .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-      .send({ voCharityName: 'foobar' })
-      .end((err, res) => {
-        expect(res).to.have.status(404);
-        expect(res.nModified === 0);
-        done();
-      });
+  it('should respond with error when updateMany does not exist', async () => {
+    let result;
+    try {
+      result = await chai.request(server)
+        .put('/volopp')
+        .set({ origin: allowedUrl })
+        .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+        .send({ voCharityName: 'foobar' });
+      expect(result.status).to.equal(500);
+    } catch (e) { throw e; }
   });
   it('should delete an event', async () => {
     await VolOpp1.deleteMany({});

@@ -49,6 +49,10 @@ routes(app);
 app.get('*', (request, response) => {
   response.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
 });
+app.use((err, req, res) => {
+  res.status(err.status || 500)
+    .json({ message: err.message, error: err });
+});
 
 // this if statement is only for mocha test that may spin up twice
 /* istanbul ignore if */
