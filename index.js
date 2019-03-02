@@ -1,4 +1,5 @@
 const path = require('path');
+const debug = require('debug')('web-jam-back:index');
 const express = require('express');
 const mongoose = require('mongoose');
 const helmet = require('helmet');
@@ -19,18 +20,7 @@ const app = express();
 
 /* istanbul ignore if */
 if (process.env.NODE_ENV === 'production') app.use(enforce.HTTPS({ trustProtoHeader: true }));
-
 app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
-
-// Handle rejected promises globally
-app.use((req, res, next) => {
-  /* istanbul ignore next */
-  process.on('unhandledRejection', (reason, promise) => {
-    console.log(promise); // eslint-disable-line no-console
-    next(new Error(reason));
-  });
-  next();
-});
 
 app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
@@ -49,11 +39,16 @@ routes(app);
 app.get('*', (request, response) => {
   response.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
 });
+app.use((err, req, res) => {
+  res.status(err.status || 500)
+    .json({ message: err.message, error: err });
+});
 
 // this if statement is only for mocha test that may spin up twice
 /* istanbul ignore if */
 if (!module.parent) {
   app.listen(config.server.port, () => {
+    debug('running in debug mode');
     console.log(`Magic happens on port ${config.server.port}`); // eslint-disable-line no-console
   });
 }

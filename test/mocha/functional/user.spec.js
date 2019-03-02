@@ -296,7 +296,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555',
+          email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555'
         });
       expect(cb).to.have.status(409);
     } catch (e) { throw e; }
@@ -468,7 +468,7 @@ describe('functional test for users', () => {
         .put('/user/auth/pswdreset')
         .send({ email: 'foo3@example.com', password: 'gygygygy', resetCode: '11111' })
         .end((err, res) => {
-          expect(res).to.have.status(401);
+          expect(res).to.have.status(400);
           done();
         });
     });
