@@ -20,18 +20,7 @@ const app = express();
 
 /* istanbul ignore if */
 if (process.env.NODE_ENV === 'production') app.use(enforce.HTTPS({ trustProtoHeader: true }));
-
 app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
-
-// Handle rejected promises globally
-app.use((req, res, next) => {
-  /* istanbul ignore next */
-  process.on('unhandledRejection', (reason, promise) => {
-    console.log(promise); // eslint-disable-line no-console
-    next(new Error(reason));
-  });
-  next();
-});
 
 app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
