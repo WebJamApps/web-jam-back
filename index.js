@@ -1,4 +1,5 @@
 const path = require('path');
+const debug = require('debug')('web-jam-back:index');
 const express = require('express');
 const mongoose = require('mongoose');
 const helmet = require('helmet');
@@ -58,6 +59,7 @@ app.use((err, req, res) => {
 /* istanbul ignore if */
 if (!module.parent) {
   app.listen(config.server.port, () => {
+    debug('running in debug mode');
     console.log(`Magic happens on port ${config.server.port}`); // eslint-disable-line no-console
   });
 }
