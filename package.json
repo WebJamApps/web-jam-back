@@ -18,11 +18,12 @@
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && npm run installglobals && yarn install",
     "debug": "node --inspect-brk index.js",
     "test": "rm -rf coverage && npm run test:jest && npm run test:mocha && npm run combine-coverage && eslint .",
+    "test:local": "eslint . --fix && yarn test:unit && yarn cc",
     "test:mocha": "nyc mocha --timeout 6000 --bail -r ./test/mocha/bootstrap.js test/mocha/**/*.js --exit",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/mocha/bootstrap.js test/mocha/**/*.js",
     "test:jest": "cross-env NODE_ENV=test && jest --no-cache --config jest.config.json --notify",
+    "test:unit": "rm -rf coverage && yarn test:jest && yarn test:mocha && yarn combine-coverage",
     "combine-coverage": "istanbul-combine -d coverage -p none -r lcov -r html coverage/mocha/coverage-final.json coverage/jest/coverage-final.json",
-    "fix:lint": "./node_modules/eslint/bin/eslint.js --fix .",
     "snyk-protect": "snyk protect"
   },
   "repository": {
@@ -48,7 +49,7 @@
     "morgan": "latest",
     "request": "latest",
     "request-promise": "latest",
-    "snyk": "1.124.1"
+    "snyk": "latest"
   },
   "devDependencies": {
     "chai": "latest",

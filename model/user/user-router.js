@@ -17,5 +17,4 @@ router.route('/auth/google')
 router.route('/auth/:id')
   .put((...args) => controller.handleAuth(...args));
 
-
 module.exports = router;

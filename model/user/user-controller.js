@@ -19,14 +19,8 @@ class UserController extends Controller {
     return this[req.params.id](req, res);
   }
 
-  async authFindOneAndUpdate(matcher, update, res) {
-    let updatedUser;
-    try {
-      updatedUser = await this.model.findOneAndUpdate(matcher, update);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (updatedUser === null || updatedUser === undefined) return res.status(400).json({ message: 'incorrect email or code' });
-    updatedUser.password = '';
-    return res.status(200).json(updatedUser);
+  authFindOneAndUpdate(matcher, update, res) {
+    return this.findOneAndUpdate({ query: matcher, body: update }, res);
   }
 
   validateemail(req, res) {
@@ -34,8 +28,7 @@ class UserController extends Controller {
     return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
   }
 
-  async updateemail(req, res) { // validate with pin then change the email address
-    let updatedUser;
+  updateemail(req, res) { // validate with pin then change the email address
     const update = {};
     const matcher = { email: req.body.email };
     matcher.resetCode = req.body.resetCode;
@@ -43,12 +36,7 @@ class UserController extends Controller {
     update.resetCode = '';
     update.email = req.body.changeemail;
     update.changeemail = '';
-    try {
-      updatedUser = await this.model.findOneAndUpdate(matcher, update);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (updatedUser === null || updatedUser === undefined) return res.status(400).json({ message: 'invalid change email request' });
-    updatedUser.password = '';
-    return res.status(200).json(updatedUser);
+    return this.findOneAndUpdate({ query: matcher, body: update }, res);
   }
 
   async pswdreset(req, res) { // changes the password after code is verified
@@ -69,13 +57,6 @@ class UserController extends Controller {
   async resetpswd(req, res) { // initial request to reset password
     let user;
     const updateUser = {};
-    // try {
-    //   user = await this.model.findOne({ email: req.body.email });
-    // } catch (e) { return res.status(500).json({ message: e.message }); }
-    // if (user === null || user === undefined || user.id === null || user._id === undefined) {
-    //   return res.status(400).json({ message: 'incorrect email address' });
-    // }
-    // if (!user.verifiedEmail) return res.status(401).json({ message: 'Verify your email address' });
     const randomNumba = this.authUtils.generateCode(99999, 10000);
     updateUser.resetCode = randomNumba;
     updateUser.isPswdReset = true;
@@ -188,7 +169,7 @@ class UserController extends Controller {
       email: req.body.email,
       password: req.body.password,
       isPswdReset: false,
-      resetCode: randomNumba,
+      resetCode: randomNumba
     };
     const validData = this.model.validateSignup(user);
     if (validData !== '') return res.status(409).send({ message: validData });
