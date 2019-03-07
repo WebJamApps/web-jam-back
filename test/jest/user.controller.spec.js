@@ -338,7 +338,7 @@ describe('User Controller', () => {
   it('authenticates with google', async () => {
     let cb;
     const gMock = sinon.mock(google);
-    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    gMock.expects('authenticate').resolves({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] });
     try {
       cb = await request(server)
         .post('/user/auth/google')
@@ -351,7 +351,7 @@ describe('User Controller', () => {
   it('returns db.create error when authenticates with google', async () => {
     let cb;
     const gMock = sinon.mock(google);
-    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    gMock.expects('authenticate').resolves({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] });
     const uMock = sinon.mock(user);
     uMock.expects('create').rejects(new Error('bad'));
     try {
@@ -380,7 +380,7 @@ describe('User Controller', () => {
   it('returns findOneAndUpdate error when authenticates with google', async () => {
     let cb;
     const gMock = sinon.mock(google);
-    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    gMock.expects('authenticate').resolves({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] });
     const uMock = sinon.mock(user);
     uMock.expects('findOneAndUpdate').rejects(new Error('bad'));
     try {
@@ -397,7 +397,7 @@ describe('User Controller', () => {
     await user.create({ name: 'Josh', email: 'j@js.com' });
     let cb;
     const gMock = sinon.mock(google);
-    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    gMock.expects('authenticate').resolves({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] });
     try {
       cb = await request(server)
         .post('/user/auth/google')

@@ -19,14 +19,14 @@ describe('The Unit Test for Google Module', () => {
   it('authenticates with existing google user', async () => {
     uMock = sinon.mock(User);
     uMock.expects('findOneAndUpdate').chain('exec').resolves({ _id: '4444' });
-    const sub = 'foo@example.com';
+    // const sub = 'foo@example.com';
     const token = { access_token: 'access_token' };
     nock('https://accounts.google.com')
       .post('/o/oauth2/token')
       .reply(200, token);
-    const profile = { email: sub, name: 'judy' };
-    nock('https://www.googleapis.com')
-      .get('/plus/v1/people/me/openIdConnect')
+    const profile = { names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] };
+    nock('https://people.googleapis.com')
+      .get('/v1/people/me?personFields=names%2CemailAddresses')
       .reply(200, profile);
     const req = { body: {} };
     const res = {
@@ -45,14 +45,14 @@ describe('The Unit Test for Google Module', () => {
   it('should create a new user and authenticate', async () => {
     uMock = sinon.mock(User);
     uMock.expects('create').resolves({ _id: '123' });
-    const sub = 'foo2@example.com';
+    // const sub = 'foo2@example.com';
     const token = { access_token: 'access_token' };
     nock('https://accounts.google.com')
       .post('/o/oauth2/token')
       .reply(200, token);
-    const profile = { email: sub, name: 'bob' };
-    nock('https://www.googleapis.com')
-      .get('/plus/v1/people/me/openIdConnect')
+    const profile = { names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] };
+    nock('https://people.googleapis.com')
+      .get('/v1/people/me?personFields=names%2CemailAddresses')
       .reply(200, profile);
     const req = { body: {} };
     const res = {
@@ -71,13 +71,13 @@ describe('The Unit Test for Google Module', () => {
     await google.authenticate(req, res);
   });
   it('returns google api error from post to get the token', async () => {
-    const sub = 'foo2@example.com';
+    // const sub = 'foo2@example.com';
     nock('https://accounts.google.com')
       .post('/o/oauth2/token')
       .replyWithError(500);
-    const profile = { email: sub, name: 'bob' };
-    nock('https://www.googleapis.com')
-      .get('/plus/v1/people/me/openIdConnect')
+    const profile = { names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] };
+    nock('https://people.googleapis.com')
+      .get('/v1/people/me?personFields=names%2CemailAddresses')
       .reply(200, profile);
     const req = { body: {} };
     try {
@@ -92,8 +92,8 @@ describe('The Unit Test for Google Module', () => {
     nock('https://accounts.google.com')
       .post('/o/oauth2/token')
       .reply(200, token);
-    nock('https://www.googleapis.com')
-      .get('/plus/v1/people/me/openIdConnect')
+    nock('https://people.googleapis.com')
+      .get('/v1/people/me?personFields=names%2CemailAddresses')
       .replyWithError(500);
     const req = { body: {} };
     try {
@@ -108,8 +108,8 @@ describe('The Unit Test for Google Module', () => {
     nock('https://accounts.google.com')
       .post('/o/oauth2/token')
       .reply(200, token);
-    nock('https://www.googleapis.com')
-      .get('/plus/v1/people/me/openIdConnect')
+    nock('https://people.googleapis.com')
+      .get('/v1/people/me?personFields=names%2CemailAddresses')
       .reply(200);
     const req = { body: {} };
     try {
