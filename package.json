@@ -4,14 +4,14 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=11.9.0"
+    "node": ">=11.10.0"
   },
   "files": ["lib/", "model/", "auth/", "config.js", "routes.js"],
   "license": "MIT",
   "scripts": {
     "cc": "codeclimate analyze -f html > codeclimate.html",
     "start:debug": "DEBUG=web-jam-back:* nodemon index.js",
-    "installglobals": "npm install -g npm@latest && npm install -g yarn@latest",
+    "installglobals": "npm install -g npm@latest",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm start -- build)",
