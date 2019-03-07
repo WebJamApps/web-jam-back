@@ -4,24 +4,27 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=11.9.0"
+    "node": ">=11.10.0"
   },
   "files": ["lib/", "model/", "auth/", "config.js", "routes.js"],
   "license": "MIT",
   "scripts": {
-    "installglobals": "npm install -g npm@latest && npm install -g yarn@latest",
+    "cc": "codeclimate analyze -f html > codeclimate.html",
+    "start:debug": "DEBUG=web-jam-back:* nodemon index.js",
+    "installglobals": "npm install -g npm@latest",
     "postinstall": "./postinstall.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm start -- build)",
     "start": "node index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && npm run installglobals && yarn install",
-    "debug": "node --inspect-brk index.js",
+    "node:debug": "node --inspect-brk index.js",
     "test": "rm -rf coverage && npm run test:jest && npm run test:mocha && npm run combine-coverage && eslint .",
+    "test:local": "eslint . --fix && yarn test:unit && yarn cc",
     "test:mocha": "nyc mocha --timeout 6000 --bail -r ./test/mocha/bootstrap.js test/mocha/**/*.js --exit",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/mocha/bootstrap.js test/mocha/**/*.js",
     "test:jest": "cross-env NODE_ENV=test && jest --no-cache --config jest.config.json --notify",
+    "test:unit": "rm -rf coverage && yarn test:jest && yarn test:mocha && yarn combine-coverage",
     "combine-coverage": "istanbul-combine -d coverage -p none -r lcov -r html coverage/mocha/coverage-final.json coverage/jest/coverage-final.json",
-    "fix:lint": "./node_modules/eslint/bin/eslint.js --fix .",
     "snyk-protect": "snyk protect"
   },
   "repository": {
@@ -36,6 +39,7 @@
     "body-parser": "latest",
     "cross-env": "latest",
     "cors": "latest",
+    "debug": "latest",
     "dotenv": "latest",
     "express": "latest",
     "express-sslify": "latest",
@@ -45,9 +49,10 @@
     "moment": "latest",
     "mongoose": "latest",
     "morgan": "latest",
+    "nodemon": "latest",
     "request": "latest",
     "request-promise": "latest",
-    "snyk": "1.124.1"
+    "snyk": "latest"
   },
   "devDependencies": {
     "chai": "latest",
@@ -60,6 +65,7 @@
     "eslint-plugin-node": "latest",
     "eslint-plugin-react": "latest",
     "eslint-plugin-security": "latest",
+    "eslint-plugin-mocha": "latest",
     "jest": "latest",
     "jest-cli": "latest",
     "istanbul": "latest",

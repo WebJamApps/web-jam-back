@@ -19,7 +19,7 @@ describe('The library feature', () => {
     let cb;
     try {
       cb = await chai.request(server)
-        .post('/book/create')
+        .post('/book')
         .set({ origin: allowedUrl })
         .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ title: 'foobar', type: 'book' });
@@ -29,7 +29,7 @@ describe('The library feature', () => {
   it('deletes all books', async () => {
     try {
       const cb = await chai.request(server)
-        .delete('/book/deleteall')
+        .delete('/book')
         .set({ origin: allowedUrl })
         .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({});
@@ -58,7 +58,7 @@ describe('The library feature', () => {
     Book.type = 'pdf';
     Book.save(() => {
       chai.request(server)
-        .get('/book/getall')
+        .get('/book')
         .set({ origin: allowedUrl })
         .set('authorization', 'Bearer ')
         .end((err, res) => {
@@ -73,7 +73,7 @@ describe('The library feature', () => {
     let cb;
     try {
       cb = await chai.request(server)
-        .get('/book/getall')
+        .get('/book')
         .set({ origin: allowedUrl })
         .set('authorization', 'Bearer ');
       expect(cb).to.have.status(500);
@@ -82,7 +82,7 @@ describe('The library feature', () => {
   });
   it('should post an array of new books to be created', (done) => {
     chai.request(server)
-      .post('/book/create')
+      .post('/book')
       .set({ origin: allowedUrl })
       .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
       .send([{ title: 'foobar', type: 'book' }, { title: 'JFK', type: 'PDF' }])
@@ -98,7 +98,7 @@ describe('The library feature', () => {
     let cb;
     try {
       cb = await chai.request(server)
-        .post('/book/create')
+        .post('/book')
         .set({ origin: allowedUrl })
         .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send([{ title: 'foobar', type: 'book' }, { title: 'JFK', type: 'PDF' }]);
@@ -112,7 +112,7 @@ describe('The library feature', () => {
     let cb;
     try {
       cb = await chai.request(server)
-        .post('/book/create')
+        .post('/book')
         .set({ origin: allowedUrl })
         .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({ title: 'foobar', type: 'book' });

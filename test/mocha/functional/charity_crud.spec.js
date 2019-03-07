@@ -6,15 +6,8 @@ const server = require('../../../index');
 EventEmitter.defaultMaxListeners = Infinity;
 const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
 describe('The Charity feature', () => {
-  // let myEmitter;
-  beforeEach((done) => {
-    // myEmitter = new EventEmitter();
-    // myEmitter.setMaxListeners(myEmitter.getMaxListeners() + 11);
-    done();
-  });
   afterEach(async () => {
     await Charity1.deleteMany({});
-    // myEmitter.setMaxListeners(myEmitter.getMaxListeners() - 11);
   });
   it('creates a new charity', async () => {
     try {

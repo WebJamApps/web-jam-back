@@ -1,3 +1,4 @@
+const debug = require('debug')('web-jam-back:user-controller');
 const Controller = require('../../lib/controller');
 const userModel = require('./user-facade');
 const google = require('../../auth/google');
@@ -19,48 +20,31 @@ class UserController extends Controller {
     return this[req.params.id](req, res);
   }
 
-  async validateemail(req, res) {
-    let updatedUser;
-    const update = { resetCode: '', isPswdReset: false, verifiedEmail: true };
-    try {
-      updatedUser = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (updatedUser === null || updatedUser === undefined) return res.status(400).json({ message: 'incorrect email or code' });
-    updatedUser.password = '';
-    return res.status(200).json(updatedUser);
+  authFindOneAndUpdate(matcher, update, res) {
+    return this.findOneAndUpdate({ query: matcher, body: update }, res);
   }
 
-  async updateemail(req, res) { // validate with pin then change the email address
-    let user, updatedUser, fourHundred = '';
+  validateemail(req, res) {
+    const update = { resetCode: '', isPswdReset: false, verifiedEmail: true };
+    return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
+  }
+
+  updateemail(req, res) { // validate with pin then change the email address
     const update = {};
-    try {
-      user = await this.model.findOne({ email: req.body.email });
-    } catch (e) {
-      return res.status(500).json({ message: e.message });
-    }
-    if (user === null || user === undefined || user._id === null || user._id === undefined) {
-      fourHundred = 'User does not exist';
-    } else if (user.resetCode !== req.body.resetCode) {
-      fourHundred = 'Reset code is wrong';
-    } else if (user.changeemail !== req.body.changeemail) {
-      fourHundred = 'Reset email is not valid';
-    }
-    if (fourHundred !== '') return res.status(400).json({ message: fourHundred });
+    const matcher = { email: req.body.email };
+    matcher.resetCode = req.body.resetCode;
+    matcher.changeemail = req.body.changeemail;
     update.resetCode = '';
     update.email = req.body.changeemail;
     update.changeemail = '';
-    try {
-      updatedUser = await this.model.findOneAndUpdate({ email: req.body.email }, update);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    updatedUser.password = '';
-    return res.status(200).json(updatedUser);
+    return this.findOneAndUpdate({ query: matcher, body: update }, res);
   }
 
   async pswdreset(req, res) { // changes the password after code is verified
     if (req.body.password === null || req.body.password === undefined || req.body.password.length < 8) {
       return res.status(400).send({ message: 'Password is not min 8 characters' });
     }
-    let user, encrypted;
+    let encrypted;
     const update = {};
     update.resetCode = '';
     update.isPswdReset = false;
@@ -68,30 +52,19 @@ class UserController extends Controller {
       encrypted = await this.model.encryptPswd(req.body.password);
     } catch (e) { return res.status(500).json({ message: e.message }); }
     update.password = encrypted;
-    try {
-      user = await this.model.findOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (user === null || user._id === null || user._id === undefined) return res.status(401).json({ message: 'wrong email or reset code' });
-    user.password = '';
-    return res.status(200).json(user);
+    return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
   }
 
   async resetpswd(req, res) { // initial request to reset password
     let user;
     const updateUser = {};
-    try {
-      user = await this.model.findOne({ email: req.body.email });
-    } catch (e) { return res.status(500).json({ message: e.message }); }
-    if (user === null || user === undefined || user.id === null || user._id === undefined) {
-      return res.status(400).json({ message: 'incorrect email address' });
-    }
-    if (!user.verifiedEmail) return res.status(401).json({ message: 'Verify your email address' });
     const randomNumba = this.authUtils.generateCode(99999, 10000);
     updateUser.resetCode = randomNumba;
     updateUser.isPswdReset = true;
     try {
-      await this.model.findOneAndUpdate({ _id: user._id }, updateUser);
+      user = await this.model.findOneAndUpdate({ email: req.body.email, verifiedEmail: true }, updateUser);
     } catch (e) { return res.status(500).json({ message: e.message }); }
+    if (user === null || user === undefined) return res.status(400).json({ message: 'invalid reset password request' });
     const mailBody = `<h2>A password reset was requested for ${user.name
     }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="`
         + `${process.env.frontURL}/userutil/?email=${user.email}&form=reset">`
@@ -197,7 +170,7 @@ class UserController extends Controller {
       email: req.body.email,
       password: req.body.password,
       isPswdReset: false,
-      resetCode: randomNumba,
+      resetCode: randomNumba
     };
     const validData = this.model.validateSignup(user);
     if (validData !== '') return res.status(409).send({ message: validData });
@@ -219,19 +192,23 @@ class UserController extends Controller {
     let newUser, existingUser, profile;
     try {
       profile = await google.authenticate(req);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    } catch (e) {
+      debug(e.message);
+      return res.status(500).json({ message: e.message });
+    }
     // Step 3. Create a new user account or return an existing one.
+    debug(profile);
     const update = {};
     update.password = '';
-    update.name = profile.name; // force the name of the user to be the name from google account
+    update.name = profile.names[0].displayName; // force the name of the user to be the name from google account
     update.verifiedEmail = true;
     try {
-      existingUser = await this.model.findOneAndUpdate({ email: profile.email }, update);
+      existingUser = await this.model.findOneAndUpdate({ email: profile.emailAddresses[0].value }, update);
     } catch (e) { return res.status(500).json({ message: e.message }); }
     if (existingUser) return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
     const user = {};
-    user.name = profile.name;
-    user.email = profile.email;
+    user.name = profile.names[0].displayName;
+    user.email = profile.emailAddresses[0].value;
     user.isOhafUser = req.body.isOhafUser;
     user.verifiedEmail = true;
     try {

@@ -1,7 +1,8 @@
 const rp = require('request-promise');
+const debug = require('debug')('web-jam-back:auth/google');
 
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';
-const peopleApiUrl = 'https://www.googleapis.com/plus/v1/people/me/openIdConnect';
+const peopleApiUrl = 'https://people.googleapis.com/v1/people/me?personFields=names%2CemailAddresses';
 
 exports.authenticate = async function authenticate(req) {
   let token, profile;
@@ -15,6 +16,7 @@ exports.authenticate = async function authenticate(req) {
     // Step 1. Exchange authorization code for access token.
   try {
     token = await rp.post(accessTokenUrl, { json: true, form: params });
+    // debug(token);
   } catch (e) { return Promise.reject(e); }
   const accessToken = token.access_token;
   const headers = { Authorization: `Bearer ${accessToken}` };
@@ -22,8 +24,12 @@ exports.authenticate = async function authenticate(req) {
   const requestConfig = { url: peopleApiUrl, headers, json: true };
   try {
     profile = await rp.get(requestConfig);
-  } catch (e) { return Promise.reject(e); }
-  if (profile === null || profile === undefined || profile.name === null || profile.name === undefined) {
+  } catch (e) {
+    debug(e.message);
+    return Promise.reject(e);
+  }
+  // debug(profile);
+  if (profile === null || profile === undefined || profile.emailAddresses === null || profile.emailAddresses === undefined) {
     return Promise.reject(new Error('failed to retrieve user profile from Google'));
   }
   return Promise.resolve(profile);

@@ -51,3 +51,5 @@ frontend
 
 .DS_Store
 package-lock.json
+
+codeclimate.html

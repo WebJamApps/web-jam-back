@@ -35,17 +35,11 @@ userSchema.pre('save', function pwEcrypt(next) {
     return next();
   }
   return bcrypt.genSalt(10, (err, salt) => {
-    bcrypt.hash(user.password, salt, (err, hash) => {
+    bcrypt.hash(user.password, salt, (err2, hash) => {
       user.password = hash;
       next();
     });
   });
 });
-
-// userSchema.methods.comparePassword = function comparePassword(password, done) {
-//   bcrypt.compare(password, this.password, (err, isMatch) => {
-//     done(err, isMatch);
-//   });
-// };
 
 module.exports = mongoose.model('User', userSchema);

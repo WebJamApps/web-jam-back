@@ -3,18 +3,22 @@ const EventEmitter = require('events');
 const sinon = require('sinon');
 const bcrypt = require('bcryptjs');
 const server = require('../../index');
-const user = require('../../model/user/user-schema');
+const user = require('../../model/user/user-facade');
 const google = require('../../auth/google');
 require('sinon-mongoose');
 
 const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
 
 describe('User Controller', () => {
+  beforeAll((done) => {
+    EventEmitter.defaultMaxListeners = 30;
+    done();
+  });
   beforeEach(async () => {
     await user.deleteMany({});
   });
   afterAll(async () => {
-    EventEmitter.defaultMaxListeners = 10;
+    EventEmitter.defaultMaxListeners = 12;
     await user.deleteMany({});
   });
   it('validates email', async () => {
@@ -37,7 +41,7 @@ describe('User Controller', () => {
     });
     let cb;
     const uMock = sinon.mock(user);
-    uMock.expects('findOneAndUpdate').chain('exec').rejects(new Error('bad'));
+    uMock.expects('findOneAndUpdate').rejects(new Error('bad'));
     try {
       cb = await request(server)
         .put('/user/auth/validateemail')
@@ -74,52 +78,6 @@ describe('User Controller', () => {
       expect(cb.body.email).toBe('j@jb.com');
     } catch (e) { throw e; }
   });
-  it('returns email syntax error when updates the email', async () => {
-    await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123'
-    });
-    let cb;
-    try {
-      cb = await request(server)
-        .put('/user/auth/updateemail')
-        .set({ origin: allowedUrl })
-        .send({ resetCode: '123', changeemail: 'loser', email: 'old@wold.com' });
-      expect(cb.status).toBe(400);
-    } catch (e) { throw e; }
-  });
-  it('returns findOne error when updates the email', async () => {
-    await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123'
-    });
-    let cb;
-    const uMock = sinon.mock(user);
-    uMock.expects('findOne').chain('exec').rejects(new Error('bad'));
-    try {
-      cb = await request(server)
-        .put('/user/auth/updateemail')
-        .set({ origin: allowedUrl })
-        .send({ resetCode: '123', changeemail: 'j@jb.com', email: 'old@wold.com' });
-      expect(cb.status).toBe(500);
-      expect(cb.body.message).toBe('bad');
-    } catch (e) { throw e; }
-    uMock.restore();
-  });
-  it('returns findOne error when updates the email if user does not exist', async () => {
-    await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123'
-    });
-    let cb;
-    const uMock = sinon.mock(user);
-    uMock.expects('findOne').chain('exec').resolves();
-    try {
-      cb = await request(server)
-        .put('/user/auth/updateemail')
-        .set({ origin: allowedUrl })
-        .send({ resetCode: '123', changeemail: 'j@jb.com', email: 'old@wold.com' });
-      expect(cb.status).toBe(400);
-    } catch (e) { throw e; }
-    uMock.restore();
-  });
   it('returns error when updates the email if user reset code does not match', async () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123'
@@ -152,7 +110,7 @@ describe('User Controller', () => {
     });
     let cb;
     const uMock = sinon.mock(user);
-    uMock.expects('findOneAndUpdate').chain('exec').rejects(new Error('bad'));
+    uMock.expects('findOneAndUpdate').rejects(new Error('bad'));
     try {
       cb = await request(server)
         .put('/user/auth/updateemail')
@@ -209,40 +167,7 @@ describe('User Controller', () => {
     } catch (e) { throw e; }
     bMock.restore();
   });
-  it('returns findOne error on resets the password', async () => {
-    await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
-    });
-    let cb;
-    const uMock = sinon.mock(user);
-    uMock.expects('findOne').chain('exec').rejects(new Error('bad'));
-    try {
-      cb = await request(server)
-        .put('/user/auth/resetpswd')
-        .set({ origin: allowedUrl })
-        .send({ email: 'old@wold.com' });
-      expect(cb.status).toBe(500);
-      expect(cb.body.message).toBe('bad');
-    } catch (e) { throw e; }
-    uMock.restore();
-  });
-  it('returns findOne error on resets the password when no user is found', async () => {
-    await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
-    });
-    let cb;
-    const uMock = sinon.mock(user);
-    uMock.expects('findOne').chain('exec').resolves();
-    try {
-      cb = await request(server)
-        .put('/user/auth/resetpswd')
-        .set({ origin: allowedUrl })
-        .send({ email: 'old@wold.com' });
-      expect(cb.status).toBe(400);
-    } catch (e) { throw e; }
-    uMock.restore();
-  });
-  it('returns 401 error on resets the password when user email is not verified', async () => {
+  it('returns 400 error on resets the password when user email is not verified', async () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: false
     });
@@ -252,7 +177,7 @@ describe('User Controller', () => {
         .put('/user/auth/resetpswd')
         .set({ origin: allowedUrl })
         .send({ email: 'old@wold.com' });
-      expect(cb.status).toBe(401);
+      expect(cb.status).toBe(400);
     } catch (e) { throw e; }
   });
   it('returns findOneAndUpdate error on resets the password', async () => {
@@ -261,7 +186,7 @@ describe('User Controller', () => {
     });
     let cb;
     const uMock = sinon.mock(user);
-    uMock.expects('findOneAndUpdate').chain('exec').rejects(new Error('bad'));
+    uMock.expects('findOneAndUpdate').rejects(new Error('bad'));
     try {
       cb = await request(server)
         .put('/user/auth/resetpswd')
@@ -307,7 +232,7 @@ describe('User Controller', () => {
     });
     let cb;
     const bMock = sinon.mock(user);
-    bMock.expects('findByIdAndUpdate').chain('exec').rejects(new Error('bad'));
+    bMock.expects('findByIdAndUpdate').rejects(new Error('bad'));
     try {
       cb = await request(server)
         .post('/user/auth/login')
@@ -336,7 +261,7 @@ describe('User Controller', () => {
     });
     let cb;
     const uMock = sinon.mock(user);
-    uMock.expects('findOne').chain('exec').rejects(new Error('bad'));
+    uMock.expects('findOne').rejects(new Error('bad'));
     try {
       cb = await request(server)
         .put('/user/auth/changeemail')
@@ -368,7 +293,7 @@ describe('User Controller', () => {
     });
     let cb;
     const uMock = sinon.mock(user);
-    uMock.expects('find').chain('exec').rejects(new Error('bad'));
+    uMock.expects('find').rejects(new Error('bad'));
     try {
       cb = await request(server)
         .put('/user/auth/changeemail')
@@ -384,7 +309,7 @@ describe('User Controller', () => {
     });
     let cb;
     const uMock = sinon.mock(user);
-    uMock.expects('find').chain('exec').resolves();
+    uMock.expects('find').resolves();
     try {
       cb = await request(server)
         .put('/user/auth/changeemail')
@@ -400,7 +325,7 @@ describe('User Controller', () => {
     });
     let cb;
     const uMock = sinon.mock(user);
-    uMock.expects('findOneAndUpdate').chain('exec').rejects(new Error('bad'));
+    uMock.expects('findOneAndUpdate').rejects(new Error('bad'));
     try {
       cb = await request(server)
         .put('/user/auth/changeemail')
@@ -413,7 +338,7 @@ describe('User Controller', () => {
   it('authenticates with google', async () => {
     let cb;
     const gMock = sinon.mock(google);
-    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    gMock.expects('authenticate').resolves({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] });
     try {
       cb = await request(server)
         .post('/user/auth/google')
@@ -426,7 +351,7 @@ describe('User Controller', () => {
   it('returns db.create error when authenticates with google', async () => {
     let cb;
     const gMock = sinon.mock(google);
-    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    gMock.expects('authenticate').resolves({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] });
     const uMock = sinon.mock(user);
     uMock.expects('create').rejects(new Error('bad'));
     try {
@@ -455,9 +380,9 @@ describe('User Controller', () => {
   it('returns findOneAndUpdate error when authenticates with google', async () => {
     let cb;
     const gMock = sinon.mock(google);
-    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    gMock.expects('authenticate').resolves({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] });
     const uMock = sinon.mock(user);
-    uMock.expects('findOneAndUpdate').chain('exec').rejects(new Error('bad'));
+    uMock.expects('findOneAndUpdate').rejects(new Error('bad'));
     try {
       cb = await request(server)
         .post('/user/auth/google')
@@ -472,7 +397,7 @@ describe('User Controller', () => {
     await user.create({ name: 'Josh', email: 'j@js.com' });
     let cb;
     const gMock = sinon.mock(google);
-    gMock.expects('authenticate').resolves({ name: 'Josh', email: 'j@js.com' });
+    gMock.expects('authenticate').resolves({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] });
     try {
       cb = await request(server)
         .post('/user/auth/google')
