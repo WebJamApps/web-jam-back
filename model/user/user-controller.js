@@ -56,6 +56,7 @@ class UserController extends Controller {
   }
 
   async resetpswd(req, res) { // initial request to reset password
+    debug('resetpswd');
     let user;
     const updateUser = {};
     const randomNumba = this.authUtils.generateCode(99999, 10000);

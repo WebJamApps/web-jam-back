@@ -76,7 +76,7 @@
     "nyc": "latest",
     "sinon": "latest",
     "sinon-mongoose": "latest",
-    "supertest": "latest"
+    "supertest": "3.4.2"
   },
   "snyk": true
 }
