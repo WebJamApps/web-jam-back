@@ -1,10 +1,10 @@
 {
   "name": "web-jam-back",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=11.10.0"
+    "node": ">=11.13.0"
   },
   "files": ["lib/", "model/", "auth/", "config.js", "routes.js"],
   "license": "MIT",
@@ -76,7 +76,7 @@
     "nyc": "latest",
     "sinon": "latest",
     "sinon-mongoose": "latest",
-    "supertest": "3.4.2"
+    "supertest": "latest"
   },
   "snyk": true
 }
