@@ -35,13 +35,9 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(morgan('tiny'));
 routes(app);
-// console.log(38);
-// app.get('*', (req, res) => {
-//   console.log('hi');
-//   console.log(req);
-//   res.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
-//   res.sendFile(path.normalize(path.join(__dirname, 'JaMmusic/dist/index.html')));
-// });
+app.get('*', (req, res) => {
+  res.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
+});
 app.use((err, req, res) => {
   res.status(err.status || 500)
     .json({ message: err.message, error: err });
