@@ -97,7 +97,7 @@ describe('The volunteer opportunity feature', () => {
     const event = new VolOpp1();
     event.voName = 'foo';
     event.voCharityId = '12345';
-    event.voCharityName = ['fuzzies'];
+    event.voCharityName = 'fuzzies';
     const newEvent = await event.save();
     try {
       const cb = await chai.request(server)
