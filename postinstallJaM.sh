@@ -6,7 +6,7 @@ BRANCH=master
 
 if [[ $BUILD_BRANCH != "master" ]];
 then
-    BRANCH=JSB
+    BRANCH=dev
 fi
 
 if [ ! -d JaMmusic ]; then
