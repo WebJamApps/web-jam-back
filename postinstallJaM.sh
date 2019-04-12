@@ -6,7 +6,7 @@ BRANCH=master
 
 if [[ $NODE_ENV != "production" ]];
 then
-    BRANCH=JSB
+    BRANCH=dev
 fi
 
 if [ ! -d JaMmusic ]; then
