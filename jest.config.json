@@ -1,7 +1,7 @@
 {
   "verbose": true,
   "bail": true,
-  "testPathIgnorePatterns": ["/node_modules/", "/test/mocha", "/frontend"],
+  "testPathIgnorePatterns": ["/node_modules/", "/test/mocha", "/frontend", "/JaMmusic"],
   "coverageDirectory": "coverage/jest",
   "collectCoverage": true,
   "testEnvironment": "node",
