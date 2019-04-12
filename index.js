@@ -21,7 +21,7 @@ const app = express();
 /* istanbul ignore if */
 if (process.env.NODE_ENV === 'production') app.use(enforce.HTTPS({ trustProtoHeader: true }));
 app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
-
+app.use('/music', express.static(path.normalize(path.join(__dirname, 'JaMmusic/dist'))));
 app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
 let mongoDbUri = process.env.MONGO_DB_URI;
@@ -35,10 +35,13 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(morgan('tiny'));
 routes(app);
-
-app.get('*', (request, response) => {
-  response.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
-});
+// console.log(38);
+// app.get('*', (req, res) => {
+//   console.log('hi');
+//   console.log(req);
+//   res.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
+//   res.sendFile(path.normalize(path.join(__dirname, 'JaMmusic/dist/index.html')));
+// });
 app.use((err, req, res) => {
   res.status(err.status || 500)
     .json({ message: err.message, error: err });
