@@ -1,3 +1,5 @@
+/* eslint-disable jest/valid-expect */
+/* eslint-disable no-underscore-dangle */
 const sinon = require('sinon');
 const mongoose = require('mongoose');
 require('sinon-mongoose');
@@ -9,7 +11,7 @@ describe('The library feature', () => {
   let find, allowedUrl;
   beforeEach(async () => {
     await Book1.deleteMany({});
-    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];// eslint-disable-line prefer-destructuring
     find = await sinon.mock(Book1, 'find');
   });
   afterEach(async () => {

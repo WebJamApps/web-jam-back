@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle */
 const request = require('supertest');
 const sinon = require('sinon');
 const server = require('../../index');

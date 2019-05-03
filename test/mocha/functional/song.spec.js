@@ -1,3 +1,4 @@
+/* eslint-disable jest/valid-expect */
 const sinon = require('sinon');
 require('sinon-mongoose');
 const server = require('../../../index');
@@ -5,7 +6,7 @@ const SongModel = require('../../../model/song/song-schema');
 const authUtils = require('../../../auth/authUtils');
 
 describe('The Song API', () => {
-  const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+  const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];// eslint-disable-line prefer-destructuring
   beforeEach(async () => {
     await SongModel.deleteMany({});
   });

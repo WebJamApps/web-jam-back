@@ -11,7 +11,7 @@ checks:
       threshold:          90
   identical-code:
     config:
-      threshold:          60
+      threshold:          50
   method-complexity:
     config:
       threshold:          10
@@ -27,7 +27,10 @@ plugins:
     config:
       languages:
         javascript:
-          mass_threshold: 60
+          mass_threshold: 50
+  eslint:
+    enabled:              true
+    channel: "eslint-5"
   fixme:
     enabled:              true
 ratings:
@@ -39,3 +42,4 @@ exclude_patterns:
 - "**/node_modules/"
 - "coverage/"
 - "frontend/"
+- "JaMmusic/"

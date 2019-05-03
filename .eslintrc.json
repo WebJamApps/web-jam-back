@@ -2,6 +2,7 @@
   "plugins": ["node", "security", "jest", "mocha"],
   "extends": ["plugin:mocha/recommended", "plugin:node/recommended", "plugin:security/recommended", "airbnb", "plugin:jest/recommended"],
   "rules": {
+    "node/no-unsupported-features/es-syntax": 0,
     "no-multiple-empty-lines": [
       "error",
       {
@@ -12,22 +13,29 @@
     "comma-dangle": ["error", {
       "functions": "never"
     }],
-    "max-len": ["error", {
-      "code": 150
+    "indent": ["error", 2],
+    "no-trailing-spaces": [0, {
+      "skipBlankLines": true
     }],
-    "no-undef": [0, "never"],
-    "no-underscore-dangle": 0,
-    "import/no-extraneous-dependencies": 0,
-    "no-mixed-operators": 0,
-    "security/detect-unsafe-regex": 0,
-    "security/detect-object-injection": 0,
-    "prefer-destructuring": 0,
-    "jest/valid-expect": 0,
     "one-var-declaration-per-line": [0, "never"],
     "one-var": [2, {
       "var": "never",
       "let": "always",
       "const": "never"
+    }],
+    "max-len": ["error", {
+      "code": 150
     }]
+  },
+  "env": {
+    "jest": true,
+    "mocha": true,
+    "node": true
+  },
+  "globals": {
+    "chai": true,
+    "mongoose": true,
+    "bluebird": true,
+    "chaiHttp": true
   }
 }

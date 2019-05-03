@@ -1,10 +1,12 @@
+/* eslint-disable jest/valid-expect */
+/* eslint-disable no-underscore-dangle */
 const EventEmitter = require('events');
 const Charity1 = require('../../../model/charity/charity-schema');
 const authUtils = require('../../../auth/authUtils');
 const server = require('../../../index');
 
 EventEmitter.defaultMaxListeners = Infinity;
-const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];// eslint-disable-line prefer-destructuring
 describe('The Charity feature', () => {
   afterEach(async () => {
     await Charity1.deleteMany({});

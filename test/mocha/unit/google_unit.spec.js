@@ -1,3 +1,4 @@
+/* eslint-disable jest/valid-expect */
 const EventEmitter = require('events');
 const jwt = require('jwt-simple');
 const nock = require('nock');
@@ -8,6 +9,7 @@ const User = require('../../../model/user/user-schema');
 const config = require('../../../config');
 
 describe('The Unit Test for Google Module', () => {
+  let uMock;
   before(async () => {
     await User.deleteMany({});
     EventEmitter.defaultMaxListeners = Infinity;
