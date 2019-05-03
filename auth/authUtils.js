@@ -6,7 +6,7 @@ const config = require('../config');
 class AuthUtils {
   static createJWT(user) {
     const payload = {
-      sub: user._id,
+      sub: user._id, /* eslint-disable-line no-underscore-dangle */
       iat: moment().unix(),
       exp: moment().add(14, 'days').unix()
     };
@@ -51,7 +51,7 @@ class AuthUtils {
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-  static checkEmailSyntax(req) {
+  static checkEmailSyntax(req) { // eslint-disable-next-line security/detect-unsafe-regex
     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
       return Promise.resolve(true);
     }

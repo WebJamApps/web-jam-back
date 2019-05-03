@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle */
 const debug = require('debug')('web-jam-back:user-controller');
 const Controller = require('../../lib/controller');
 const userModel = require('./user-facade');

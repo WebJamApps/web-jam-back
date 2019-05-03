@@ -4,7 +4,7 @@ const options = {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 };
 
-const Schema = mongoose.Schema;
+const { Schema } = mongoose;
 
 const bookSchema = new Schema({
   title: { type: String, required: true },

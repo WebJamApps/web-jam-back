@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle */
 const request = require('supertest');
 const EventEmitter = require('events');
 const sinon = require('sinon');
