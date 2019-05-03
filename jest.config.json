@@ -5,5 +5,7 @@
   "coverageDirectory": "coverage/jest",
   "collectCoverage": true,
   "testEnvironment": "node",
-  "testURL": "http://localhost/"
+  "testURL": "http://localhost/",
+  "testRegex": "./test/jest/.*.js$",
+  "roots": ["<rootDir>/test/jest/"]
 }

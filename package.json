@@ -4,7 +4,7 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=11.13.0"
+    "node": ">=12.0.0"
   },
   "files": ["lib/", "model/", "auth/", "config.js", "routes.js"],
   "license": "MIT",
@@ -19,6 +19,7 @@
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && npm run installglobals && yarn install",
     "node:debug": "node --inspect-brk index.js",
     "test": "eslint . && rm -rf coverage && npm run test:jest && npm run test:mocha && npm run combine-coverage",
+    "test:lint": "eslint . --fix",
     "test:local": "eslint . --fix && yarn test:unit && yarn cc",
     "test:mocha": "nyc mocha --timeout 6000 --bail -r ./test/mocha/bootstrap.js test/mocha/**/*.js --exit",
     "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/mocha/bootstrap.js test/mocha/**/*.js",

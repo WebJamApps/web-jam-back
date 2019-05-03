@@ -35,6 +35,9 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(morgan('tiny'));
 routes(app);
+app.get('/music/*', (req, res) => {
+  res.sendFile(path.normalize(path.join(__dirname, 'JaMmusic/dist/index.html')));
+});
 app.get('*', (req, res) => {
   res.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
 });
