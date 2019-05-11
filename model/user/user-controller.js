@@ -191,31 +191,27 @@ class UserController extends Controller {
   }
 
   async google(req, res) {
+    debug(req.body);
     let newUser, existingUser, profile;
-    try {
-      profile = await google.authenticate(req);
-    } catch (e) {
+    try { profile = await google.authenticate(req); } catch (e) {
       debug(e.message);
       return res.status(500).json({ message: e.message });
     }
     // Step 3. Create a new user account or return an existing one.
-    debug(profile);
     const update = {};
     update.password = '';
     update.name = profile.names[0].displayName; // force the name of the user to be the name from google account
     update.verifiedEmail = true;
-    try {
-      existingUser = await this.model.findOneAndUpdate({ email: profile.emailAddresses[0].value }, update);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { existingUser = await this.model.findOneAndUpdate({ email: profile.emailAddresses[0].value }, update); } catch (e) {
+      return res.status(500).json({ message: e.message }); 
+    }
     if (existingUser) return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
     const user = {};
     user.name = profile.names[0].displayName;
     user.email = profile.emailAddresses[0].value;
     user.isOhafUser = req.body.isOhafUser;
     user.verifiedEmail = true;
-    try {
-      newUser = await this.model.create(user);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { newUser = await this.model.create(user); } catch (e) { return res.status(500).json({ message: e.message }); }
     newUser.password = '';
     return res.status(201).json({ email: newUser.email, token: this.authUtils.createJWT(newUser) });
   }
