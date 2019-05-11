@@ -24,7 +24,7 @@ describe('User Controller', () => {
   });
   it('validates email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'yo@yo.com', resetCode: '123'
+      name: 'Justin Bieber', email: 'yo@yo.com', resetCode: '123',
     });
     let cb;
     try {
@@ -38,7 +38,7 @@ describe('User Controller', () => {
   });
   it('returns findOneAndUpdate error when validates email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'yo@yo.com', resetCode: '123'
+      name: 'Justin Bieber', email: 'yo@yo.com', resetCode: '123',
     });
     let cb;
     const uMock = sinon.mock(user);
@@ -54,7 +54,7 @@ describe('User Controller', () => {
   });
   it('returns findOneAndUpdate error when validates email and user is not found', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'yo@yo.com', resetCode: '123'
+      name: 'Justin Bieber', email: 'yo@yo.com', resetCode: '123',
     });
     let cb;
     try {
@@ -67,7 +67,7 @@ describe('User Controller', () => {
   });
   it('updates the email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123'
+      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123',
     });
     let cb;
     try {
@@ -81,7 +81,7 @@ describe('User Controller', () => {
   });
   it('returns error when updates the email if user reset code does not match', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123'
+      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123',
     });
     let cb;
     try {
@@ -94,7 +94,7 @@ describe('User Controller', () => {
   });
   it('returns error when updates the email if user changeemail does not match', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123'
+      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123',
     });
     let cb;
     try {
@@ -107,7 +107,7 @@ describe('User Controller', () => {
   });
   it('returns findOneAndUpdate error when updates the email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123'
+      name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123',
     });
     let cb;
     const uMock = sinon.mock(user);
@@ -124,7 +124,7 @@ describe('User Controller', () => {
   });
   it('resets the password', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     try {
@@ -138,7 +138,7 @@ describe('User Controller', () => {
   });
   it('returns gensalt error on password reset', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true, password: 'oldoldoldold'
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true, password: 'oldoldoldold',
     });
     let cb;
     const bMock = sinon.mock(bcrypt);
@@ -154,7 +154,7 @@ describe('User Controller', () => {
   });
   it('returns hash error on password reset', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true, password: 'oldoldoldold'
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true, password: 'oldoldoldold',
     });
     let cb;
     const bMock = sinon.mock(bcrypt);
@@ -170,7 +170,7 @@ describe('User Controller', () => {
   });
   it('returns 400 error on resets the password when user email is not verified', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: false
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: false,
     });
     let cb;
     try {
@@ -183,7 +183,7 @@ describe('User Controller', () => {
   });
   it('returns findOneAndUpdate error on resets the password', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     const uMock = sinon.mock(user);
@@ -199,7 +199,7 @@ describe('User Controller', () => {
   });
   it('handles request to change the user email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     try {
@@ -213,7 +213,7 @@ describe('User Controller', () => {
   });
   it('returns error from comparing passwords on login', async () => {
     await user.create({
-      name: 'Justin Bieber', password: 'booyaaaaaaaa', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', password: 'booyaaaaaaaa', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     const bMock = sinon.mock(bcrypt);
@@ -229,7 +229,7 @@ describe('User Controller', () => {
   });
   it('returns findByIdAndUpdate error from login', async () => {
     await user.create({
-      name: 'Justin Bieber', password: 'booyaaaaaaaa', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', password: 'booyaaaaaaaa', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     const bMock = sinon.mock(user);
@@ -245,7 +245,7 @@ describe('User Controller', () => {
   });
   it('returns bad email syntax error when handles request to change the user email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     try {
@@ -258,7 +258,7 @@ describe('User Controller', () => {
   });
   it('returns findOne error for changeemail when handles request to change the user email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     const uMock = sinon.mock(user);
@@ -274,10 +274,10 @@ describe('User Controller', () => {
   });
   it('returns error for changeemail if email already exists when handles request to change the user email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
     await user.create({
-      name: 'Jay Beetle', email: 'j@jb.com', verifiedEmail: true
+      name: 'Jay Beetle', email: 'j@jb.com', verifiedEmail: true,
     });
     let cb;
     try {
@@ -290,7 +290,7 @@ describe('User Controller', () => {
   });
   it('returns find error when handles request to change the user email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     const uMock = sinon.mock(user);
@@ -306,7 +306,7 @@ describe('User Controller', () => {
   });
   it('returns error if user is not found when handles request to change the user email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     const uMock = sinon.mock(user);
@@ -322,7 +322,7 @@ describe('User Controller', () => {
   });
   it('returns findOneAndUpdate error when handles request to change the user email', async () => {
     await user.create({
-      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true
+      name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
     let cb;
     const uMock = sinon.mock(user);
