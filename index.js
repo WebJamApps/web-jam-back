@@ -14,7 +14,7 @@ const routes = require('./routes');
 const corsOptions = {
   origin: JSON.parse(process.env.AllowUrl).urls,
   credentials: true,
-  optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
+  optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
 const app = express();
 

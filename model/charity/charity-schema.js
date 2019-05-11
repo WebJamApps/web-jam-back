@@ -12,7 +12,7 @@ const charitySchema = new Schema({
   charityTypes: { type: [String], required: false },
   charityManagers: { type: [String], required: false },
   charityMngIds: { type: [String], required: true },
-  charityTypeOther: { type: String, required: false }
+  charityTypeOther: { type: String, required: false },
 });
 
 module.exports = mongoose.model('Charity', charitySchema);

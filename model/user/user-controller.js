@@ -172,7 +172,7 @@ class UserController extends Controller {
       email: req.body.email,
       password: req.body.password,
       isPswdReset: false,
-      resetCode: randomNumba
+      resetCode: randomNumba,
     };
     const validData = this.model.validateSignup(user);
     if (validData !== '') return res.status(409).send({ message: validData });

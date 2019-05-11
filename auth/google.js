@@ -11,7 +11,7 @@ exports.authenticate = async function authenticate(req) {
     client_id: req.body.clientId,
     client_secret: process.env.GoogleClientSecret,
     redirect_uri: req.body.redirectUri,
-    grant_type: 'authorization_code'
+    grant_type: 'authorization_code',
   };
     // Step 1. Exchange authorization code for access token.
   try {
