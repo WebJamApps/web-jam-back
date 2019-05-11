@@ -14,6 +14,8 @@ router.route('/auth/signup')
   .post((...args) => controller.signup(...args));
 router.route('/auth/google')
   .post((...args) => controller.google(...args));
+router.route('/auth/react-google')
+  .post((...args) => controller.reactGoogle(...args));
 router.route('/auth/:id')
   .put((...args) => controller.handleAuth(...args));
 

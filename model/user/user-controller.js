@@ -203,7 +203,7 @@ class UserController extends Controller {
     update.name = profile.names[0].displayName; // force the name of the user to be the name from google account
     update.verifiedEmail = true;
     try { existingUser = await this.model.findOneAndUpdate({ email: profile.emailAddresses[0].value }, update); } catch (e) {
-      return res.status(500).json({ message: e.message }); 
+      return res.status(500).json({ message: e.message });
     }
     if (existingUser) return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
     const user = {};
@@ -214,6 +214,20 @@ class UserController extends Controller {
     try { newUser = await this.model.create(user); } catch (e) { return res.status(500).json({ message: e.message }); }
     newUser.password = '';
     return res.status(201).json({ email: newUser.email, token: this.authUtils.createJWT(newUser) });
+  }
+
+  async reactGoogle(req, res) {
+    debug('reactGoogle');
+    let existingUser;
+    const update = {};
+    update.password = '';
+    update.name = req.body.displayName; // force the name of the user to be the name from google account
+    update.verifiedEmail = true;
+    try { existingUser = await this.model.findOneAndUpdate({ email: req.body.emailAddress }, update); } catch (e) {
+      return res.status(500).json({ message: e.message });
+    }
+    if (existingUser) return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
+    return res.status(400).json({ message: 'not a registered user' });
   }
 }
 module.exports = new UserController(userModel);
