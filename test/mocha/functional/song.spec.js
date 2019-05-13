@@ -17,14 +17,14 @@ describe('The Song API', () => {
         .set({ origin: allowedUrl })
         .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .send({
-          title: 'foobar', url: 'http://foo.com', category: 'original', author: 'booya', performer: 'howdy boys'
+          title: 'foobar', url: 'http://foo.com', category: 'original', author: 'booya', performer: 'howdy boys',
         });
       expect(cb).to.have.status(201);
     } catch (e) { throw e; }
   });
   it('returns all songs', async () => {
     await SongModel.create({
-      title: 'foobar', url: 'http://foo.com', category: 'original', author: 'booya', performer: 'howdy boys'
+      title: 'foobar', url: 'http://foo.com', category: 'original', author: 'booya', performer: 'howdy boys',
     });
     try {
       const cb = await chai.request(server)
@@ -36,7 +36,7 @@ describe('The Song API', () => {
   });
   it('deletes all songs', async () => {
     await SongModel.create({
-      title: 'foobar', url: 'http://foo.com', category: 'original', author: 'booya', performer: 'howdy boys'
+      title: 'foobar', url: 'http://foo.com', category: 'original', author: 'booya', performer: 'howdy boys',
     });
     try {
       const cb = await chai.request(server)
@@ -48,7 +48,7 @@ describe('The Song API', () => {
   });
   it('returns deleteMany error when deletes all songs', async () => {
     await SongModel.create({
-      title: 'foobar', url: 'http://foo.com', category: 'original', author: 'booya', performer: 'howdy boys'
+      title: 'foobar', url: 'http://foo.com', category: 'original', author: 'booya', performer: 'howdy boys',
     });
     const sMock = sinon.mock(SongModel);
     sMock.expects('deleteMany').chain('exec').rejects(new Error('bad'));

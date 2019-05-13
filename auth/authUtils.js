@@ -8,7 +8,7 @@ class AuthUtils {
     const payload = {
       sub: user._id, /* eslint-disable-line no-underscore-dangle */
       iat: moment().unix(),
-      exp: moment().add(14, 'days').unix()
+      exp: moment().add(14, 'days').unix(),
     };
     return jwt.encode(payload, config.hashString);
   }
@@ -39,7 +39,7 @@ class AuthUtils {
       from: 'user-service@web-jam.com',
       subject: subjectline,
       text: bodyhtml,
-      html: bodyhtml
+      html: bodyhtml,
     };
     /* istanbul ignore if */
     if (process.env.NODE_ENV !== 'test') sgMail.send(msg);

@@ -243,7 +243,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(201);
     } catch (e) { throw e; }
@@ -255,7 +255,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(500);
     } catch (e) { throw e; }
@@ -268,7 +268,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(500);
     } catch (e) { throw e; }
@@ -282,7 +282,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(500);
     } catch (e) { throw e; }
@@ -299,7 +299,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(409);
     } catch (e) { throw e; }

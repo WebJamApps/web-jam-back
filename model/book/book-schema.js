@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const options = {
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
 };
 
 const { Schema } = mongoose;
@@ -20,7 +20,7 @@ const bookSchema = new Schema({
   access: { type: String, required: false },
   comments: { type: String, required: false },
   checkedOutBy: { type: String, required: false },
-  checkedOutByName: { type: String, required: false }
+  checkedOutByName: { type: String, required: false },
 }, options);
 
 module.exports = mongoose.model('Book', bookSchema);

@@ -10,10 +10,6 @@
         "maxEOF": 1
       }
     ],
-    "comma-dangle": ["error", {
-      "functions": "never"
-    }],
-    "indent": ["error", 2],
     "no-trailing-spaces": [0, {
       "skipBlankLines": true
     }],

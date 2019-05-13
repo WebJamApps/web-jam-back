@@ -34,9 +34,9 @@ describe('The Unit Test for authUtils Module', () => {
             send({ message }) {
               expect(message).to.have.string('Authorization');
               done();
-            }
+            },
           };
-        }
+        },
       };
       authUtils.ensureAuthenticated(req, res);
     });
@@ -49,9 +49,9 @@ describe('The Unit Test for authUtils Module', () => {
             send({ message }) {
               expect(message).to.have.string('Not enough or too many segments');
               done();
-            }
+            },
           };
-        }
+        },
       };
       authUtils.ensureAuthenticated(req, res);
     });
@@ -66,9 +66,9 @@ describe('The Unit Test for authUtils Module', () => {
             send({ message }) {
               expect(message).to.have.string('expired');
               done();
-            }
+            },
           };
-        }
+        },
       };
       authUtils.ensureAuthenticated(req, res);
     });
@@ -76,7 +76,7 @@ describe('The Unit Test for authUtils Module', () => {
       const sub = 'test';
       const payload = {
         sub,
-        exp: moment().add(14, 'days').unix()
+        exp: moment().add(14, 'days').unix(),
       };
       const auth = jwt.encode(payload, config.hashString);
       const req = { headers: { authorization: `Bearer ${auth}` } };
