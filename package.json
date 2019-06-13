@@ -4,7 +4,7 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=12.2.0"
+    "node": ">=12.3.0"
   },
   "files": ["lib/", "model/", "auth/", "config.js", "routes.js"],
   "license": "MIT",
