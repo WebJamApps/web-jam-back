@@ -5,7 +5,7 @@ const userSchema = require('./user-schema');
 class UserModel extends Model {
   validateSignup(obj) { // eslint-disable-line class-methods-use-this
     let message = '';
-    if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(obj.email)) {
+    if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(obj.email)) { // eslint-disable-line security/detect-unsafe-regex
       // the email is valid
     } else {
       message = 'Email address is invalid format';

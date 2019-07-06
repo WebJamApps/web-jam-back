@@ -1,3 +1,4 @@
+/* eslint-disable jest/valid-expect */
 const EventEmitter = require('events');
 const jwt = require('jwt-simple');
 const nock = require('nock');
@@ -8,6 +9,7 @@ const User = require('../../../model/user/user-schema');
 const config = require('../../../config');
 
 describe('The Unit Test for Google Module', () => {
+  let uMock;
   before(async () => {
     await User.deleteMany({});
     EventEmitter.defaultMaxListeners = Infinity;
@@ -35,9 +37,9 @@ describe('The Unit Test for Google Module', () => {
           json(obj) {
             expect(obj.token.length).to.be.gt(20);
             uMock.restore();
-          }
+          },
         };
-      }
+      },
     };
     await google.authenticate(req, res);
   });
@@ -64,9 +66,9 @@ describe('The Unit Test for Google Module', () => {
             const payload = jwt.decode(obj.token, config.hashString);
             expect(payload.sub).to.equal('123');
             uMock.restore();
-          }
+          },
         };
-      }
+      },
     };
     await google.authenticate(req, res);
   });

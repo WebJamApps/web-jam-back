@@ -1,6 +1,8 @@
+/* eslint-disable jest/valid-expect */
 describe('Index test', () => {
+  let allowedUrl, server;
   beforeEach((done) => {
-    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];// eslint-disable-line prefer-destructuring
     server = require('../../../index'); // eslint-disable-line global-require
     done();
   });

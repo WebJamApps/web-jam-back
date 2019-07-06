@@ -6,9 +6,9 @@ const config = require('../config');
 class AuthUtils {
   static createJWT(user) {
     const payload = {
-      sub: user._id,
+      sub: user._id, /* eslint-disable-line no-underscore-dangle */
       iat: moment().unix(),
-      exp: moment().add(14, 'days').unix()
+      exp: moment().add(14, 'days').unix(),
     };
     return jwt.encode(payload, config.hashString);
   }
@@ -39,7 +39,7 @@ class AuthUtils {
       from: 'user-service@web-jam.com',
       subject: subjectline,
       text: bodyhtml,
-      html: bodyhtml
+      html: bodyhtml,
     };
     /* istanbul ignore if */
     if (process.env.NODE_ENV !== 'test') sgMail.send(msg);
@@ -51,7 +51,7 @@ class AuthUtils {
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-  static checkEmailSyntax(req) {
+  static checkEmailSyntax(req) { // eslint-disable-next-line security/detect-unsafe-regex
     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
       return Promise.resolve(true);
     }

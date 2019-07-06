@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const Schema = mongoose.Schema;
+const { Schema } = mongoose;
 const bcrypt = require('bcryptjs');
 
 const userSchema = new Schema({
@@ -26,7 +26,7 @@ const userSchema = new Schema({
   volWorkPrefs: { type: [String], required: false },
   volCauseOther: { type: String, required: false },
   volTalentOther: { type: String, required: false },
-  volWorkOther: { type: String, required: false }
+  volWorkOther: { type: String, required: false },
 });
 
 userSchema.pre('save', function pwEcrypt(next) {

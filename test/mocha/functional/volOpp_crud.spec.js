@@ -1,3 +1,5 @@
+/* eslint-disable jest/valid-expect */
+/* eslint-disable no-underscore-dangle */
 const server = require('../../../index');
 const VolOpp1 = require('../../../model/volOpp/volOpp-schema');
 const authUtils = require('../../../auth/authUtils');
@@ -5,7 +7,7 @@ const authUtils = require('../../../auth/authUtils');
 describe('The volunteer opportunity feature', () => {
   let allowedUrl;
   beforeEach((done) => {
-    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];// eslint-disable-line prefer-destructuring
     done();
   });
   it('should create a new volunteer opportunity', (done) => {

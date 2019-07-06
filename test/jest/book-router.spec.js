@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle */
 const request = require('supertest');
 const sinon = require('sinon');
 const server = require('../../index');
@@ -11,13 +12,13 @@ describe('The Picture API', () => {
   });
   it('should find one book', async () => {
     await BookModel.create({
-      title: 'Best Test Book Ever', type: 'paperback'
+      title: 'Best Test Book Ever', type: 'paperback',
     });
     try {
       const cb = await request(server)
         .get('/book/one')
         .set({
-          origin: allowedUrl
+          origin: allowedUrl,
         })
         .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .query({ type: 'paperback' });
@@ -27,13 +28,13 @@ describe('The Picture API', () => {
   });
   it('should not find one book', async () => {
     await BookModel.create({
-      title: 'Best Test Book Ever', type: 'paperback'
+      title: 'Best Test Book Ever', type: 'paperback',
     });
     try {
       const cb = await request(server)
         .get('/book/one')
         .set({
-          origin: allowedUrl
+          origin: allowedUrl,
         })
         .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .query({ type: 'magazine' });
@@ -42,7 +43,7 @@ describe('The Picture API', () => {
   });
   it('should catch error on find one book', async () => {
     await BookModel.create({
-      title: 'Best Test Book Ever', type: 'paperback'
+      title: 'Best Test Book Ever', type: 'paperback',
     });
     const bMock = sinon.mock(BookModel);
     bMock.expects('findOne').rejects(new Error('bad'));
@@ -50,7 +51,7 @@ describe('The Picture API', () => {
       const cb = await request(server)
         .get('/book/one')
         .set({
-          origin: allowedUrl
+          origin: allowedUrl,
         })
         .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .query({ type: 'magazine' });
@@ -60,13 +61,13 @@ describe('The Picture API', () => {
   });
   it('should update one book', async () => {
     await BookModel.create({
-      title: 'Best Test Book Ever', type: 'paperback'
+      title: 'Best Test Book Ever', type: 'paperback',
     });
     try {
       const cb = await request(server)
         .put('/book/one')
         .set({
-          origin: allowedUrl
+          origin: allowedUrl,
         })
         .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
         .query({ type: 'paperback' })
@@ -77,7 +78,7 @@ describe('The Picture API', () => {
   });
   it('deletes a book by id', async () => {
     const newBook = await BookModel.create({
-      title: 'Best Test Book Ever', type: 'paperback'
+      title: 'Best Test Book Ever', type: 'paperback',
     });
     try {
       const cb = await request(server)

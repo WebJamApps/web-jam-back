@@ -1,3 +1,6 @@
+/* eslint-disable jest/valid-expect */
+/* eslint-disable no-underscore-dangle */
+const sinon = require('sinon');
 const server = require('../../../index');
 const User1 = require('../../../model/user/user-schema');
 const authUtils = require('../../../auth/authUtils');
@@ -5,7 +8,7 @@ const authUtils = require('../../../auth/authUtils');
 describe('functional test for users', () => {
   let allowedUrl;
   beforeEach((done) => {
-    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+    allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];// eslint-disable-line prefer-destructuring
     done();
   });
   afterEach(async () => {
@@ -240,7 +243,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(201);
     } catch (e) { throw e; }
@@ -252,7 +255,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(500);
     } catch (e) { throw e; }
@@ -265,7 +268,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(500);
     } catch (e) { throw e; }
@@ -279,7 +282,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo3@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(500);
     } catch (e) { throw e; }
@@ -296,7 +299,7 @@ describe('functional test for users', () => {
       const cb = await chai.request(server)
         .post('/user/auth/signup')
         .send({
-          email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555'
+          email: 'foo4@example.com', name: 'foomanchew', password: 'lottanumbers35555',
         });
       expect(cb).to.have.status(409);
     } catch (e) { throw e; }

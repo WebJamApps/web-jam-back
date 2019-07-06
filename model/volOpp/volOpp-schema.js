@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const Schema = mongoose.Schema;
+const { Schema } = mongoose;
 const volOppSchema = new Schema({
   voName: { type: String, required: true },
   voCharityName: { type: String, required: true },
@@ -24,7 +24,7 @@ const volOppSchema = new Schema({
   voEndTime: { type: String, required: false },
   voContactName: { type: String, required: false },
   voContactEmail: { type: String, required: false },
-  voContactPhone: { type: String, required: false }
+  voContactPhone: { type: String, required: false },
 });
 
 module.exports = mongoose.model('VolOpp', volOppSchema);
