@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
@@ -32,8 +32,7 @@
     "test:jest": "cross-env NODE_ENV=test && jest --no-cache --config jest.config.json --notify",
     "test:unit": "rm -rf coverage && yarn test:jest && yarn test:mocha && yarn combine-coverage",
     "combine-coverage": "istanbul-combine -d coverage -p none -r lcov -r html coverage/mocha/coverage-final.json coverage/jest/coverage-final.json",
-    "snyk-protect": "snyk protect",
-    "prepublish": "npm run snyk-protect"
+    "snyk-protect": "snyk protect"
   },
   "repository": {
     "type": "git",
