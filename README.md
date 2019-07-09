@@ -11,7 +11,6 @@
 <li><a href="https://www.web-jam.com">Web Jam LLC</a></li>
 <li><a href="http://www.ourhandsandfeet.org">ourhandsandfeet.org</a></li>
   <li><a href="http://joshandmariamusic.com">joshandmariamusic.com</a></li>
-<li><a href="https://www.web-jam.com/library">Web Jam Library</a></li>
 </ul>
 <h3>Install</h3>
 <ui>
