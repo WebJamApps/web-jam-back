@@ -38,6 +38,9 @@ routes(app);
 app.get('/music/*', (req, res) => {
   res.sendFile(path.normalize(path.join(__dirname, 'JaMmusic/dist/index.html')));
 });
+app.get('/shop/*', (req, res) => {
+  res.sendFile(path.normalize(path.join(__dirname, 'WebJamShop/dist/index.html')));
+})
 app.get('*', (req, res) => {
   res.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
 });

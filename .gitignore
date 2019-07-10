@@ -49,6 +49,7 @@ jspm_packages
 # frontend
 frontend
 JaMmusic
+WebJamShop
 
 .DS_Store
 package-lock.json
