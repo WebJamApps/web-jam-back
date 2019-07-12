@@ -26,4 +26,14 @@ describe('Index test', () => {
         done();
       });
   });
+  it('should return status 200 when use -> app.get to /shop/inventory', (done) => {
+    chai.request(server)
+      .get('/shop/inventory')
+      .set({ origin: allowedUrl })
+      .set('authorization', 'Bearer ')
+      .end((err, res) => {
+        expect(res).to.have.status(200);
+        done();
+      });
+  });
 });
