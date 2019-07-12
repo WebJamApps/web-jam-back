@@ -22,6 +22,7 @@ const app = express();
 if (process.env.NODE_ENV === 'production') app.use(enforce.HTTPS({ trustProtoHeader: true }));
 app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
 app.use('/music', express.static(path.normalize(path.join(__dirname, 'JaMmusic/dist'))));
+app.use('/shop', express.static(path.normalize(path.join(__dirname, 'WebJamShop/dist'))));
 app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
 let mongoDbUri = process.env.MONGO_DB_URI;
