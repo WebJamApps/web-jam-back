@@ -18,7 +18,7 @@
     "cc": "codeclimate analyze -f html > codeclimate.html",
     "start:debug": "DEBUG=web-jam-back:* nodemon index.js",
     "installglobals": "yarn config set registry https://registry.yarnpkg.com -g",
-    "postinstall": "./postinstall.sh & ./postinstallJaM.sh & ./postinstallshop.sh",
+    "postinstall": "./postinstall.sh && ./postinstallJaM.sh && ./postinstallshop.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd frontend || exit; npm start -- build)",
     "start": "node index.js",
