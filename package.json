@@ -1,10 +1,10 @@
 {
   "name": "web-jam-back",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=12.6.0"
+    "node": ">=12.7.0"
   },
   "files": [
     "lib/",

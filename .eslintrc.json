@@ -2,6 +2,8 @@
   "plugins": ["node", "security", "jest", "mocha"],
   "extends": ["plugin:mocha/recommended", "plugin:node/recommended", "plugin:security/recommended", "airbnb", "plugin:jest/recommended"],
   "rules": {
+    "mocha/no-mocha-arrows": 0,
+    "mocha/no-setup-in-describe": 0,
     "no-underscore-dangle": 0,
     "node/no-unsupported-features/es-syntax": 0,
     "no-multiple-empty-lines": [
