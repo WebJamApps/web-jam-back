@@ -19,7 +19,7 @@ const corsOptions = {
 const app = express();
 
 /* istanbul ignore if */
-if (process.env.NODE_ENV === 'production') app.use(enforce.HTTPS({ trustProtoHeader: true }));
+if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
 app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
 app.use('/music', express.static(path.normalize(path.join(__dirname, 'JaMmusic/dist'))));
 app.use('/shop', express.static(path.normalize(path.join(__dirname, 'WebJamShop/dist'))));
