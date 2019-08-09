@@ -4,7 +4,7 @@ set -e
 
 BRANCH=master
 
-if [[ $NODE_ENV != "production" ]];
+if [[ $BUILD_BRANCH != "master" ]];
 then
     BRANCH=dev
 fi
