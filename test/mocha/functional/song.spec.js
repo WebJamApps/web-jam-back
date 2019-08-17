@@ -1,4 +1,5 @@
 /* eslint-disable jest/valid-expect */
+/* eslint-disable no-useless-catch */
 const sinon = require('sinon');
 require('sinon-mongoose');
 const server = require('../../../index');

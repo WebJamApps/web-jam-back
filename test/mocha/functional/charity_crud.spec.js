@@ -1,5 +1,5 @@
 /* eslint-disable jest/valid-expect */
-/* eslint-disable no-underscore-dangle */
+/* eslint-disable no-useless-catch */
 const EventEmitter = require('events');
 const Charity1 = require('../../../model/charity/charity-schema');
 const authUtils = require('../../../auth/authUtils');

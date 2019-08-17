@@ -1,4 +1,5 @@
 /* eslint-disable jest/valid-expect */
+/* eslint-disable no-useless-catch */
 const EventEmitter = require('events');
 const jwt = require('jwt-simple');
 const nock = require('nock');
