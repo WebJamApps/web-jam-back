@@ -1,5 +1,5 @@
 /* eslint-disable jest/valid-expect */
-/* eslint-disable no-underscore-dangle */
+/* eslint-disable no-useless-catch */
 const server = require('../../../index');
 const VolOpp1 = require('../../../model/volOpp/volOpp-schema');
 const authUtils = require('../../../auth/authUtils');

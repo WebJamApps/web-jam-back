@@ -1,3 +1,4 @@
+/* eslint-disable no-useless-catch */
 const EventEmitter = require('events');
 const AuthUtils = require('../../auth/authUtils');
 

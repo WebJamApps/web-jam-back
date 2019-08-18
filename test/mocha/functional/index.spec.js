@@ -1,4 +1,5 @@
 /* eslint-disable jest/valid-expect */
+/* eslint-disable no-useless-catch */
 describe('Index test', () => {
   let allowedUrl, server;
   beforeEach((done) => {
