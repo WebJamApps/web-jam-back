@@ -1,5 +1,5 @@
 /* eslint-disable jest/valid-expect */
-/* eslint-disable no-underscore-dangle */
+/* eslint-disable no-useless-catch */
 const sinon = require('sinon');
 const server = require('../../../index');
 const User1 = require('../../../model/user/user-schema');

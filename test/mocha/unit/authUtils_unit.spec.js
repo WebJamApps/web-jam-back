@@ -1,5 +1,5 @@
 /* eslint-disable jest/valid-expect */
-/* eslint-disable no-underscore-dangle */
+/* eslint-disable no-useless-catch */
 const sinon = require('sinon');
 const jwt = require('jwt-simple');
 const moment = require('moment');
