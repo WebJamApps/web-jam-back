@@ -20,9 +20,9 @@ const app = express();
 
 /* istanbul ignore if */
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
-app.use(express.static(path.normalize(path.join(__dirname, 'frontend/dist'))));
-app.use('/music', express.static(path.normalize(path.join(__dirname, 'JaMmusic/dist'))));
-app.use('/shop', express.static(path.normalize(path.join(__dirname, 'WebJamShop/dist'))));
+app.use(express.static(path.normalize(path.join(__dirname, 'JaMmusic/dist'))));
+// app.use('/music', express.static(path.normalize(path.join(__dirname, 'JaMmusic/dist'))));
+// app.use('/shop', express.static(path.normalize(path.join(__dirname, 'WebJamShop/dist'))));
 app.use(cors(corsOptions));
 mongoose.Promise = bluebird;
 let mongoDbUri = process.env.MONGO_DB_URI;
@@ -36,14 +36,14 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(morgan('tiny'));
 routes(app);
-app.get('/music/*', (req, res) => {
-  res.sendFile(path.normalize(path.join(__dirname, 'JaMmusic/dist/index.html')));
-});
-app.get('/shop/*', (req, res) => {
-  res.sendFile(path.normalize(path.join(__dirname, 'WebJamShop/dist/index.html')));
-});
+// app.get('/music/*', (req, res) => {
+//   res.sendFile(path.normalize(path.join(__dirname, 'JaMmusic/dist/index.html')));
+// });
+// app.get('/shop/*', (req, res) => {
+//   res.sendFile(path.normalize(path.join(__dirname, 'WebJamShop/dist/index.html')));
+// });
 app.get('*', (req, res) => {
-  res.sendFile(path.normalize(path.join(__dirname, 'frontend/dist/index.html')));
+  res.sendFile(path.normalize(path.join(__dirname, 'JaMmusic/dist/index.html')));
 });
 app.use((err, req, res) => {
   res.status(err.status || 500)
