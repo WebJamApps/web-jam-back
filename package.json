@@ -32,7 +32,8 @@
     "test:jest": "cross-env NODE_ENV=test && jest --no-cache --config jest.config.json --notify",
     "test:unit": "rm -rf coverage && yarn test:jest && yarn test:mocha && yarn combine-coverage",
     "combine-coverage": "istanbul-combine -d coverage -p none -r lcov -r html coverage/mocha/coverage-final.json coverage/jest/coverage-final.json",
-    "snyk-protect": "snyk protect"
+    "snyk-protect": "snyk protect",
+    "prepublish": "npm run snyk-protect"
   },
   "repository": {
     "type": "git",
@@ -59,7 +60,7 @@
     "nodemon": "latest",
     "request": "latest",
     "request-promise": "latest",
-    "snyk": "latest"
+    "snyk": "^1.230.6"
   },
   "devDependencies": {
     "chai": "latest",
