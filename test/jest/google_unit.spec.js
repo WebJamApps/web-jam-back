@@ -1,26 +1,7 @@
-// const EventEmitter = require('events');
-// const jwt = require('jwt-simple');
-// const nock = require('nock');
-// const sinon = require('sinon');
-// require('sinon-mongoose');
 const google = require('../../auth/google');
-// const User = require('../../model/user/user-schema');
-// const config = require('../../config');
 
 describe('The Unit Test for Google Module', () => {
-  // let uMock;
-  // beforeAll(async () => {
-  //   await User.deleteMany({});
-  //   EventEmitter.defaultMaxListeners = Infinity;
-  // });
-  // afterAll(async () => {
-  //   await User.deleteMany({});
-  //   EventEmitter.defaultMaxListeners = 10;
-  // });
-  it('does nothing', (done) => {
-    done();
-  });
-  it('authenticates', async () => {
+  it('authenticates returns a 401 error', async () => {
     try { await google.authenticate({ body: { code: 'whatever', clientId: '123', redirectUrl: 'http://whatever.com' } }); } catch (e) {
       expect(e.message.includes('401')).toBe(true);
     }
