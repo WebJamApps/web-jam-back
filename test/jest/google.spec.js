@@ -3,7 +3,8 @@ const google = require('../../auth/google');
 describe('The Unit Test for Google Module', () => {
   it('authenticates returns a 401 error', async () => {
     try { await google.authenticate({ body: { code: 'whatever', clientId: '123', redirectUrl: 'http://whatever.com' } }); } catch (e) {
-      expect(e.message.includes('401')).toBe(true);
+      expect(e.status).toBe(401);
+      expect(e.message).toBe('Unauthorized');
     }
   });
   // it('authenticates with existing google user', async () => {
