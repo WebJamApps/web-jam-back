@@ -1,4 +1,4 @@
-const rp = require('request-promise');
+const superagent = require('superagent');
 const debug = require('debug')('web-jam-back:auth/google');
 
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';
@@ -13,24 +13,19 @@ exports.authenticate = async function authenticate(req) {
     redirect_uri: req.body.redirectUri,
     grant_type: 'authorization_code',
   };
-    // Step 1. Exchange authorization code for access token.
-  try {
-    token = await rp.post(accessTokenUrl, { json: true, form: params });
-    // debug(token);
+  try { // Step 1. Exchange authorization code for access token.
+    token = await superagent.post(accessTokenUrl).type('form').send(params).set('Accept', 'application/json');
+    debug(token.body);
   } catch (e) { return Promise.reject(e); }
-  const accessToken = token.access_token;
-  const headers = { Authorization: `Bearer ${accessToken}` };
-  // Step 2. Retrieve profile information about the current user.
-  const requestConfig = { url: peopleApiUrl, headers, json: true };
-  try {
-    profile = await rp.get(requestConfig);
+  try { // Step 2. Retrieve profile information about the current user.
+    profile = await superagent.get(peopleApiUrl).set({ Authorization: `Bearer ${token.body.access_token}`, Accept: 'application/json' });
   } catch (e) {
     debug(e.message);
     return Promise.reject(e);
   }
   // debug(profile);
-  if (profile === null || profile === undefined || profile.emailAddresses === null || profile.emailAddresses === undefined) {
+  if (profile === null || profile === undefined || profile.body.emailAddresses === null || profile.body.emailAddresses === undefined) {
     return Promise.reject(new Error('failed to retrieve user profile from Google'));
   }
-  return Promise.resolve(profile);
+  return Promise.resolve(profile.body);
 };
