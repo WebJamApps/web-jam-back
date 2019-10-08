@@ -47,7 +47,6 @@
     "express-sslify": "latest",
     "helmet": "latest",
     "jwt-simple": "latest",
-    "lodash": "latest",
     "moment": "latest",
     "mongoose": "latest",
     "morgan": "latest",
