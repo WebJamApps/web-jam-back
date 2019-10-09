@@ -17,7 +17,7 @@
   "scripts": {
     "cc": "codeclimate analyze -f html > codeclimate.html",
     "start:debug": "DEBUG=web-jam-back:* nodemon index.js",
-    "installglobals": "yarn config set registry https://registry.yarnpkg.com -g && npm install -g npm@latest",
+    "installglobals": "npm install -g npm@latest",
     "postinstall": "./postinstallJaM.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd JaMmusic || exit; npm start -- build)",
