@@ -3,7 +3,6 @@
   "extends": ["plugin:node/recommended", "plugin:security/recommended", "airbnb", "plugin:jest/recommended"],
   "rules": {
     "no-underscore-dangle": 0,
-    "node/no-unsupported-features/es-syntax": 0,
     "no-multiple-empty-lines": [
       "error",
       {
@@ -26,13 +25,6 @@
   },
   "env": {
     "jest": true,
-    "mocha": true,
     "node": true
-  },
-  "globals": {
-    "chai": true,
-    "mongoose": true,
-    "bluebird": true,
-    "chaiHttp": true
   }
 }
