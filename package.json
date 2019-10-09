@@ -26,7 +26,7 @@
     "node:debug": "node --inspect-brk index.js",
     "test": "eslint . && rm -rf coverage && npm run test:jest",
     "test:lint": "eslint . --fix",
-    "test:local": "eslint . --fix && yarn test:jest && yarn cc",
+    "test:local": "eslint . --fix && rm -rf coverage && yarn test:jest && yarn cc",
     "test:jest": "cross-env NODE_ENV=test && jest --no-cache --config jest.config.json --notify"
   },
   "repository": {
