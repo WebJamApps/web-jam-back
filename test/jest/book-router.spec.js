@@ -1,9 +1,9 @@
 const request = require('supertest');
-const server = require('../../index');
+const app = require('../../index');
 const BookModel = require('../../model/book/book-facade');
 const authUtils = require('../../auth/authUtils');
 
-describe('The Picture API', () => {
+describe('The Book API', () => {
   let r;
   const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
   beforeEach(async () => {
@@ -13,7 +13,7 @@ describe('The Picture API', () => {
     await BookModel.create({
       title: 'Best Test Book Ever', type: 'paperback',
     });
-    r = await request(server)
+    r = await request(app)
       .get('/book/one')
       .set({
         origin: allowedUrl,
@@ -27,7 +27,7 @@ describe('The Picture API', () => {
     await BookModel.create({
       title: 'Best Test Book Ever', type: 'paperback',
     });
-    r = await request(server)
+    r = await request(app)
       .get('/book/one')
       .set({
         origin: allowedUrl,
@@ -36,29 +36,11 @@ describe('The Picture API', () => {
       .query({ type: 'magazine' });
     expect(r.status).toBe(400);
   });
-  // it('should catch error on find one book', async () => {
-  //   await BookModel.create({
-  //     title: 'Best Test Book Ever', type: 'paperback',
-  //   });
-  //   const bMock = sinon.mock(BookModel);
-  //   bMock.expects('findOne').rejects(new Error('bad'));
-  //   try {
-  //     const cb = await request(server)
-  //       .get('/book/one')
-  //       .set({
-  //         origin: allowedUrl,
-  //       })
-  //       .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-  //       .query({ type: 'magazine' });
-  //     expect(cb.status).toBe(500);
-  //   } catch (e) { throw e; }
-  //   bMock.restore();
-  // });
   it('should update one book', async () => {
     await BookModel.create({
       title: 'Best Test Book Ever', type: 'paperback',
     });
-    r = await request(server)
+    r = await request(app)
       .put('/book/one')
       .set({
         origin: allowedUrl,
@@ -73,175 +55,41 @@ describe('The Picture API', () => {
     const newBook = await BookModel.create({
       title: 'Best Test Book Ever', type: 'paperback',
     });
-    r = await request(server)
+    r = await request(app)
       .delete(`/book/${newBook._id}`)
       .set({ origin: allowedUrl })
       .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
     expect(r.status).toBe(200);
   });
-  // it('creates a new book', async () => {
-  //   let cb;
-  //   try {
-  //     cb = await chai.request(server)
-  //       .post('/book')
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-  //       .send({ title: 'foobar', type: 'book' });
-  //     expect(cb).to.have.status(201);
-  //   } catch (e) { throw e; }
-  // });
-  // it('deletes all books', async () => {
-  //   try {
-  //     const cb = await chai.request(server)
-  //       .delete('/book')
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-  //       .send({});
-  //     expect(cb.status).to.equal(200);
-  //   } catch (e) { throw e; }
-  // });
-  // it('finds the checked out books', (done) => {
-  //   const Book = new Book1();
-  //   Book.title = 'foo2';
-  //   Book.type = 'paperback';
-  //   Book.checkedOutBy = ['33333'];
-  //   chai.request(server)
-  //     .get('/book/findcheckedout/33333')
-  //     .set({ origin: allowedUrl })
-  //     .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-  //     .send({})
-  //     .end((err, res) => {
-  //       expect(res).to.have.status(200);
-  //       done();
-  //     });
-  // });
-  // it('returns all books', (done) => {
-  //   const Book = new Book1();
-  //   Book.title = 'foo2book';
-  //   Book.type = 'pdf';
-  //   Book.save(() => {
-  //     chai.request(server)
-  //       .get('/book')
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ')
-  //       .end((err, res) => {
-  //         expect(res).to.have.status(200);
-  //         done();
-  //       });
-  //   });
-  // });
-  // it('returns error on db.find when getting all books', async () => {
-  //   const bMock = sinon.mock(Book1);
-  //   bMock.expects('find').chain('exec').rejects(new Error('bad'));
-  //   let cb;
-  //   try {
-  //     cb = await chai.request(server)
-  //       .get('/book')
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ');
-  //     expect(cb).to.have.status(500);
-  //   } catch (e) { throw e; }
-  //   bMock.restore();
-  // });
-  // it('should post an array of new books to be created', (done) => {
-  //   chai.request(server)
-  //     .post('/book')
-  //     .set({ origin: allowedUrl })
-  //     .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-  //     .send([{ title: 'foobar', type: 'book' }, { title: 'JFK', type: 'PDF' }])
-  //     .end((err, res) => {
-  //       expect(res).to.have.status(201);
-  //       if (err) { throw err; }
-  //       done();
-  //     });
-  // });
-  // it('returns db.create error when posts an array of new books to be created', async () => {
-  //   const bMock = sinon.mock(Book1);
-  //   bMock.expects('create').rejects(new Error('bad'));
-  //   let cb;
-  //   try {
-  //     cb = await chai.request(server)
-  //       .post('/book')
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-  //       .send([{ title: 'foobar', type: 'book' }, { title: 'JFK', type: 'PDF' }]);
-  //     expect(cb.status).to.equal(500);
-  //   } catch (e) { throw e; }
-  //   bMock.restore();
-  // });
-  // it('returns db.create error when posts a single books to be created', async () => {
-  //   const bMock = sinon.mock(Book1);
-  //   bMock.expects('create').rejects(new Error('bad'));
-  //   let cb;
-  //   try {
-  //     cb = await chai.request(server)
-  //       .post('/book')
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-  //       .send({ title: 'foobar', type: 'book' });
-  //     expect(cb.status).to.equal(500);
-  //   } catch (e) { throw e; }
-  //   bMock.restore();
-  // });
-  // it('should pass for the error', (done) => {
-  //   chai.request(server)
-  //     .put('/book/johnny')
-  //     .set({ origin: allowedUrl })
-  //     .set('authorization', 'Bearer ')
-  //     .end((err, res) => {
-  //       expect(res).to.have.status(400);
-  //       done();
-  //     });
-  // });
-  // it('should modify a book', async () => {
-  //   await Book1.deleteMany({});
-  //   const Book = new Book1();
-  //   Book.title = 'Flow Measurement';
-  //   Book.type = 'hardback';
-  //   Book.checkedOutBy = '123456';
-  //   const newBook = await Book.save();
-  //   try {
-  //     const cb = await chai.request(server)
-  //       .put(`/book/${newBook.id}`)
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-  //       .send({ checkedOutBy: '' });
-  //     expect(cb).to.have.status(200);
-  //   } catch (e) { throw e; }
-  // });
-  // it('finds the book by id', async () => {
-  //   await Book1.deleteMany({});
-  //   const Book2 = new Book1();
-  //   Book2.title = 'Flow Measurement';
-  //   Book2.type = 'hardback';
-  //   Book2.checkedOutBy = '123456';
-  //   const newBook = await Book2.save();
-  //   try {
-  //     const cb = await chai.request(server)
-  //       .get(`/book/${newBook._id}`)
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ');
-  //     expect(cb).to.have.status(200);
-  //   } catch (e) { throw e; }
-  // });
-  // it('returns error when the id is bogas for find the book by id', async () => {
-  //   await Book1.deleteMany({});
-  //   try {
-  //     const cb = await chai.request(server)
-  //       .get('/book/bogas')
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ');
-  //     expect(cb).to.have.status(400);
-  //   } catch (e) { throw e; }
-  // });
-  // it('returns error when find the book by id returns nothing', async () => {
-  //   await Book1.deleteMany({});
-  //   try {
-  //     const cb = await chai.request(server)
-  //       .get(`/book/${mongoose.Types.ObjectId()}`)
-  //       .set({ origin: allowedUrl })
-  //       .set('authorization', 'Bearer ');
-  //     expect(cb).to.have.status(400);
-  //   } catch (e) { throw e; }
-  // });
+  it('finds the checked out books', async () => {
+    await BookModel.create({
+      title: 'Best Test Book Ever', type: 'paperback', checkedOutBy: '33333',
+    });
+    r = await request(app)
+      .get('/book/findcheckedout/33333')
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+    expect(r.status).toBe(200);
+  });
+  it('updates a book by id', async () => {
+    const newBook = await BookModel.create({
+      title: 'Best Test Book Ever', type: 'paperback', checkedOutBy: '33333',
+    });
+    r = await request(app)
+      .put(`/book/${newBook.id}`)
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .send({ checkedOutBy: '' });
+    expect(r.status).toBe(200);
+  });
+  it('finds the book by id', async () => {
+    const newBook = await BookModel.create({
+      title: 'Best Test Book Ever', type: 'paperback', checkedOutBy: '33333',
+    });
+    r = await request(app)
+      .get(`/book/${newBook._id}`)
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+    expect(r.status).toBe(200);
+  });
 });

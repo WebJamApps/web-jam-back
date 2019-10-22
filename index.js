@@ -42,9 +42,7 @@ app.use((err, req, res) => {
     .json({ message: err.message, error: err });
 });
 
-// this if statement is only for mocha test that may spin up twice
-/* istanbul ignore if */
-if (!module.parent) {
+/* istanbul ignore if */if (process.env.NODE_ENV !== 'test') {
   app.listen(config.server.port, () => {
     debug('running in debug mode');
     console.log(`Magic happens on port ${config.server.port}`); // eslint-disable-line no-console
