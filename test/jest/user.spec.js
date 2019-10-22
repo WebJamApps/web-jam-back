@@ -1,7 +1,7 @@
 const request = require('supertest');
 const EventEmitter = require('events');
 // const bcrypt = require('bcryptjs');
-const server = require('../../index');
+const app = require('../../index');
 const user = require('../../model/user/user-facade');
 const google = require('../../auth/google');
 const controller = require('../../model/user/user-controller');
@@ -24,7 +24,7 @@ describe('User Controller', () => {
     await user.create({
       name: 'Justin Bieber', email: 'yo@yo.com', resetCode: '123',
     });
-    const cb = await request(server)
+    const cb = await request(app)
       .put('/user/auth/validateemail')
       .set({ origin: allowedUrl })
       .send({ resetCode: '123', email: 'yo@yo.com' });
@@ -48,7 +48,7 @@ describe('User Controller', () => {
     await user.create({
       name: 'Justin Bieber', email: 'yo@yo.com', resetCode: '123',
     });
-    const cb = await request(server)
+    const cb = await request(app)
       .put('/user/auth/validateemail')
       .set({ origin: allowedUrl })
       .send({ resetCode: '123', email: 'boo@yo.com' });
@@ -58,7 +58,7 @@ describe('User Controller', () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123',
     });
-    const cb = await request(server)
+    const cb = await request(app)
       .put('/user/auth/updateemail')
       .set({ origin: allowedUrl })
       .send({ resetCode: '123', changeemail: 'j@jb.com', email: 'old@wold.com' });
@@ -69,7 +69,7 @@ describe('User Controller', () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123',
     });
-    const cb = await request(server)
+    const cb = await request(app)
       .put('/user/auth/updateemail')
       .set({ origin: allowedUrl })
       .send({ resetCode: '456', changeemail: 'j@jb.com', email: 'old@wold.com' });
@@ -79,7 +79,7 @@ describe('User Controller', () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', changeemail: 'j@jb.com', resetCode: '123',
     });
-    const cb = await request(server)
+    const cb = await request(app)
       .put('/user/auth/updateemail')
       .set({ origin: allowedUrl })
       .send({ resetCode: '123', changeemail: 'g@jb.com', email: 'old@wold.com' });
@@ -103,7 +103,7 @@ describe('User Controller', () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
-    const cb = await request(server)
+    const cb = await request(app)
       .put('/user/auth/resetpswd')
       .set({ origin: allowedUrl })
       .send({ email: 'old@wold.com' });
@@ -140,7 +140,7 @@ describe('User Controller', () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: false,
     });
-    const cb = await request(server)
+    const cb = await request(app)
       .put('/user/auth/resetpswd')
       .set({ origin: allowedUrl })
       .send({ email: 'old@wold.com' });
@@ -163,7 +163,7 @@ describe('User Controller', () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
-    const cb = await request(server)
+    const cb = await request(app)
       .put('/user/auth/changeemail')
       .set({ origin: allowedUrl })
       .send({ email: 'old@wold.com', changeemail: 'j@jb.com' });
@@ -200,7 +200,7 @@ describe('User Controller', () => {
     await user.create({
       name: 'Justin Bieber', email: 'old@wold.com', verifiedEmail: true,
     });
-    const cb = await request(server)
+    const cb = await request(app)
       .put('/user/auth/changeemail')
       .set({ origin: allowedUrl })
       .send({ email: 'old@wold.com', changeemail: 'booya' });
