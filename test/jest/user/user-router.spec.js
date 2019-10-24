@@ -1,13 +1,13 @@
 const request = require('supertest');
-const app = require('../../index');
-const user = require('../../model/user/user-facade');
-const google = require('../../auth/google');
-const controller = require('../../model/user/user-controller');
-const authUtils = require('../../auth/authUtils');
+const app = require('../../../index');
+const user = require('../../../model/user/user-facade');
+const google = require('../../../auth/google');
+const controller = require('../../../model/user/user-controller');
+const authUtils = require('../../../auth/authUtils');
 
 const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
 
-describe('User Controller', () => {
+describe('User Router', () => {
   let r;
   beforeEach(async () => {
     await user.deleteMany({});
