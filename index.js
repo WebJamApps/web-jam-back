@@ -26,9 +26,11 @@ mongoose.Promise = bluebird;
 let mongoDbUri = process.env.MONGO_DB_URI;
 /* istanbul ignore else */
 if (process.env.NODE_ENV === 'test') mongoDbUri = 'mongodb://testerOfTheYear:wj-te5ter!@ds115283.mlab.com:15283/web-jam-test';
-mongoose.connect(mongoDbUri, { useNewUrlParser: true, useUnifiedTopology: true });
-mongoose.set('useCreateIndex', true);
-mongoose.set('useFindAndModify', false);
+mongoose.connect(mongoDbUri, {
+  useNewUrlParser: true, useUnifiedTopology: true, useFindAndModify: false, useCreateIndex: true,
+});
+// mongoose.set('useCreateIndex', true);
+// mongoose.set('useFindAndModify', false);
 app.use(helmet());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());

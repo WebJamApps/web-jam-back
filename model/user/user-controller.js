@@ -42,7 +42,7 @@ class UserController extends Controller {
 
   async pswdreset(req, res) { // changes the password after code is verified
     if (req.body.password === null || req.body.password === undefined || req.body.password.length < 8) {
-      return res.status(400).send({ message: 'Password is not min 8 characters' });
+      return res.status(400).json({ message: 'Password is not min 8 characters' });
     }
     let encrypted;
     const update = {};

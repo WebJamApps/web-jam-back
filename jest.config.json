@@ -1,4 +1,5 @@
 {
+  "resetMocks": true,
   "verbose": true,
   "bail": true,
   "testPathIgnorePatterns": ["/node_modules/", "/test/mocha", "/frontend", "/JaMmusic", "/WebJamShop"],
