@@ -54,4 +54,13 @@ describe('User Controller', () => {
     r = await controller.changeemail({ body: { changeemail: 'j@b.com' } }, resStub);
     expect(r.message).toBe('bad');
   });
+  it('return 401 on finishLogin', async () => {
+    r = await controller.finishLogin(resStub, false, {});
+    expect(r.message).toBe('Wrong password');
+  });
+  it('return 500 on finishLogin', async () => {
+    controller.model.findByIdAndUpdate = jest.fn(() => Promise.reject(new Error('bad')));
+    r = await controller.finishLogin(resStub, true, {});
+    expect(r.message).toBe('bad');
+  });
 });
