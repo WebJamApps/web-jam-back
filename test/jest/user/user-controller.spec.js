@@ -34,4 +34,24 @@ describe('User Controller', () => {
     r = await controller.pswdreset({ body: { password: 'weak123456789', email: '' } }, resStub);
     expect(r).toBe(true);
   });
+  it('returns 500 on resetpswd', async () => {
+    controller.model.findOneAndUpdate = jest.fn(() => Promise.reject(new Error('bad')));
+    r = await controller.resetpswd({ body: { password: 'weak123456789', email: '' } }, resStub);
+    expect(r.message).toBe('bad');
+  });
+  it('catches error on findOne when validateChangeEmail', async () => {
+    controller.model.findOne = jest.fn(() => Promise.reject(new Error('bad')));
+    try { await controller.validateChangeEmail({ body: { changeemail: '' } }); } catch (e) { expect(e.message).toBe('bad'); }
+  });
+  it('catches error on validateChangeEmail when changeemail', async () => {
+    controller.validateChangeEmail = jest.fn(() => Promise.reject(new Error('bad')));
+    r = await controller.changeemail({ body: { changeemail: 'j@b.com' } }, resStub);
+    expect(r.message).toBe('bad');
+  });
+  it('catches error on findOneAndUpdate when changeemail', async () => {
+    controller.validateChangeEmail = jest.fn(() => Promise.resolve(true));
+    controller.model.findOneAndUpdate = jest.fn(() => Promise.reject(new Error('bad')));
+    r = await controller.changeemail({ body: { changeemail: 'j@b.com' } }, resStub);
+    expect(r.message).toBe('bad');
+  });
 });

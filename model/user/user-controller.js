@@ -76,35 +76,25 @@ class UserController extends Controller {
   }
 
   async validateChangeEmail(req) {
-    let user1, user2;
-    try {
-      user1 = await this.model.findOne({ email: req.body.changeemail });
-    } catch (e) { return Promise.reject(e); }
+    let user1;
+    try { user1 = await this.model.findOne({ email: req.body.changeemail }); } catch (e) { return Promise.reject(e); }
     if (user1 !== null) return Promise.reject(new Error('Email address already exists'));
-    try {
-      user2 = await this.model.find({ email: req.body.email });
-    } catch (e) { return Promise.reject(e); }
-    if (user2 === null || user2 === undefined || user2.length === 0) {
-      return Promise.reject(new Error('current user does not exist'));
-    }
-    return Promise.resolve(user2);
+    return Promise.resolve(user1);
   }
 
   async changeemail(req, res) {
-    let user2;
+    let result;
     const updateUser = {};
     try {
       await this.authUtils.checkEmailSyntax(req);
     } catch (e) { return res.status(400).json({ message: e.message }); }
-    try {
-      user2 = await this.validateChangeEmail(req);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { await this.validateChangeEmail(req); } catch (e) { return res.status(500).json({ message: e.message }); }
     updateUser.resetCode = this.authUtils.generateCode(99999, 10000);
     updateUser.changeemail = req.body.changeemail;
     try {
-      await this.model.findOneAndUpdate({ email: req.body.email }, updateUser);
+      result = await this.model.findOneAndUpdate({ email: req.body.email }, updateUser);
     } catch (e) { return res.status(500).json({ message: e.message }); }
-    const mailBody = `<h2>Email Address Change Request for ${user2.name
+    const mailBody = `<h2>Email Address Change Request for ${result.name
     }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="${
       process.env.frontURL}/userutil/?changeemail=${updateUser.changeemail}">`
           + `link</a>, then enter the following code to validate this new email: <br><br><strong>${
