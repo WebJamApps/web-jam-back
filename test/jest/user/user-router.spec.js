@@ -171,9 +171,7 @@ describe('User Router', () => {
   });
   it('finds the changeemail that already exists', async () => {
     controller.model.findOne = jest.fn(() => Promise.resolve({}));
-    try { await controller.validateChangeEmail({ body: { email: 'yo@yo.com' } }); } catch (e) {
-      expect(e.message).toBe('Email address already exists');
-    }
+    await expect(controller.validateChangeEmail({ body: { email: 'yo@yo.com' } })).rejects.toThrow('Email address already exists');
   });
   it('catches a error on create new user after google authenticate', async () => {
     google.authenticate = jest.fn(() => Promise.resolve({ emailAddresses: [{ value: 'jb@yo.com' }], names: [{ displayName: 'jb' }] }));

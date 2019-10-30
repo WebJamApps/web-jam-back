@@ -41,7 +41,7 @@ describe('User Controller', () => {
   });
   it('catches error on findOne when validateChangeEmail', async () => {
     controller.model.findOne = jest.fn(() => Promise.reject(new Error('bad')));
-    try { await controller.validateChangeEmail({ body: { changeemail: '' } }); } catch (e) { expect(e.message).toBe('bad'); }
+    await expect(controller.validateChangeEmail({ body: { changeemail: '' } })).rejects.toThrow('bad');
   });
   it('catches error on validateChangeEmail when changeemail', async () => {
     controller.validateChangeEmail = jest.fn(() => Promise.reject(new Error('bad')));

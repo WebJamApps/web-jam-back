@@ -2,11 +2,10 @@ const google = require('../../auth/google');
 
 describe('The Unit Test for Google Module', () => {
   it('authenticates returns a 401 error', async () => {
-    try { await google.authenticate({ body: { code: 'whatever', clientId: '123', redirectUrl: 'http://whatever.com' } }); } catch (e) {
-      expect(e.status).toBe(401);
-      expect(e.message).toBe('Unauthorized');
-    }
+    await expect(google.authenticate({ body: { code: 'whatever', clientId: '123', redirectUrl: 'http://whatever.com' } }))
+      .rejects.toThrow('Unauthorized');
   });
+  // eslint-disable-next-line jest/no-commented-out-tests
   // it('authenticates with existing google user', async () => {
   //   uMock = sinon.mock(User);
   //   uMock.expects('findOneAndUpdate').chain('exec').resolves({ _id: '4444' });
@@ -32,7 +31,7 @@ describe('The Unit Test for Google Module', () => {
   //   };
   //   await google.authenticate(req, res);
   // });
-//
+// eslint-disable-next-line jest/no-commented-out-tests
 //   it('should create a new user and authenticate', async () => {
 //     uMock = sinon.mock(User);
 //     uMock.expects('create').resolves({ _id: '123' });
@@ -61,6 +60,7 @@ describe('The Unit Test for Google Module', () => {
 //     };
 //     await google.authenticate(req, res);
 //   });
+// eslint-disable-next-line jest/no-commented-out-tests
 //   it('returns google api error from post to get the token', async () => {
 //     // const sub = 'foo2@example.com';
 //     nock('https://accounts.google.com')
@@ -77,6 +77,7 @@ describe('The Unit Test for Google Module', () => {
 //       expect(e.message).to.equal('Error: 500');
 //     }
 //   });
+// eslint-disable-next-line jest/no-commented-out-tests
 //   it('returns google api error from get user profile', async () => {
 //     const token = { access_token: 'access_token' };
 //     nock.cleanAll();
@@ -93,6 +94,7 @@ describe('The Unit Test for Google Module', () => {
 //       expect(e.message).to.equal('Error: 500');
 //     }
 //   });
+// eslint-disable-next-line jest/no-commented-out-tests
 //   it('returns google api error from get user profile when profile is null', async () => {
 //     const token = { access_token: 'access_token' };
 //     nock.cleanAll();
