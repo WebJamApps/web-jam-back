@@ -29,8 +29,6 @@ if (process.env.NODE_ENV === 'test') mongoDbUri = 'mongodb://testerOfTheYear:wj-
 mongoose.connect(mongoDbUri, {
   useNewUrlParser: true, useUnifiedTopology: true, useFindAndModify: false, useCreateIndex: true,
 });
-// mongoose.set('useCreateIndex', true);
-// mongoose.set('useFindAndModify', false);
 app.use(helmet());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
