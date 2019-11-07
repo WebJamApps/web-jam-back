@@ -164,12 +164,12 @@ class UserController extends Controller {
       resetCode: randomNumba,
     };
     const validData = this.model.validateSignup(user);
-    if (validData !== '') return res.status(409).send({ message: validData });
+    if (validData !== '') return res.status(400).json({ message: validData });
     try {
       existingUser = await this.model.findOne({ email: req.body.email });
     } catch (e) { return res.status(500).json({ message: e.message }); }
     if (existingUser && existingUser.verifiedEmail) {
-      return res.status(409).send({ message: 'This email address has already been registered.' });
+      return res.status(409).json({ message: 'This email address is already registered' });
     }
     if (existingUser && !existingUser.verifiedEmail) {
       try {
