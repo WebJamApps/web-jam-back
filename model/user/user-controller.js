@@ -1,4 +1,3 @@
-/* eslint-disable no-underscore-dangle */
 const debug = require('debug')('web-jam-back:user-controller');
 const Controller = require('../../lib/controller');
 const userModel = require('./user-facade');
@@ -43,7 +42,7 @@ class UserController extends Controller {
 
   async pswdreset(req, res) { // changes the password after code is verified
     if (req.body.password === null || req.body.password === undefined || req.body.password.length < 8) {
-      return res.status(400).send({ message: 'Password is not min 8 characters' });
+      return res.status(400).json({ message: 'Password is not min 8 characters' });
     }
     let encrypted;
     const update = {};
@@ -77,35 +76,25 @@ class UserController extends Controller {
   }
 
   async validateChangeEmail(req) {
-    let user1, user2;
-    try {
-      user1 = await this.model.findOne({ email: req.body.changeemail });
-    } catch (e) { return Promise.reject(e); }
+    let user1;
+    try { user1 = await this.model.findOne({ email: req.body.changeemail }); } catch (e) { return Promise.reject(e); }
     if (user1 !== null) return Promise.reject(new Error('Email address already exists'));
-    try {
-      user2 = await this.model.find({ email: req.body.email });
-    } catch (e) { return Promise.reject(e); }
-    if (user2 === null || user2 === undefined || user2.length === 0) {
-      return Promise.reject(new Error('current user does not exist'));
-    }
-    return Promise.resolve(user2);
+    return Promise.resolve(user1);
   }
 
   async changeemail(req, res) {
-    let user2;
+    let result;
     const updateUser = {};
     try {
       await this.authUtils.checkEmailSyntax(req);
     } catch (e) { return res.status(400).json({ message: e.message }); }
-    try {
-      user2 = await this.validateChangeEmail(req);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { await this.validateChangeEmail(req); } catch (e) { return res.status(500).json({ message: e.message }); }
     updateUser.resetCode = this.authUtils.generateCode(99999, 10000);
     updateUser.changeemail = req.body.changeemail;
     try {
-      await this.model.findOneAndUpdate({ email: req.body.email }, updateUser);
+      result = await this.model.findOneAndUpdate({ email: req.body.email }, updateUser);
     } catch (e) { return res.status(500).json({ message: e.message }); }
-    const mailBody = `<h2>Email Address Change Request for ${user2.name
+    const mailBody = `<h2>Email Address Change Request for ${result.name
     }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="${
       process.env.frontURL}/userutil/?changeemail=${updateUser.changeemail}">`
           + `link</a>, then enter the following code to validate this new email: <br><br><strong>${
@@ -175,12 +164,12 @@ class UserController extends Controller {
       resetCode: randomNumba,
     };
     const validData = this.model.validateSignup(user);
-    if (validData !== '') return res.status(409).send({ message: validData });
+    if (validData !== '') return res.status(400).json({ message: validData });
     try {
       existingUser = await this.model.findOne({ email: req.body.email });
     } catch (e) { return res.status(500).json({ message: e.message }); }
     if (existingUser && existingUser.verifiedEmail) {
-      return res.status(409).send({ message: 'This email address has already been registered.' });
+      return res.status(409).json({ message: 'This email address is already registered' });
     }
     if (existingUser && !existingUser.verifiedEmail) {
       try {
