@@ -1,8 +1,8 @@
 {
+  "resetMocks": true,
   "verbose": true,
   "bail": true,
-  "testPathIgnorePatterns": ["/node_modules/", "/test/mocha", "/frontend", "/JaMmusic", "/WebJamShop"],
-  "coverageDirectory": "coverage/jest",
+  "testPathIgnorePatterns": ["/node_modules/", "/test/mocha", "/frontend", "/JaMmusic", "/WebJamShop", "/model"],
   "collectCoverage": true,
   "testEnvironment": "node",
   "testURL": "http://localhost/",

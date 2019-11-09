@@ -1,11 +1,10 @@
-/* eslint-disable no-useless-catch */
 const request = require('supertest');
-const sinon = require('sinon');
-const server = require('../../index');
+const app = require('../../index');
 const BookModel = require('../../model/book/book-facade');
 const authUtils = require('../../auth/authUtils');
 
-describe('The Picture API', () => {
+describe('The Book API', () => {
+  let r;
   const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
   beforeEach(async () => {
     await BookModel.deleteMany({});
@@ -14,78 +13,83 @@ describe('The Picture API', () => {
     await BookModel.create({
       title: 'Best Test Book Ever', type: 'paperback',
     });
-    try {
-      const cb = await request(server)
-        .get('/book/one')
-        .set({
-          origin: allowedUrl,
-        })
-        .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-        .query({ type: 'paperback' });
-      expect(cb.status).toBe(200);
-      expect(cb.body.title).toBe('Best Test Book Ever');
-    } catch (e) { throw e; }
+    r = await request(app)
+      .get('/book/one')
+      .set({
+        origin: allowedUrl,
+      })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .query({ type: 'paperback' });
+    expect(r.status).toBe(200);
+    expect(r.body.title).toBe('Best Test Book Ever');
   });
   it('should not find one book', async () => {
     await BookModel.create({
       title: 'Best Test Book Ever', type: 'paperback',
     });
-    try {
-      const cb = await request(server)
-        .get('/book/one')
-        .set({
-          origin: allowedUrl,
-        })
-        .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-        .query({ type: 'magazine' });
-      expect(cb.status).toBe(400);
-    } catch (e) { throw e; }
-  });
-  it('should catch error on find one book', async () => {
-    await BookModel.create({
-      title: 'Best Test Book Ever', type: 'paperback',
-    });
-    const bMock = sinon.mock(BookModel);
-    bMock.expects('findOne').rejects(new Error('bad'));
-    try {
-      const cb = await request(server)
-        .get('/book/one')
-        .set({
-          origin: allowedUrl,
-        })
-        .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-        .query({ type: 'magazine' });
-      expect(cb.status).toBe(500);
-    } catch (e) { throw e; }
-    bMock.restore();
+    r = await request(app)
+      .get('/book/one')
+      .set({
+        origin: allowedUrl,
+      })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .query({ type: 'magazine' });
+    expect(r.status).toBe(400);
   });
   it('should update one book', async () => {
     await BookModel.create({
       title: 'Best Test Book Ever', type: 'paperback',
     });
-    try {
-      const cb = await request(server)
-        .put('/book/one')
-        .set({
-          origin: allowedUrl,
-        })
-        .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
-        .query({ type: 'paperback' })
-        .send({ title: 'Bad Book' });
-      expect(cb.status).toBe(200);
-      expect(cb.body.title).toBe('Bad Book');
-    } catch (e) { throw e; }
+    r = await request(app)
+      .put('/book/one')
+      .set({
+        origin: allowedUrl,
+      })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .query({ type: 'paperback' })
+      .send({ title: 'Bad Book' });
+    expect(r.status).toBe(200);
+    expect(r.body.title).toBe('Bad Book');
   });
   it('deletes a book by id', async () => {
     const newBook = await BookModel.create({
       title: 'Best Test Book Ever', type: 'paperback',
     });
-    try {
-      const cb = await request(server)
-        .delete(`/book/${newBook._id}`)
-        .set({ origin: allowedUrl })
-        .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
-      expect(cb.status).toBe(200);
-    } catch (e) { throw e; }
+    r = await request(app)
+      .delete(`/book/${newBook._id}`)
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+    expect(r.status).toBe(200);
+  });
+  it('finds the checked out books', async () => {
+    await BookModel.create({
+      title: 'Best Test Book Ever', type: 'paperback', checkedOutBy: '33333',
+    });
+    r = await request(app)
+      .get('/book/findcheckedout/33333')
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+    expect(r.status).toBe(200);
+  });
+  it('updates a book by id', async () => {
+    const newBook = await BookModel.create({
+      title: 'Best Test Book Ever', type: 'paperback', checkedOutBy: '33333',
+    });
+    r = await request(app)
+      .put(`/book/${newBook.id}`)
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .send({ checkedOutBy: '' });
+    expect(r.status).toBe(200);
+  });
+  it('finds the book by id', async () => {
+    const newBook = await BookModel.create({
+      title: 'Best Test Book Ever', type: 'paperback', checkedOutBy: '33333',
+    });
+    r = await request(app)
+      .get(`/book/${newBook._id}`)
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+    expect(r.status).toBe(200);
   });
 });

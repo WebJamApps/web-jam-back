@@ -1,10 +1,10 @@
 {
   "name": "web-jam-back",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=12.10.0"
+    "node": ">=13.0.1"
   },
   "files": [
     "lib/",
@@ -17,22 +17,17 @@
   "scripts": {
     "cc": "codeclimate analyze -f html > codeclimate.html",
     "start:debug": "DEBUG=web-jam-back:* nodemon index.js",
-    "installglobals": "yarn config set registry https://registry.yarnpkg.com -g",
+    "installglobals": "yarn global add npm@latest",
     "postinstall": "./postinstallJaM.sh",
     "dev": "nodemon index.js",
     "build:prod": "(cd JaMmusic || exit; npm start -- build)",
     "start": "node index.js",
-    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && yarn installglobals && yarn install",
+    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && yarn install",
     "node:debug": "node --inspect-brk index.js",
-    "test": "eslint . && rm -rf coverage && npm run test:jest && npm run test:mocha && npm run combine-coverage",
+    "test": "eslint . && rm -rf coverage && npm run test:jest",
     "test:lint": "eslint . --fix",
-    "test:local": "eslint . --fix && yarn test:unit && yarn cc",
-    "test:mocha": "nyc mocha --timeout 6000 --bail -r ./test/mocha/bootstrap.js test/mocha/**/*.js --exit",
-    "test:debug": "./node_modules/.bin/mocha --inspect-brk -r ./test/mocha/bootstrap.js test/mocha/**/*.js",
-    "test:jest": "cross-env NODE_ENV=test && jest --no-cache --config jest.config.json --notify",
-    "test:unit": "rm -rf coverage && yarn test:jest && yarn test:mocha && yarn combine-coverage",
-    "combine-coverage": "istanbul-combine -d coverage -p none -r lcov -r html coverage/mocha/coverage-final.json coverage/jest/coverage-final.json",
-    "snyk-protect": "snyk protect"
+    "test:local": "eslint . --fix && rm -rf coverage && yarn test:jest && yarn cc",
+    "test:jest": "cross-env NODE_ENV=test && jest --no-cache --config jest.config.json --notify --detectOpenHandles --forceExit"
   },
   "repository": {
     "type": "git",
@@ -52,18 +47,13 @@
     "express-sslify": "latest",
     "helmet": "latest",
     "jwt-simple": "latest",
-    "lodash": "latest",
     "moment": "latest",
     "mongoose": "latest",
     "morgan": "latest",
     "nodemon": "latest",
-    "request": "latest",
-    "request-promise": "latest",
-    "snyk": "latest"
+    "superagent": "latest"
   },
   "devDependencies": {
-    "chai": "latest",
-    "chai-http": "latest",
     "eslint": "latest",
     "eslint-config-airbnb": "latest",
     "eslint-plugin-es": "latest",
@@ -74,18 +64,8 @@
     "eslint-plugin-react": "latest",
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-security": "latest",
-    "eslint-plugin-mocha": "latest",
     "jest": "latest",
-    "jest-cli": "latest",
-    "istanbul": "latest",
-    "istanbul-combine": "latest",
-    "mocha": "latest",
-    "nock": "latest",
     "nodemon": "latest",
-    "nyc": "latest",
-    "sinon": "latest",
-    "sinon-mongoose": "latest",
     "supertest": "latest"
-  },
-  "snyk": true
+  }
 }

@@ -6,7 +6,7 @@ const config = require('../config');
 class AuthUtils {
   static createJWT(user) {
     const payload = {
-      sub: user._id, /* eslint-disable-line no-underscore-dangle */
+      sub: user._id,
       iat: moment().unix(),
       exp: moment().add(14, 'days').unix(),
     };
