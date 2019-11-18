@@ -13,10 +13,6 @@ class AuthUtils {
     return jwt.encode(payload, config.hashString);
   }
 
-  static handleError(res, err) {
-    return res.send(400, err);
-  }
-
   static ensureAuthenticated(req, res, next) {
     if (!req.headers.authorization) {
       return res.status(401).send({ message: 'Please make sure your request has an Authorization header' });

@@ -58,7 +58,7 @@ describe('User Router', () => {
       .delete(`/user/${newUser.id}`)
       .set({ origin: allowedUrl })
       .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
-    expect(r.body.message).toBe('User delete was successful');
+    expect(r.body.message).toBe('User was deleted successfully');
     expect(r.status).toBe(200);
   });
   it('allows the user to login with email', async () => {
