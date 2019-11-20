@@ -4,11 +4,13 @@ const userModel = require('./user-facade');
 const google = require('../../auth/google');
 
 class UserController extends Controller {
+  resErr(res, e) { // eslint-disable-line class-methods-use-this
+    return res.status(500).json({ message: e.message });
+  }
+
   async findByEmail(req, res) {
     let user;
-    try {
-      user = await this.model.findOne({ email: req.body.email });
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { user = await this.model.findOne({ email: req.body.email }); } catch (e) { return this.resErr(res, e); }
     if (user === undefined || user === null || user._id === null || user._id === undefined) {
       return res.status(400).json({ message: 'wrong email' });
     }
@@ -16,13 +18,9 @@ class UserController extends Controller {
     return res.status(200).json(user);
   }
 
-  handleAuth(req, res) {
-    return this[req.params.id](req, res);
-  }
+  handleAuth(req, res) { return this[req.params.id](req, res); }
 
-  authFindOneAndUpdate(matcher, update, res) {
-    return this.findOneAndUpdate({ query: matcher, body: update }, res);
-  }
+  authFindOneAndUpdate(matcher, update, res) { return this.findOneAndUpdate({ query: matcher, body: update }, res); }
 
   validateemail(req, res) {
     const update = { resetCode: '', isPswdReset: false, verifiedEmail: true };
@@ -48,9 +46,7 @@ class UserController extends Controller {
     const update = {};
     update.resetCode = '';
     update.isPswdReset = false;
-    try {
-      encrypted = await this.model.encryptPswd(req.body.password);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { encrypted = await this.model.encryptPswd(req.body.password); } catch (e) { return this.resErr(res, e); }
     update.password = encrypted;
     return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
   }
@@ -64,7 +60,7 @@ class UserController extends Controller {
     updateUser.isPswdReset = true;
     try {
       user = await this.model.findOneAndUpdate({ email: req.body.email, verifiedEmail: true }, updateUser);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    } catch (e) { return this.resErr(res, e); }
     if (user === null || user === undefined) return res.status(400).json({ message: 'invalid reset password request' });
     const mailBody = `<h2>A password reset was requested for ${user.name
     }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="`
@@ -88,12 +84,12 @@ class UserController extends Controller {
     try {
       await this.authUtils.checkEmailSyntax(req);
     } catch (e) { return res.status(400).json({ message: e.message }); }
-    try { await this.validateChangeEmail(req); } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { await this.validateChangeEmail(req); } catch (e) { return this.resErr(res, e); }
     updateUser.resetCode = this.authUtils.generateCode(99999, 10000);
     updateUser.changeemail = req.body.changeemail;
     try {
       result = await this.model.findOneAndUpdate({ email: req.body.email }, updateUser);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    } catch (e) { return this.resErr(res, e); }
     const mailBody = `<h2>Email Address Change Request for ${result.name
     }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="${
       process.env.frontURL}/userutil/?changeemail=${updateUser.changeemail}">`
@@ -110,9 +106,7 @@ class UserController extends Controller {
     updateData.isPswdReset = false;
     updateData.resetCode = '';
     updateData.changeemail = '';
-    try {
-      loginUser = await this.model.findByIdAndUpdate(user._id, updateData);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { loginUser = await this.model.findByIdAndUpdate(user._id, updateData); } catch (e) { return this.resErr(res, e); }
     loginUser.password = '';
     const userToken = { token: this.authUtils.createJWT(loginUser), email: loginUser.email };
     return res.status(200).json(userToken);
@@ -123,26 +117,20 @@ class UserController extends Controller {
     const reqUserEmail = this.authUtils.setIfExists(req.body.email);
     const myPassword = this.authUtils.setIfExists(req.body.password);
     if (reqUserEmail === '' || myPassword === '') return res.status(400).json({ message: 'email and password are required' });
-    try {
-      user = await this.model.findOne({ email: reqUserEmail });
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { user = await this.model.findOne({ email: reqUserEmail }); } catch (e) { return this.resErr(res, e); }
     if (user === undefined || user === null || user._id === undefined || user._id === null) {
       fourOone = 'Wrong email address';
     } else if (user.password === '' || user.password === null || user.password === undefined) {
       fourOone = 'Please reset your password';
     } else if (!user.verifiedEmail) fourOone = '<a href="/userutil">Verify</a> your email';
     if (fourOone !== '') return res.status(401).json({ message: fourOone });
-    try {
-      isPW = await this.model.comparePassword(req.body.password, user.password);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { isPW = await this.model.comparePassword(req.body.password, user.password); } catch (e) { return this.resErr(res, e); }
     return this.finishLogin(res, isPW, user);
   }
 
   async finishSignup(res, user, randomNumba) {
     let userSave;
-    try {
-      userSave = await this.model.create(user);
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { userSave = await this.model.create(user); } catch (e) { return this.resErr(res, e); }
     const mailbody = `<h1>Welcome ${userSave.name
     } to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" `
         + `href="${process.env.frontURL}/userutil/?email=${userSave.email}">link</a>, then enter the following code to verify your email:`
@@ -165,16 +153,12 @@ class UserController extends Controller {
     };
     const validData = this.model.validateSignup(user);
     if (validData !== '') return res.status(400).json({ message: validData });
-    try {
-      existingUser = await this.model.findOne({ email: req.body.email });
-    } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { existingUser = await this.model.findOne({ email: req.body.email }); } catch (e) { return this.resErr(res, e); }
     if (existingUser && existingUser.verifiedEmail) {
       return res.status(409).json({ message: 'This email address is already registered' });
     }
     if (existingUser && !existingUser.verifiedEmail) {
-      try {
-        await this.model.findByIdAndRemove(existingUser._id);
-      } catch (e) { return res.status(500).json({ message: e.message }); }
+      try { await this.model.findByIdAndRemove(existingUser._id); } catch (e) { return this.resErr(res, e); }
     }
     return this.finishSignup(res, user, randomNumba);
   }
@@ -182,17 +166,14 @@ class UserController extends Controller {
   async google(req, res) {
     debug(req.body);
     let newUser, existingUser, profile;
-    try { profile = await google.authenticate(req); } catch (e) {
-      debug(e.message);
-      return res.status(500).json({ message: e.message });
-    }
+    try { profile = await google.authenticate(req); } catch (e) { return this.resErr(res, e); }
     // Step 3. Create a new user account or return an existing one.
     const update = {};
     update.password = '';
     update.name = profile.names[0].displayName; // force the name of the user to be the name from google account
     update.verifiedEmail = true;
     try { existingUser = await this.model.findOneAndUpdate({ email: profile.emailAddresses[0].value }, update); } catch (e) {
-      return res.status(500).json({ message: e.message });
+      return this.resErr(res, e);
     }
     if (existingUser) return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
     const user = {};
@@ -200,7 +181,7 @@ class UserController extends Controller {
     user.email = profile.emailAddresses[0].value;
     user.isOhafUser = req.body.isOhafUser;
     user.verifiedEmail = true;
-    try { newUser = await this.model.create(user); } catch (e) { return res.status(500).json({ message: e.message }); }
+    try { newUser = await this.model.create(user); } catch (e) { return this.resErr(res, e); }
     newUser.password = '';
     return res.status(201).json({ email: newUser.email, token: this.authUtils.createJWT(newUser) });
   }
