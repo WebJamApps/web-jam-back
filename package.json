@@ -51,7 +51,8 @@
     "mongoose": "latest",
     "morgan": "latest",
     "nodemon": "latest",
-    "superagent": "latest"
+    "superagent": "latest",
+    "typescript": "latest"
   },
   "devDependencies": {
     "eslint": "latest",
