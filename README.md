@@ -9,7 +9,7 @@
 <p>This repository is used for the following apps:</p>
 <ui>
 <li><a href="https://www.web-jam.com">Web Jam LLC</a></li>
-<li><a href="http://www.ourhandsandfeet.org">ourhandsandfeet.org</a></li>
+<li><a href="https://www.collegelutheran.org">collegelutheran.org</a></li>
   <li><a href="http://joshandmariamusic.com">joshandmariamusic.com</a></li>
 </ul>
 <h3>Install</h3>
