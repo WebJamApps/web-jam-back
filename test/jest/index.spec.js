@@ -32,4 +32,8 @@ describe('Index test', () => {
       .set('authorization', 'Bearer ');
     expect(r.status).toBe(500);
   });
+  it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
+    const delay = (ms) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
+    await delay(4000);
+  });
 });

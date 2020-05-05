@@ -44,7 +44,7 @@ describe('User Router', () => {
     expect(r.status).toBe(200);
   });
   it('updates a user', async () => {
-    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com' });
+    const newUser = await user.create({ name: 'foo1', email: 'foo3@example.com' });
     r = await request(app)
       .put(`/user/${newUser._id}`)
       .set({ origin: allowedUrl })
@@ -53,7 +53,7 @@ describe('User Router', () => {
     expect(r.status).toBe(200);
   });
   it('deletes a user', async () => {
-    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com' });
+    const newUser = await user.create({ name: 'foo2', email: 'foo3@example.com' });
     r = await request(app)
       .delete(`/user/${newUser.id}`)
       .set({ origin: allowedUrl })
