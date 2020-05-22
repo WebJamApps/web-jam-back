@@ -24,7 +24,7 @@ jobs:
             rm google-chrome.deb
       - run:
           name:        Test install
-          command:     'yarn install'
+          command:     'yarn install --frozen-lockfile'
       - run:
           name:        run all tests
           command:     |
