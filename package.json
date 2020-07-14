@@ -26,9 +26,9 @@
     "start": "node build/index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && yarn install",
     "node:debug": "node --inspect-brk index.js",
-    "test": "eslint . && rm -rf coverage && npm run test:jest",
+    "test": "eslint ./src && rm -rf coverage && npm run test:jest",
     "test:lint": "eslint ./src --fix",
-    "test:local": "eslint . --fix && rm -rf coverage && yarn test:jest && yarn cc",
+    "test:local": "yarn test:lint && rm -rf coverage && yarn test:jest && yarn cc",
     "test:jest": "jest --no-cache --config jest.config.json --runInBand --detectOpenHandles --forceExit"
   },
   "repository": {
