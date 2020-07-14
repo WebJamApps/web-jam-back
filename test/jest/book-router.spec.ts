@@ -1,11 +1,11 @@
-const request = require('supertest');
-const app = require('../../index');
-const BookModel = require('../../model/book/book-facade');
-const authUtils = require('../../auth/authUtils');
+import request from 'supertest';
+import app from '../../src/index';
+import BookModel from '../../src/model/book/book-facade';
+import authUtils from '../../src/auth/authUtils';
 
 describe('The Book API', () => {
   let r;
-  const allowedUrl = JSON.parse(process.env.AllowUrl).urls[0];
+  const allowedUrl = JSON.parse(process.env.AllowUrl || "{}").urls[0];
   beforeEach(async () => {
     await BookModel.deleteMany({});
   });

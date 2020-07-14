@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const userFacade = require('../../../model/user/user-facade');
+const userFacade = require('../../../src/model/user/user-facade');
 
 describe('user-facade', () => {
   let r;

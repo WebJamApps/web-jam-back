@@ -1,10 +1,10 @@
-const EventEmitter = require('events');
-const jwt = require('jwt-simple');
-const moment = require('moment');
-const AuthUtils = require('../../auth/authUtils');
-const config = require('../../config');
+import EventEmitter from 'events';
+import jwt from 'jwt-simple';
+import moment from 'moment';
+import AuthUtils from '../../src/auth/authUtils';
+import config from '../../src/config';
 
-EventEmitter.defaultMaxListeners = Infinity;
+//EventEmitter.defaultMaxListeners = Infinity;
 describe('the authUtils', () => {
   it('validates email syntax', async () => {
     const cb = await AuthUtils.checkEmailSyntax({ body: { changeemail: 'j@jb.com' } });
@@ -17,7 +17,7 @@ describe('the authUtils', () => {
     const user = { _id: 'someid' };
     const payload = AuthUtils.createJWT(user);
     expect(payload).toBeDefined();
-    const decoded = jwt.decode(payload, config.hashString);
+    const decoded = jwt.decode(payload, config.hashString || '');
     expect(decoded.sub).toBe(user._id);
   });
   it('returns 401 without authorization', () => new Promise((done) => {
@@ -50,9 +50,9 @@ describe('the authUtils', () => {
     };
     AuthUtils.ensureAuthenticated(req, res);
   }));
-  it('should 401 when exp <= moment().unix()', () => new Promise((done) => {
+  it('should 401 when exp <= moment().unix()', () => {
     const payload = { exp: moment().unix() };
-    const auth = jwt.encode(payload, config.hashString);
+    const auth = jwt.encode(payload, config.hashString || '');
     const req = { headers: { authorization: `Bearer ${auth}` } };
     const res = {
       status(num) {
@@ -60,11 +60,10 @@ describe('the authUtils', () => {
         return {
           send({ message }) {
             expect(message.includes('expired')).toBe(true);
-            done();
           },
         };
       },
     };
     AuthUtils.ensureAuthenticated(req, res);
-  }));
+  });
 });

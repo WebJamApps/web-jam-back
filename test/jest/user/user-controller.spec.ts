@@ -1,5 +1,5 @@
-const superagent = require('superagent');
-const controller = require('../../../model/user/user-controller');
+import superagent from 'superagent';
+import controller from '../../../src/model/user/user-controller';
 
 describe('User Controller', () => {
   let r;
