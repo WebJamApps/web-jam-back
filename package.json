@@ -15,19 +15,21 @@
   ],
   "license": "MIT",
   "scripts": {
+    "rmrf": "rm -rf build && rm -rf JaMmusic && rm -rf coverage",
+    "ts-start": "concurrently \"yarn start:debug\" \"tsc -w\"",
     "cc": "codeclimate analyze -f html > codeclimate.html",
-    "start:debug": "DEBUG=web-jam-back:* nodemon index.js",
+    "start:debug": "DEBUG=web-jam-back:* nodemon build/index.js",
     "installglobals": "yarn global add npm@latest",
-    "postinstall": "./postinstallJaM.sh",
-    "dev": "nodemon index.js",
+    "build:front": "./postinstallJaM.sh && rm -rf ./JaMmusic/src && rm -rf ./JaMmusic/test",
+    "postinstall": "yarn rmrf && tsc && yarn build:front",
     "build:prod": "(cd JaMmusic || exit; npm start -- build)",
-    "start": "node index.js",
+    "start": "node build/index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && yarn install",
     "node:debug": "node --inspect-brk index.js",
     "test": "eslint . && rm -rf coverage && npm run test:jest",
-    "test:lint": "eslint . --fix",
+    "test:lint": "eslint ./src --fix",
     "test:local": "eslint . --fix && rm -rf coverage && yarn test:jest && yarn cc",
-    "test:jest": "cross-env NODE_ENV=test && jest --no-cache --config jest.config.json --notify --detectOpenHandles --forceExit"
+    "test:jest": "jest --no-cache --config jest.config.json --runInBand --detectOpenHandles --forceExit"
   },
   "repository": {
     "type": "git",
@@ -36,11 +38,19 @@
   "author": "HandlersAndKickers <>",
   "dependencies": {
     "@sendgrid/mail": "latest",
+    "@types/cors": "^2.8.6",
+    "@types/express": "^4.17.7",
+    "@types/express-sslify": "^1.2.1",
+    "@types/helmet": "^0.0.47",
+    "@types/mongoose": "^5.7.31",
+    "@types/morgan": "^1.9.1",
     "bcryptjs": "latest",
     "bluebird": "latest",
     "body-parser": "latest",
-    "cross-env": "latest",
+    "concurrently": "^5.2.0",
     "cors": "latest",
+    "cross-env": "latest",
+    "csvtojson": "^2.0.10",
     "debug": "latest",
     "dotenv": "latest",
     "express": "latest",
@@ -55,6 +65,7 @@
     "typescript": "latest"
   },
   "devDependencies": {
+    "@types/jest": "^26.0.4",
     "eslint": "latest",
     "eslint-config-airbnb": "latest",
     "eslint-plugin-es": "latest",
@@ -67,6 +78,7 @@
     "eslint-plugin-security": "latest",
     "jest": "latest",
     "nodemon": "latest",
-    "supertest": "latest"
+    "supertest": "latest",
+    "ts-jest": "^26.1.2"
   }
 }

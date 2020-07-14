@@ -1,9 +1,10 @@
 const dotenv = require('dotenv');
-const fs = require('fs');
-// ignoring this for testing because it is only used for development purposes
-/* istanbul ignore next */
-if (fs.existsSync('./.env')) dotenv.config();
-
+// const fs = require('fs');
+// // ignoring this for testing because it is only used for development purposes
+// /* istanbul ignore next */
+// if (fs.existsSync('../.env')) 
+const result = dotenv.config();
+if (result.error) { throw result.error; }
 const config = {
   environment: process.env.NODE_ENV,
   server: {

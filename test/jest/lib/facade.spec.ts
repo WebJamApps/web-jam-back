@@ -1,4 +1,4 @@
-const Facade = require('../../../lib/facade');
+const Facade = require('../../../src/lib/facade');
 
 describe('lib facade', () => {
   let facade;

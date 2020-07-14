@@ -166,7 +166,7 @@ class UserController extends Controller {
   async google(req, res) {
     debug(req.body);
     let newUser, existingUser, profile;
-    try { profile = await google.authenticate(req); } catch (e) { return this.resErr(res, e); }
+    try { profile = await google.authenticate(req); } catch (e) { debug(e.message); return this.resErr(res, e); }
     // Step 3. Create a new user account or return an existing one.
     const update = {};
     update.password = '';

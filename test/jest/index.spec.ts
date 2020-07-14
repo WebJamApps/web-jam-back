@@ -1,8 +1,8 @@
 require('dotenv').config();
-const request = require('supertest');
-const app = require('../../index');
+import request from 'supertest';
+import app from '../../src/index';
 
-const AllowUrl = JSON.parse(process.env.AllowUrl);
+const AllowUrl = JSON.parse(process.env.AllowUrl || '{}');
 
 describe('Index test', () => {
   let allowedUrl, r, server, agent;

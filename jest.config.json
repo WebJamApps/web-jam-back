@@ -1,11 +1,24 @@
 {
   "resetMocks": true,
+  "notify": true,
   "verbose": true,
   "bail": true,
-  "testPathIgnorePatterns": ["/node_modules/", "/test/mocha", "/frontend", "/JaMmusic", "/WebJamShop", "/model"],
+  "testPathIgnorePatterns": ["/node_modules/", "/build", "/JaMmusic"],
+  "collectCoverageFrom": [
+    "src/**/*.{js,jsx,ts,tsx}"
+  ],
   "collectCoverage": true,
   "testEnvironment": "node",
   "testURL": "http://localhost/",
-  "testRegex": "./test/jest/.*.js$",
-  "roots": ["<rootDir>/test/jest/"]
+  "roots": ["<rootDir>/test/jest/"],
+  "moduleFileExtensions": [
+    "js",
+    "json",
+    "jsx",
+    "ts",
+    "tsx"
+  ],
+  "transform": {
+    "^.+\\.tsx?$": "ts-jest"
+  }
 }

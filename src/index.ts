@@ -1,18 +1,21 @@
-const path = require('path');
+import path from 'path';
+import dotenv from 'dotenv';
 const debug = require('debug')('web-jam-back:index');
-const express = require('express');
-const mongoose = require('mongoose');
-const helmet = require('helmet');
-const bodyParser = require('body-parser');
-const morgan = require('morgan');
-const bluebird = require('bluebird');
-const cors = require('cors');
-const enforce = require('express-sslify');
+import express from 'express';
+import mongoose from 'mongoose';
+import helmet from 'helmet';
+import bodyParser from 'body-parser';
+import morgan from 'morgan';
+import readCsv from './ReadCSV'
+//import bluebird from 'bluebird';
+import cors from 'cors';
+import enforce from 'express-sslify';
 const config = require('./config');
 const routes = require('./routes');
 
+dotenv.config();
 const corsOptions = {
-  origin: JSON.parse(process.env.AllowUrl).urls,
+  origin: JSON.parse(process.env.AllowUrl || "{}").urls,
   credentials: true,
   optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
@@ -20,10 +23,10 @@ const app = express();
 
 /* istanbul ignore next */
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
-app.use(express.static(path.normalize(path.join(__dirname, 'JaMmusic/dist'))));
+app.use(express.static(path.normalize(path.join(__dirname, '../JaMmusic/dist'))));
 app.use(cors(corsOptions));
-mongoose.Promise = bluebird;
-let mongoDbUri = process.env.MONGO_DB_URI;
+// mongoose.Promise = bluebird;
+let mongoDbUri: any = process.env.MONGO_DB_URI;
 /* istanbul ignore else */
 if (process.env.NODE_ENV === 'test') mongoDbUri = 'mongodb://testerOfTheYear:wj-te5ter!@ds115283.mlab.com:15283/web-jam-test';
 mongoose.connect(mongoDbUri, {
@@ -35,18 +38,17 @@ app.use(bodyParser.json());
 app.use(morgan('tiny'));
 routes(app);
 app.get('*', (req, res) => {
-  res.sendFile(path.normalize(path.join(__dirname, 'JaMmusic/dist/index.html')));
+  res.sendFile(path.normalize(path.join(__dirname, '../JaMmusic/dist/index.html')));
 });
-app.use((err, req, res) => {
+app.use((err: any, req, res: any) => {
   res.status(err.status || 500)
     .json({ message: err.message, error: err });
 });
-
+readCsv();
 /* istanbul ignore if */if (process.env.NODE_ENV !== 'test') {
   app.listen(config.server.port, () => {
     debug('running in debug mode');
     console.log(`Magic happens on port ${config.server.port}`); // eslint-disable-line no-console
   });
 }
-
-module.exports = app;
+export default app;

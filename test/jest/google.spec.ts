@@ -1,5 +1,5 @@
 const superagent = require('superagent');
-const google = require('../../auth/google');
+const google = require('../../src/auth/google');
 
 describe('The Unit Test for Google Module', () => {
   it('authenticates returns a 401 error', async () => {
