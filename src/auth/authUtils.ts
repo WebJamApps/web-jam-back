@@ -1,7 +1,7 @@
-const moment = require('moment');
-const jwt = require('jwt-simple');
-const sgMail = require('@sendgrid/mail');
-const config = require('../config');
+import moment from 'moment';
+import jwt from 'jwt-simple';
+import sgMail from '@sendgrid/mail';
+import config from '../config';
 
 class AuthUtils {
   static createJWT(user) {
@@ -10,7 +10,7 @@ class AuthUtils {
       iat: moment().unix(),
       exp: moment().add(14, 'days').unix(),
     };
-    return jwt.encode(payload, config.hashString);
+    return jwt.encode(payload, config.hashString || '');
   }
 
   static ensureAuthenticated(req, res, next) {
@@ -18,9 +18,9 @@ class AuthUtils {
       return res.status(401).send({ message: 'Please make sure your request has an Authorization header' });
     }
     const token = req.headers.authorization.split(' ')[1];
-    let payload = null;
+    let payload = { sub: '' };
     try {
-      payload = jwt.decode(token, config.hashString);
+      payload = jwt.decode(token, config.hashString || '');
     } catch (err) {
       return res.status(401).send({ message: err.message });
     }
@@ -29,7 +29,7 @@ class AuthUtils {
   }
 
   static sendGridEmail(bodyhtml, toemail, subjectline) {
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY || '');
     const msg = {
       to: toemail,
       from: 'user-service@web-jam.com',

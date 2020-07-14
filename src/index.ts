@@ -1,5 +1,6 @@
 import path from 'path';
 import dotenv from 'dotenv';
+dotenv.config();
 const debug = require('debug')('web-jam-back:index');
 import express from 'express';
 import mongoose from 'mongoose';
@@ -7,13 +8,11 @@ import helmet from 'helmet';
 import bodyParser from 'body-parser';
 import morgan from 'morgan';
 import readCsv from './ReadCSV'
-//import bluebird from 'bluebird';
 import cors from 'cors';
 import enforce from 'express-sslify';
-const config = require('./config');
-const routes = require('./routes');
+import config from './config';
+import routes from './routes';
 
-dotenv.config();
 const corsOptions = {
   origin: JSON.parse(process.env.AllowUrl || "{}").urls,
   credentials: true,
