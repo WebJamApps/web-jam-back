@@ -10,4 +10,4 @@ const config = {
   frontURL: process.env.frontURL,
 };
 
-module.exports = config;
+export default config;

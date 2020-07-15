@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
 
@@ -10,4 +10,4 @@ const songSchema = new Schema({
   performer: { type: String, required: true },
 });
 
-module.exports = mongoose.model('Song', songSchema);
+export default mongoose.model('Song', songSchema);

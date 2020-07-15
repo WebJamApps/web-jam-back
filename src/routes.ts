@@ -1,13 +1,15 @@
-const router = require('express').Router();
-const user = require('./model/user/user-router');
-const book = require('./model/book/book-router');
-const inquiry = require('./model/inquiry');
+import express from 'express';
+import user from './model/user/user-router';
+import book from './model/book/book-router';
+import inquiry from './model/inquiry';
 // const charity = require('./model/charity/charity-router');
 // const volOpp = require('./model/volOpp/volOpp-router');
-const song = require('./model/song/song-router');
+import song from './model/song/song-router';
+
+const router = express.Router();
 // const authUtils = require('./auth/authUtils');
 
-module.exports = function route(app) {
+export default function route(app) {
   app.use(router);
   router.use('/user', user);
   router.use('/book', book);
@@ -15,4 +17,4 @@ module.exports = function route(app) {
   router.use('/inquiry', inquiry);
   // router.use('/charity', authUtils.ensureAuthenticated, charity);
   // router.use('/volopp', authUtils.ensureAuthenticated, volOpp);
-};
+}

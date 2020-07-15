@@ -1,8 +1,15 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
+import AuthUtils from '../auth/authUtils';
+
 const debug = require('debug')('web-jam-back:lib/controller');
-const AuthUtils = require('../auth/authUtils');
 
 class Controller {
+  model: any;
+
+  authUtils: any;
+
+  userRoles: any;
+
   constructor(model) {
     this.model = model;
     this.authUtils = AuthUtils;
@@ -81,4 +88,4 @@ class Controller {
   }
 }
 
-module.exports = Controller;
+export default Controller;

@@ -1,20 +1,21 @@
 import path from 'path';
 import dotenv from 'dotenv';
-dotenv.config();
-const debug = require('debug')('web-jam-back:index');
 import express from 'express';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
 import bodyParser from 'body-parser';
 import morgan from 'morgan';
-import readCsv from './ReadCSV'
 import cors from 'cors';
 import enforce from 'express-sslify';
+import readCsv from './ReadCSV';
 import config from './config';
 import routes from './routes';
 
+dotenv.config();
+const debug = require('debug')('web-jam-back:index');
+
 const corsOptions = {
-  origin: JSON.parse(process.env.AllowUrl || "{}").urls,
+  origin: JSON.parse(process.env.AllowUrl || '{}').urls,
   credentials: true,
   optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };

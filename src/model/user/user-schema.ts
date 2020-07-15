@@ -1,7 +1,7 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 
 const { Schema } = mongoose;
-const bcrypt = require('bcryptjs');
 
 const userSchema = new Schema({
   name: { type: String, required: true },
@@ -30,8 +30,9 @@ const userSchema = new Schema({
 });
 
 userSchema.pre('save', function pwEcrypt(next) {
-  const user = this;
-  if (!user.isModified('password') || user.password === '') {
+  // eslint-disable-next-line @typescript-eslint/no-this-alias
+  const user:any = this;
+  if (!this.isModified('password') || user.password === '') {
     return next();
   }
   return bcrypt.genSalt(10, (err, salt) => {
@@ -42,4 +43,4 @@ userSchema.pre('save', function pwEcrypt(next) {
   });
 });
 
-module.exports = mongoose.model('User', userSchema);
+export default mongoose.model('User', userSchema);

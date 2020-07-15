@@ -1,6 +1,6 @@
-const bcrypt = require('bcryptjs');
-const Model = require('../../lib/facade');
-const userSchema = require('./user-schema');
+import bcrypt from 'bcryptjs';
+import Model from '../../lib/facade';
+import userSchema from './user-schema';
 
 class UserModel extends Model {
   validateSignup(obj) { // eslint-disable-line class-methods-use-this
@@ -34,4 +34,4 @@ class UserModel extends Model {
     return Promise.resolve(hash);
   }
 }
-module.exports = new UserModel(userSchema);
+export default new UserModel(userSchema);

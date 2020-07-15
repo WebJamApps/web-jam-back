@@ -1,9 +1,17 @@
+import Controller from '../../lib/controller';
+import userModel from './user-facade';
+import authGoogle from '../../auth/google';
+
 const debug = require('debug')('web-jam-back:user-controller');
-const Controller = require('../../lib/controller');
-const userModel = require('./user-facade');
-const google = require('../../auth/google');
 
 class UserController extends Controller {
+  authGoogle: any;
+
+  constructor(userModel) {
+    super(userModel);
+    this.authGoogle = authGoogle;
+  }
+
   resErr(res, e) { // eslint-disable-line class-methods-use-this
     return res.status(500).json({ message: e.message });
   }
@@ -28,8 +36,8 @@ class UserController extends Controller {
   }
 
   updateemail(req, res) { // validate with pin then change the email address
-    const update = {};
-    const matcher = { email: req.body.email };
+    const update: any = {};
+    const matcher: any = { email: req.body.email };
     matcher.resetCode = req.body.resetCode;
     matcher.changeemail = req.body.changeemail;
     update.resetCode = '';
@@ -43,7 +51,7 @@ class UserController extends Controller {
       return res.status(400).json({ message: 'Password is not min 8 characters' });
     }
     let encrypted;
-    const update = {};
+    const update: any = {};
     update.resetCode = '';
     update.isPswdReset = false;
     try { encrypted = await this.model.encryptPswd(req.body.password); } catch (e) { return this.resErr(res, e); }
@@ -54,7 +62,7 @@ class UserController extends Controller {
   async resetpswd(req, res) { // initial request to reset password
     debug('resetpswd');
     let user;
-    const updateUser = {};
+    const updateUser: any = {};
     const randomNumba = this.authUtils.generateCode(99999, 10000);
     updateUser.resetCode = randomNumba;
     updateUser.isPswdReset = true;
@@ -64,9 +72,9 @@ class UserController extends Controller {
     if (user === null || user === undefined) return res.status(400).json({ message: 'invalid reset password request' });
     const mailBody = `<h2>A password reset was requested for ${user.name
     }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="`
-        + `${process.env.frontURL}/userutil/?email=${user.email}&form=reset">`
-        + `link</a>, then enter the following code to reset your password: <br><br><strong>${
-          randomNumba}</strong></p><p><i>If a reset was requested in error, you can ignore this email and login to web-jam.com as usual.</i></p>`;
+      + `${process.env.frontURL}/userutil/?email=${user.email}&form=reset">`
+      + `link</a>, then enter the following code to reset your password: <br><br><strong>${
+        randomNumba}</strong></p><p><i>If a reset was requested in error, you can ignore this email and login to web-jam.com as usual.</i></p>`;
     this.authUtils.sendGridEmail(mailBody, user.email, 'Password Reset');
     return res.status(200).json({ email: user.email });
   }
@@ -80,7 +88,7 @@ class UserController extends Controller {
 
   async changeemail(req, res) {
     let result;
-    const updateUser = {};
+    const updateUser: any = {};
     try {
       await this.authUtils.checkEmailSyntax(req);
     } catch (e) { return res.status(400).json({ message: e.message }); }
@@ -93,15 +101,15 @@ class UserController extends Controller {
     const mailBody = `<h2>Email Address Change Request for ${result.name
     }.</h2><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" href="${
       process.env.frontURL}/userutil/?changeemail=${updateUser.changeemail}">`
-          + `link</a>, then enter the following code to validate this new email: <br><br><strong>${
-            updateUser.resetCode}</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>`;
+      + `link</a>, then enter the following code to validate this new email: <br><br><strong>${
+        updateUser.resetCode}</strong></p><p><i>If this email change was requested in error, you can ignore it and login as usual.</i></p>`;
     this.authUtils.sendGridEmail(mailBody, updateUser.changeemail, 'Web Jam LLC User Account - Email Change Request');
     return res.status(200).json({ success: true });
   }
 
   async finishLogin(res, isPW, user) {
     let loginUser;
-    const updateData = {};
+    const updateData: any = {};
     if (!isPW) return res.status(401).json({ message: 'Wrong password' });
     updateData.isPswdReset = false;
     updateData.resetCode = '';
@@ -133,8 +141,8 @@ class UserController extends Controller {
     try { userSave = await this.model.create(user); } catch (e) { return this.resErr(res, e); }
     const mailbody = `<h1>Welcome ${userSave.name
     } to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" `
-        + `href="${process.env.frontURL}/userutil/?email=${userSave.email}">link</a>, then enter the following code to verify your email:`
-        + `<br><br><strong>${randomNumba}</strong></p>`;
+      + `href="${process.env.frontURL}/userutil/?email=${userSave.email}">link</a>, then enter the following code to verify your email:`
+      + `<br><br><strong>${randomNumba}</strong></p>`;
     this.authUtils.sendGridEmail(mailbody, userSave.email, 'Verify Your Email Address');
     userSave.password = '';
     return res.status(201).json(userSave);
@@ -166,9 +174,9 @@ class UserController extends Controller {
   async google(req, res) {
     debug(req.body);
     let newUser, existingUser, profile;
-    try { profile = await google.authenticate(req); } catch (e) { debug(e.message); return this.resErr(res, e); }
+    try { profile = await this.authGoogle.authenticate(req); } catch (e) { debug(e.message); return this.resErr(res, e); }
     // Step 3. Create a new user account or return an existing one.
-    const update = {};
+    const update: any = {};
     update.password = '';
     update.name = profile.names[0].displayName; // force the name of the user to be the name from google account
     update.verifiedEmail = true;
@@ -176,7 +184,7 @@ class UserController extends Controller {
       return this.resErr(res, e);
     }
     if (existingUser) return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
-    const user = {};
+    const user: any = {};
     user.name = profile.names[0].displayName;
     user.email = profile.emailAddresses[0].value;
     user.isOhafUser = req.body.isOhafUser;
@@ -186,4 +194,4 @@ class UserController extends Controller {
     return res.status(201).json({ email: newUser.email, token: this.authUtils.createJWT(newUser) });
   }
 }
-module.exports = new UserController(userModel);
+export default new UserController(userModel);

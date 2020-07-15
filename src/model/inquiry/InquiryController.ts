@@ -1,7 +1,10 @@
+import sgMail from '@sendgrid/mail';
+
 const debug = require('debug')('web-jam-back:InquiryController');
-const sgMail = require('@sendgrid/mail');
 
 class InquiryController {
+  sgMail: any;
+
   constructor() {
     this.sgMail = sgMail;
   }
@@ -25,4 +28,4 @@ class InquiryController {
     return this.sendGridEmail(JSON.stringify(req.body), 'web.jam.adm@gmail.com', 'inquiry', res);
   }
 }
-module.exports = InquiryController;
+export default InquiryController;

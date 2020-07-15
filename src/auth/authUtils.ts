@@ -1,7 +1,7 @@
-const moment = require('moment');
-const jwt = require('jwt-simple');
-const sgMail = require('@sendgrid/mail');
-const config = require('../config');
+import moment from 'moment';
+import jwt from 'jwt-simple';
+import sgMail from '@sendgrid/mail';
+import config from '../config';
 
 class AuthUtils {
   static createJWT(user) {
@@ -62,4 +62,4 @@ class AuthUtils {
   }
 }
 
-module.exports = AuthUtils;
+export default AuthUtils;

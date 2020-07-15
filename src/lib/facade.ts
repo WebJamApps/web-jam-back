@@ -1,5 +1,7 @@
 class Facade {
-  constructor(Schema) {
+  Schema:any;
+
+  constructor(Schema: any) {
     this.Schema = Schema;
   }
 
@@ -32,4 +34,4 @@ class Facade {
   findByIdAndRemove(id) { return this.Schema.findByIdAndRemove(id).lean().exec(); }
 }
 
-module.exports = Facade;
+export default Facade;

@@ -1,10 +1,11 @@
-const superagent = require('superagent');
+import superagent from 'superagent';
+
 const debug = require('debug')('web-jam-back:auth/google');
 
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';
 const peopleApiUrl = 'https://people.googleapis.com/v1/people/me?personFields=names%2CemailAddresses';
 
-exports.authenticate = async function authenticate(req) {
+async function authenticate(req: { body: { redirectUri: any; code: any; clientId: any; }; }) {
   let reUri = req.body.redirectUri, token, profile;
   if (reUri && reUri.includes('localhost')) {
     reUri = reUri.replace('https', 'http');
@@ -30,4 +31,6 @@ exports.authenticate = async function authenticate(req) {
     return Promise.reject(new Error('failed to retrieve user profile from Google'));
   }
   return Promise.resolve(profile.body);
-};
+}
+
+export default authenticate;

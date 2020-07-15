@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const options = {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
@@ -23,4 +23,4 @@ const bookSchema = new Schema({
   checkedOutByName: { type: String, required: false },
 }, options);
 
-module.exports = mongoose.model('Book', bookSchema);
+export default mongoose.model('Book', bookSchema);

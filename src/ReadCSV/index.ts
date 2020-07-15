@@ -1,5 +1,6 @@
 import fs from 'fs';
 import csvtojson from 'csvtojson';
+
 let soccerMatches: any[] = [];
 
 function manUnitedWins() {
@@ -10,7 +11,7 @@ function manUnitedWins() {
   }
   let manUnitedWins = 0;
 
-  for (let match of soccerMatches) {
+  for (const match of soccerMatches) {
     if (match.homeTeam === 'Man United' && match.winner === MatchResult.HomeWin) {
       manUnitedWins++;
     } else if (match.awayTeam === 'Man United' && match.winner === MatchResult.AwayWin) {
@@ -24,10 +25,10 @@ const readCsv = async () => {
   console.log('readCsv');
   soccerMatches = await csvtojson({
     noheader: true,
-    headers: ['data', 'homeTeam', 'awayTeam', 'homeScore', 'awayScore', 'winner', 'mvp']
+    headers: ['data', 'homeTeam', 'awayTeam', 'homeScore', 'awayScore', 'winner', 'mvp'],
   })
     .fromFile('./src/ReadCSV/football.csv');
-  //console.log(soccerMatches);
+  // console.log(soccerMatches);
   console.log(manUnitedWins());
 };
 
