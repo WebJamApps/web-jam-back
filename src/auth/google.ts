@@ -2,7 +2,6 @@ import superagent from 'superagent';
 import Debug from 'debug';
 
 const debug = Debug('web-jam-back:auth/google');
-// const debug = require('debug')('web-jam-back:auth/google');
 
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';
 const peopleApiUrl = 'https://people.googleapis.com/v1/people/me?personFields=names%2CemailAddresses';
@@ -35,4 +34,4 @@ async function authenticate(req: { body: { redirectUri: any; code: any; clientId
   return Promise.resolve(profile.body);
 }
 
-export default authenticate;
+export default { authenticate };

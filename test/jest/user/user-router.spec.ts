@@ -79,7 +79,8 @@ describe('User Router', () => {
     expect(r.status).toBe(201);
   });
   it('authenticates with google', async () => {
-    google.authenticate = jest.fn(() => Promise.resolve({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] }));
+    const g: any = google;
+    g.authenticate = jest.fn(() => Promise.resolve({ names: [{ displayName: 'Josh' }], emailAddresses: [{ value: 'j@js.com' }] }));
     r = await request(app)
       .post('/user/auth/google')
       .set({ origin: allowedUrl })
@@ -174,7 +175,8 @@ describe('User Router', () => {
     await expect(controller.validateChangeEmail({ body: { email: 'yo@yo.com' } })).rejects.toThrow('Email address already exists');
   });
   it('catches a error on create new user after google authenticate', async () => {
-    google.authenticate = jest.fn(() => Promise.resolve({ emailAddresses: [{ value: 'jb@yo.com' }], names: [{ displayName: 'jb' }] }));
+    const g: any = google;
+    g.authenticate = jest.fn(() => Promise.resolve({ emailAddresses: [{ value: 'jb@yo.com' }], names: [{ displayName: 'jb' }] }));
     controller.model.findOneAndUpdate = jest.fn(() => Promise.resolve());
     const resStub = { status: () => ({ json: () => Promise.resolve(false) }) };
     controller.model.findOne = jest.fn(() => Promise.resolve({}));
