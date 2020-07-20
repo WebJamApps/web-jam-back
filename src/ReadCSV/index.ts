@@ -13,4 +13,5 @@ interface IReadCSV {
   homeScore: number;
   awayScore: number;
 }
+export default ReadCSV;
 
