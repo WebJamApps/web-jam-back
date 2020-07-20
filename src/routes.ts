@@ -9,7 +9,7 @@ import song from './model/song/song-router';
 const router = express.Router();
 // const authUtils = require('./auth/authUtils');
 
-export default function route(app) {
+export default function route(app): void {
   app.use(router);
   router.use('/user', user);
   router.use('/book', book);

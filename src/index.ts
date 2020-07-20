@@ -16,7 +16,7 @@ const debug = Debug('web-jam-back:index');
 dotenv.config();
 
 const corsOptions = {
-  origin: JSON.parse(process.env.AllowUrl || '{}').urls,
+  origin: JSON.parse(process.env.AllowUrl || /* istanbul ignore next */'{}').urls,
   credentials: true,
   optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
 };

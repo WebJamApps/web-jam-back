@@ -1,6 +1,5 @@
-require('dotenv').config();
 import request from 'supertest';
-import app from '../../src/index';
+import app from '../src/index';
 
 const AllowUrl = JSON.parse(process.env.AllowUrl || '{}');
 
@@ -21,6 +20,13 @@ describe('Index test', () => {
   it('should return status 200 when use -> app.get', async () => {
     r = await agent
       .get('/anyrul')
+      .set({ origin: allowedUrl })
+      .set('authorization', 'Bearer ');
+    expect(r.status).toBe(200);
+  });
+  it('should return status 200 when use -> app.get at root', async () => {
+    r = await agent
+      .get('/')
       .set({ origin: allowedUrl })
       .set('authorization', 'Bearer ');
     expect(r.status).toBe(200);

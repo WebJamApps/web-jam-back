@@ -32,7 +32,6 @@ const readCsv = async (): Promise<string> => {
     })
       .fromFile('./src/ReadCSV/football.csv');
   } catch (e) { return `${e.message}`; }
-  // console.log(manUnitedWins());
   return manUnitedWins();
 };
 
