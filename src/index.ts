@@ -7,12 +7,13 @@ import bodyParser from 'body-parser';
 import morgan from 'morgan';
 import cors from 'cors';
 import enforce from 'express-sslify';
+import Debug from 'debug';
 import readCsv from './ReadCSV';
 import config from './config';
 import routes from './routes';
 
+const debug = Debug('web-jam-back:index');
 dotenv.config();
-const debug = require('debug')('web-jam-back:index');
 
 const corsOptions = {
   origin: JSON.parse(process.env.AllowUrl || '{}').urls,

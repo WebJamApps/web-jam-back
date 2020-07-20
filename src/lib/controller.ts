@@ -1,7 +1,8 @@
 import mongoose from 'mongoose';
+import Debug from 'debug';
 import AuthUtils from '../auth/authUtils';
 
-const debug = require('debug')('web-jam-back:lib/controller');
+const debug = Debug('web-jam-back:lib/controller');
 
 class Controller {
   model: any;

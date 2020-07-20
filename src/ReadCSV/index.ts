@@ -1,4 +1,4 @@
-import fs from 'fs';
+// import fs from 'fs';
 import csvtojson from 'csvtojson';
 
 let soccerMatches: any[] = [];
@@ -9,27 +9,31 @@ function manUnitedWins() {
     AwayWin = 'A',
     Draw = 'D'
   }
-  let manUnitedWins = 0;
+  let manWins = 0;
 
+  // eslint-disable-next-line no-restricted-syntax
   for (const match of soccerMatches) {
     if (match.homeTeam === 'Man United' && match.winner === MatchResult.HomeWin) {
-      manUnitedWins++;
+      // eslint-disable-next-line no-plusplus
+      manWins++;
     } else if (match.awayTeam === 'Man United' && match.winner === MatchResult.AwayWin) {
-      manUnitedWins++;
+      // eslint-disable-next-line no-plusplus
+      manWins++;
     }
   }
-  return `Man United won ${manUnitedWins} games`;
+  return `Man United won ${manWins} games`;
 }
 
-const readCsv = async () => {
-  console.log('readCsv');
-  soccerMatches = await csvtojson({
-    noheader: true,
-    headers: ['data', 'homeTeam', 'awayTeam', 'homeScore', 'awayScore', 'winner', 'mvp'],
-  })
-    .fromFile('./src/ReadCSV/football.csv');
-  // console.log(soccerMatches);
-  console.log(manUnitedWins());
+const readCsv = async (): Promise<string> => {
+  try {
+    soccerMatches = await csvtojson({
+      noheader: true,
+      headers: ['data', 'homeTeam', 'awayTeam', 'homeScore', 'awayScore', 'winner', 'mvp'],
+    })
+      .fromFile('./src/ReadCSV/football.csv');
+  } catch (e) { return `${e.message}`; }
+  // console.log(manUnitedWins());
+  return manUnitedWins();
 };
 
 export default readCsv;

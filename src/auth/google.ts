@@ -1,11 +1,13 @@
 import superagent from 'superagent';
+import Debug from 'debug';
 
-const debug = require('debug')('web-jam-back:auth/google');
+const debug = Debug('web-jam-back:auth/google');
+// const debug = require('debug')('web-jam-back:auth/google');
 
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';
 const peopleApiUrl = 'https://people.googleapis.com/v1/people/me?personFields=names%2CemailAddresses';
 
-async function authenticate(req: { body: { redirectUri: any; code: any; clientId: any; }; }) {
+async function authenticate(req: { body: { redirectUri: any; code: any; clientId: any; }; }): Promise<any> {
   let reUri = req.body.redirectUri, token, profile;
   if (reUri && reUri.includes('localhost')) {
     reUri = reUri.replace('https', 'http');

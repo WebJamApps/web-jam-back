@@ -1,14 +1,15 @@
+import Debug from 'debug';
 import Controller from '../../lib/controller';
 import userModel from './user-facade';
 import authGoogle from '../../auth/google';
 
-const debug = require('debug')('web-jam-back:user-controller');
+const debug = Debug('web-jam-back:user-controller');
 
 class UserController extends Controller {
   authGoogle: any;
 
-  constructor(userModel) {
-    super(userModel);
+  constructor(uModel) {
+    super(uModel);
     this.authGoogle = authGoogle;
   }
 

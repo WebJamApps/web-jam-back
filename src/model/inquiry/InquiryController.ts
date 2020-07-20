@@ -1,6 +1,7 @@
 import sgMail from '@sendgrid/mail';
+import Debug from 'debug';
 
-const debug = require('debug')('web-jam-back:InquiryController');
+const debug = Debug('web-jam-back:InquiryController');
 
 class InquiryController {
   sgMail: any;
