@@ -1,38 +1,46 @@
-// import fs from 'fs';
 import csvtojson from 'csvtojson';
 
-let soccerMatches: any[] = [];
+class ReadCSV {
+  csvtojson: typeof csvtojson;
 
-function manUnitedWins() {
-  enum MatchResult {
-    HomeWin = 'H',
-    AwayWin = 'A',
-    Draw = 'D'
+  soccerMatches: any[];
+  
+  constructor() {
+    this.csvtojson = csvtojson;
+    this.soccerMatches = [];
   }
-  let manWins = 0;
 
-  // eslint-disable-next-line no-restricted-syntax
-  for (const match of soccerMatches) {
-    if (match.homeTeam === 'Man United' && match.winner === MatchResult.HomeWin) {
-      // eslint-disable-next-line no-plusplus
-      manWins++;
-    } else if (match.awayTeam === 'Man United' && match.winner === MatchResult.AwayWin) {
-      // eslint-disable-next-line no-plusplus
-      manWins++;
+  manUnitedWins(): string { 
+    enum MatchResult {
+      HomeWin = 'H',
+      AwayWin = 'A',
+      Draw = 'D'
     }
+    let manWins = 0;
+
+    // eslint-disable-next-line no-restricted-syntax
+    for (const match of this.soccerMatches) {
+      if (match.homeTeam === 'Man United' && match.winner === MatchResult.HomeWin) {
+        // eslint-disable-next-line no-plusplus
+        manWins++;
+      } else if (match.awayTeam === 'Man United' && match.winner === MatchResult.AwayWin) {
+        // eslint-disable-next-line no-plusplus
+        manWins++;
+      }
+    }
+    return `Man United won ${manWins} games`;
   }
-  return `Man United won ${manWins} games`;
+
+  async run(): Promise<string> {
+    try {
+      this.soccerMatches = await this.csvtojson({
+        noheader: true,
+        headers: ['data', 'homeTeam', 'awayTeam', 'homeScore', 'awayScore', 'winner', 'mvp'],
+      })
+        .fromFile('./src/ReadCSV/football.csv');
+    } catch (e) { return `${e.message}`; }
+    return this.manUnitedWins();
+  }
 }
+export default ReadCSV;
 
-const readCsv = async (): Promise<string> => {
-  try {
-    soccerMatches = await csvtojson({
-      noheader: true,
-      headers: ['data', 'homeTeam', 'awayTeam', 'homeScore', 'awayScore', 'winner', 'mvp'],
-    })
-      .fromFile('./src/ReadCSV/football.csv');
-  } catch (e) { return `${e.message}`; }
-  return manUnitedWins();
-};
-
-export default readCsv;

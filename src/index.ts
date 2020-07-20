@@ -8,13 +8,12 @@ import morgan from 'morgan';
 import cors from 'cors';
 import enforce from 'express-sslify';
 import Debug from 'debug';
-import readCsv from './ReadCSV';
-import config from './config';
+import ReadCSV from './ReadCSV';
 import routes from './routes';
 
 const debug = Debug('web-jam-back:index');
 dotenv.config();
-
+const readCsv = new ReadCSV();
 const corsOptions = {
   origin: JSON.parse(process.env.AllowUrl || /* istanbul ignore next */'{}').urls,
   credentials: true,
@@ -26,8 +25,7 @@ const app = express();
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
 app.use(express.static(path.normalize(path.join(__dirname, '../JaMmusic/dist'))));
 app.use(cors(corsOptions));
-// mongoose.Promise = bluebird;
-let mongoDbUri: any = process.env.MONGO_DB_URI;
+let mongoDbUri: string = process.env.MONGO_DB_URI || /* istanbul ignore next */'';
 /* istanbul ignore else */
 if (process.env.NODE_ENV === 'test') mongoDbUri = 'mongodb://testerOfTheYear:wj-te5ter!@ds115283.mlab.com:15283/web-jam-test';
 mongoose.connect(mongoDbUri, {
@@ -45,11 +43,14 @@ app.use((err: any, req, res: any) => {
   res.status(err.status || 500)
     .json({ message: err.message, error: err });
 });
-readCsv();
+
 /* istanbul ignore if */if (process.env.NODE_ENV !== 'test') {
-  app.listen(config.server.port, () => {
+  const port = process.env.PORT || 7000;
+  app.listen(port, async () => {
     debug('running in debug mode');
-    console.log(`Magic happens on port ${config.server.port}`); // eslint-disable-line no-console
+    console.log(`Magic happens on port ${port}`); // eslint-disable-line no-console
+    const result = await readCsv.run();
+    debug(result);
   });
 }
 export default app;
