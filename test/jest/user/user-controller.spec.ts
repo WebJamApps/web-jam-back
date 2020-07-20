@@ -124,21 +124,24 @@ describe('User Controller', () => {
     expect(r.message).toBe('bad');
   });
   it('catches error on google authenticate', async () => {
-    superagent.post = jest.fn(() => ({ type: () => ({ send: () => ({ set: () => Promise.reject(new Error('bad')) }) }) }));
+    const sa: any = superagent;
+    sa.post = jest.fn(() => ({ type: () => ({ send: () => ({ set: () => Promise.reject(new Error('bad')) }) }) }));
     r = await controller.google({ body: {} }, resStub);
     expect(r.message).toBe('bad');
   });
   it('catches error on findOneAndUpdate when google authenticate', async () => {
     controller.model.findOneAndUpdate = jest.fn(() => Promise.reject(new Error('bad')));
-    superagent.post = jest.fn(() => ({ type: () => ({ send: () => ({ set: () => Promise.resolve({ body: { access_token: 'token' } }) }) }) }));
-    superagent.get = jest.fn(() => ({ set: () => Promise.resolve({ body: { names: [{ displayName: 'justin' }], emailAddresses: ['j@b.com'] } }) }));
+    const sa: any = superagent;
+    sa.post = jest.fn(() => ({ type: () => ({ send: () => ({ set: () => Promise.resolve({ body: { access_token: 'token' } }) }) }) }));
+    sa.get = jest.fn(() => ({ set: () => Promise.resolve({ body: { names: [{ displayName: 'justin' }], emailAddresses: ['j@b.com'] } }) }));
     r = await controller.google({ body: {} }, resStub);
     expect(r.message).toBe('bad');
   });
   it('successfully google authenticate', async () => {
     controller.model.findOneAndUpdate = jest.fn(() => Promise.resolve({}));
-    superagent.post = jest.fn(() => ({ type: () => ({ send: () => ({ set: () => Promise.resolve({ body: { access_token: 'token' } }) }) }) }));
-    superagent.get = jest.fn(() => ({ set: () => Promise.resolve({ body: { names: [{ displayName: 'justin' }], emailAddresses: ['j@b.com'] } }) }));
+    const sa: any = superagent;
+    sa.post = jest.fn(() => ({ type: () => ({ send: () => ({ set: () => Promise.resolve({ body: { access_token: 'token' } }) }) }) }));
+    sa.get = jest.fn(() => ({ set: () => Promise.resolve({ body: { names: [{ displayName: 'justin' }], emailAddresses: ['j@b.com'] } }) }));
     r = await controller.google({ body: {} }, resStub);
     expect(r.token).toBeDefined();
   });

@@ -1,8 +1,10 @@
 import moment from 'moment';
 import jwt from 'jwt-simple';
+import dotenv from 'dotenv';
 import sgMail from '@sendgrid/mail';
-import config from '../config';
+// import config from '../config';
 
+dotenv.config();
 class AuthUtils {
   static createJWT(user) {
     const payload = {
@@ -10,7 +12,7 @@ class AuthUtils {
       iat: moment().unix(),
       exp: moment().add(14, 'days').unix(),
     };
-    return jwt.encode(payload, config.hashString || '');
+    return jwt.encode(payload, process.env.HashString || '');
   }
 
   static ensureAuthenticated(req, res, next) {
@@ -20,7 +22,7 @@ class AuthUtils {
     const token = req.headers.authorization.split(' ')[1];
     let payload = { sub: '' };
     try {
-      payload = jwt.decode(token, config.hashString || '');
+      payload = jwt.decode(token, process.env.HashString || '');
     } catch (err) {
       return res.status(401).send({ message: err.message });
     }

@@ -1,5 +1,5 @@
-const mongoose = require('mongoose');
-const Controller = require('../../../src/lib/controller');
+import mongoose from 'mongoose';
+import Controller from '../../../src/lib/controller';
 
 describe('lib controller', () => {
   const goodId = mongoose.Types.ObjectId();

@@ -1,10 +1,8 @@
-import EventEmitter from 'events';
 import jwt from 'jwt-simple';
 import moment from 'moment';
 import AuthUtils from '../../src/auth/authUtils';
 import config from '../../src/config';
 
-//EventEmitter.defaultMaxListeners = Infinity;
 describe('the authUtils', () => {
   it('validates email syntax', async () => {
     const cb = await AuthUtils.checkEmailSyntax({ body: { changeemail: 'j@jb.com' } });
@@ -20,7 +18,7 @@ describe('the authUtils', () => {
     const decoded = jwt.decode(payload, config.hashString || '');
     expect(decoded.sub).toBe(user._id);
   });
-  it('returns 401 without authorization', () => new Promise((done) => {
+  it('returns 401 without authorization', () => {
     const req = { headers: { authorization: false } };
     const res = {
       status(num) {
@@ -28,14 +26,13 @@ describe('the authUtils', () => {
         return {
           send({ message }) {
             expect(message.includes('Authorization')).toBe(true);
-            done();
           },
         };
       },
     };
-    AuthUtils.ensureAuthenticated(req, res);
-  }));
-  it('returns 401 when jwt.decode fails', () => new Promise((done) => {
+    AuthUtils.ensureAuthenticated(req, res, jest.fn());
+  });
+  it('returns 401 when jwt.decode fails', () => {
     const req = { headers: { authorization: 'this will fail jwt.decode' } };
     const res = {
       status(num) {
@@ -43,13 +40,12 @@ describe('the authUtils', () => {
         return {
           send({ message }) {
             expect(message.includes('Not enough or too many segments')).toBe(true);
-            done();
           },
         };
       },
     };
-    AuthUtils.ensureAuthenticated(req, res);
-  }));
+    AuthUtils.ensureAuthenticated(req, res, jest.fn());
+  });
   it('should 401 when exp <= moment().unix()', () => {
     const payload = { exp: moment().unix() };
     const auth = jwt.encode(payload, config.hashString || '');
@@ -64,6 +60,6 @@ describe('the authUtils', () => {
         };
       },
     };
-    AuthUtils.ensureAuthenticated(req, res);
+    AuthUtils.ensureAuthenticated(req, res, jest.fn());
   });
 });
