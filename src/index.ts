@@ -27,7 +27,7 @@ app.use(express.static(path.normalize(path.join(__dirname, '../JaMmusic/dist')))
 app.use(cors(corsOptions));
 let mongoDbUri: string = process.env.MONGO_DB_URI || /* istanbul ignore next */'';
 /* istanbul ignore else */
-if (process.env.NODE_ENV === 'test') mongoDbUri = 'mongodb://testerOfTheYear:wj-te5ter!@ds115283.mlab.com:15283/web-jam-test';
+if (process.env.NODE_ENV === 'test') mongoDbUri = process.env.TEST_DB || /* istanbul ignore next */'';
 mongoose.connect(mongoDbUri, {
   useNewUrlParser: true, useUnifiedTopology: true, useFindAndModify: false, useCreateIndex: true,
 });
