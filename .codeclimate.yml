@@ -1,42 +1,46 @@
-version:                  "2"
+version: "2"
 checks:
   return-statements:
     config:
-      threshold:          5
+      threshold: 5
   method-lines:
     config:
-      threshold:          30
+      threshold: 30
   similar-code:
     config:
-      threshold:          75
+      threshold: 75
   identical-code:
     config:
-      threshold:          45
+      threshold: 45
   method-complexity:
     config:
-      threshold:          10
+      threshold: 10
   argument-count:
     config:
-      threshold:          5
+      threshold: 5
+  file-lines:
+    config:
+      threshold: 300
 plugins:
   duplication:
-    enabled:              true
+    enabled: true
     checks:
       Similar Code:
-        enabled:          true
+        enabled: true
     config:
       languages:
-        javascript:
+        typescript:
           mass_threshold: 45
   fixme:
-    enabled:              true
+    enabled: true
 ratings:
   paths:
-  - "**.js"
-  - "**.jsx"
+    - "**.js"
+    - "**.jsx"
+    - "*.ts"
 exclude_patterns:
-- "test/"
-- "**/node_modules/"
-- "coverage/"
-- "frontend/"
-- "JaMmusic/"
+  - "test/"
+  - "**/node_modules/"
+  - "coverage/"
+  - "JaMmusic/"
+  - "build/"

@@ -1,7 +1,14 @@
 {
-  "plugins": ["node", "security", "jest"],
-  "extends": ["plugin:node/recommended", "plugin:security/recommended", "airbnb", "plugin:jest/recommended"],
+  "plugins": ["node", "security", "jest", "@typescript-eslint", "json"],
+  "extends": ["plugin:node/recommended", "plugin:security/recommended",
+    "plugin:@typescript-eslint/recommended",
+    "airbnb-typescript", "plugin:jest/recommended", "plugin:json/recommended"
+  ],
   "rules": {
+    "node/no-unsupported-features/es-syntax": 0,
+    "node/no-missing-import": ["error", {
+      "tryExtensions": [".js", ".json", ".tsx", ".ts"]
+    }],
     "no-underscore-dangle": 0,
     "no-multiple-empty-lines": [
       "error",
@@ -26,5 +33,11 @@
   "env": {
     "jest": true,
     "node": true
+  },
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 11,
+    "sourceType": "module",
+    "project": "./tsconfig.eslint.json"
   }
 }
