@@ -16,9 +16,9 @@
   "license": "MIT",
   "scripts": {
     "rmrf": "rm -rf build && rm -rf JaMmusic && rm -rf coverage",
-    "ts-start": "concurrently \"yarn start:debug\" \"tsc -w\"",
+    "start:debug": "concurrently \"yarn ts-start\" \"tsc -w\"",
     "cc": "codeclimate analyze -f html > codeclimate.html",
-    "start:debug": "DEBUG=web-jam-back:* nodemon build/index.js",
+    "ts-start": "DEBUG=web-jam-back:* nodemon build/index.js",
     "installglobals": "yarn global add npm@latest",
     "build:front": "./postinstallJaM.sh && rm -rf ./JaMmusic/src && rm -rf ./JaMmusic/test",
     "postinstall": "yarn rmrf && tsc && yarn build:front",
