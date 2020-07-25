@@ -16,7 +16,7 @@
   "license": "MIT",
   "scripts": {
     "rmrf": "rm -rf build && rm -rf JaMmusic && rm -rf coverage",
-    "start:debug": "concurrently \"yarn ts-start\" \"tsc -w\"",
+    "start:debug": "rm -rf build && tsc && concurrently \"yarn ts-start\" \"tsc -w\"",
     "cc": "codeclimate analyze -f html > codeclimate.html",
     "ts-start": "DEBUG=web-jam-back:* nodemon build/index.js",
     "installglobals": "yarn global add npm@latest",
@@ -63,6 +63,7 @@
     "morgan": "latest",
     "nodemon": "latest",
     "superagent": "latest",
+    "supports-color": "^7.1.0",
     "typescript": "latest"
   },
   "devDependencies": {
