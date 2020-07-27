@@ -16,7 +16,8 @@
   "license": "MIT",
   "scripts": {
     "rmrf": "rm -rf build && rm -rf JaMmusic && rm -rf coverage",
-    "start:debug": "rm -rf build && tsc && concurrently \"yarn ts-start\" \"tsc -w\"",
+    "start:debug": "rm -rf build && tsc && npm-run-all -p ts-start ts-watch",
+    "ts-watch": "tsc -w",
     "cc": "codeclimate analyze -f html > codeclimate.html",
     "ts-start": "DEBUG=web-jam-back:* nodemon build/index.js",
     "installglobals": "yarn global add npm@latest",
@@ -86,6 +87,7 @@
     "eslint-plugin-security": "latest",
     "jest": "latest",
     "nodemon": "latest",
+    "npm-run-all": "^4.1.5",
     "supertest": "latest",
     "ts-jest": "^26.1.2"
   }

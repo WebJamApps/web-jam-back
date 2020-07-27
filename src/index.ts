@@ -14,10 +14,8 @@ import routes from './routes';
 
 dotenv.config();
 const debug = Debug('web-jam-back:index');
-if (supportsColor.stdout) {
-  // eslint-disable-next-line no-console
-  console.log('Terminal stdout supports color');
-}
+/* istanbul ignore else */
+if (supportsColor.stdout) debug('Terminal stdout supports color');
 
 const readCsv = new ReadCSV();
 const corsOptions = {
@@ -59,5 +57,5 @@ app.use((err: any, req, res: any) => {
     debug(result);
   });
 }
-console.log(process.stdout);
+debug(`isTTY?: ${process.stderr.isTTY}`);
 export default app;
