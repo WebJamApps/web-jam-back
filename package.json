@@ -72,7 +72,6 @@
     "@types/supertest": "^2.0.10",
     "@typescript-eslint/eslint-plugin": "^3.6.1",
     "@typescript-eslint/parser": "^3.6.1",
-    "concurrently": "^5.2.0",
     "eslint": "latest",
     "eslint-config-airbnb": "latest",
     "eslint-config-airbnb-typescript": "^8.0.2",
