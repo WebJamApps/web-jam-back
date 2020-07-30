@@ -1,5 +1,7 @@
 import path from 'path';
 import dotenv from 'dotenv';
+import Debug from 'debug';
+import supportsColor from 'supports-color';
 import express from 'express';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
@@ -7,12 +9,14 @@ import bodyParser from 'body-parser';
 import morgan from 'morgan';
 import cors from 'cors';
 import enforce from 'express-sslify';
-import Debug from 'debug';
 import ReadCSV from './ReadCSV';
 import routes from './routes';
 
-const debug = Debug('web-jam-back:index');
 dotenv.config();
+const debug = Debug('web-jam-back:index');
+/* istanbul ignore else */
+if (supportsColor.stdout) debug('Terminal stdout supports color');
+
 const readCsv = new ReadCSV();
 const corsOptions = {
   origin: JSON.parse(process.env.AllowUrl || /* istanbul ignore next */'{}').urls,
@@ -53,4 +57,5 @@ app.use((err: any, req, res: any) => {
     debug(result);
   });
 }
+debug(`isTTY?: ${process.stderr.isTTY}`);
 export default app;
