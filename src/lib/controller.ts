@@ -66,7 +66,7 @@ class Controller {
     return res.status(200).json(doc);
   }
 
-  findByIdAndUpdate(req, res) {
+  findByIdAndUpdate(req, res):Promise<any> {
     const uR = JSON.parse(this.userRoles);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Update id is invalid' });
     if (req.body.userType && uR.roles.indexOf(req.body.userType) === -1) return res.status(400).json({ message: 'userType not valid' });
@@ -82,11 +82,27 @@ class Controller {
     return res.status(200).json({ message: `${this.model.Schema.modelName} was deleted successfully` });
   }
 
-  deleteMany(req, res) {
+  deleteMany(req: { query: any; }, 
+    res: { status: (arg0: number) 
+    => { (): any; new(): any; json: { (arg0: { message: any; }): any; new(): any; }; }; }):Promise<any> {
     return this.model.deleteMany(req.query)
       .then(() => res.status(200).json({ message: `${this.model.Schema.modelName} deleteMany was successful` }))
       .catch((e) => res.status(500).json({ message: e.message }));
   }
-}
 
+  async deleteAllDocs():Promise<any> {
+    debug('deleteAllDocs');
+    let result: any;
+    try { result = await this.model.deleteMany({}); } catch (e) { return Promise.reject(e); }
+    return result;
+  }
+
+  async createDocs(body: any):Promise<any> {
+    debug('createDocs');
+    let result: any;
+    try { result = await this.model.create(body); } catch (e) { return Promise.reject(e); }
+    debug(result);
+    return result;
+  }
+}
 export default Controller;

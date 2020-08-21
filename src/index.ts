@@ -11,6 +11,8 @@ import cors from 'cors';
 import enforce from 'express-sslify';
 import ReadCSV from './ReadCSV';
 import routes from './routes';
+import songData from './model/song/reset-song';
+import songController from './model/song/song-controller';
 
 dotenv.config();
 const debug = Debug('web-jam-back:index');
@@ -57,5 +59,15 @@ app.use((err: any, req, res: any) => {
     debug(result);
   });
 }
+// if (process.env.NODE_ENV !== 'production') {
+(async () => {
+  const { songs } = songData;
+  try {
+    await songController.deleteAllDocs();
+    await songController.createDocs(songs);
+  } catch (e) /* istanbul ignore next */{ debug(e.message); return Promise.resolve(e.message); }
+  return Promise.resolve('songs created');
+})();
+// }
 debug(`isTTY?: ${process.stderr.isTTY}`);
 export default app;
