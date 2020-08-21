@@ -36,7 +36,6 @@ plugins:
 ratings:
   paths:
     - "**.js"
-    - "**.jsx"
     - "*.ts"
 exclude_patterns:
   - "test/"
@@ -44,3 +43,4 @@ exclude_patterns:
   - "coverage/"
   - "JaMmusic/"
   - "build/"
+  - "**/reset-song.ts"
