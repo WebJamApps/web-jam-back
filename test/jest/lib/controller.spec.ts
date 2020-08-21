@@ -1,11 +1,10 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 import mongoose from 'mongoose';
 import Controller from '../../../src/lib/controller';
 
 describe('lib controller', () => {
   const goodId = mongoose.Types.ObjectId();
   let c, r;
-  const model = {
+  const model:any = {
     findOne: () => Promise.reject(new Error('bad')),
     findOneAndUpdate: () => Promise.reject(new Error('bad')),
     find: () => Promise.reject(new Error('bad')),
@@ -44,7 +43,6 @@ describe('lib controller', () => {
   });
   it('it returns 400 on findById when no doc is found', async () => {
     req.params.id = goodId;
-    // @ts-ignore
     model.findById = () => Promise.resolve();
     c = new Controller(model);
     r = await c.findById(req, res);
@@ -52,7 +50,6 @@ describe('lib controller', () => {
   });
   it('it does not return the password from findById', async () => {
     req.params.id = goodId;
-    // @ts-ignore
     model.findById = () => Promise.resolve({ password: 'password' });
     c = new Controller(model);
     r = await c.findById(req, res);
@@ -93,7 +90,6 @@ describe('lib controller', () => {
   it('it returns 400 from findByIdAndUpdate when nothing is found', async () => {
     req.params.id = goodId;
     req.body = { };
-    // @ts-ignore
     model.findByIdAndUpdate = () => Promise.resolve();
     c = new Controller(model);
     r = await c.findByIdAndUpdate(req, res);
@@ -102,7 +98,6 @@ describe('lib controller', () => {
   it('findByIdAndUpdate does not return the password', async () => {
     req.params.id = goodId;
     req.body = { };
-    // @ts-ignore
     model.findByIdAndUpdate = () => Promise.resolve({ password: 'password' });
     c = new Controller(model);
     r = await c.findByIdAndUpdate(req, res);
@@ -122,17 +117,25 @@ describe('lib controller', () => {
   });
   it('it returns 400 on findByIdAndRemove when nothing is found', async () => {
     req.params.id = goodId;
-    // @ts-ignore
     model.findByIdAndRemove = () => Promise.resolve();
     c = new Controller(model);
     r = await c.findByIdAndRemove(req, res);
     expect(r.message).toBe('Delete id is invalid');
   });
   it('it returns 500 on deleteMany', async () => {
-    // @ts-ignore
     model.deleteMany = () => Promise.reject(new Error('bad'));
     c = new Controller(model);
     r = await c.deleteMany(req, res);
     expect(r.message).toBe('bad');
+  });
+  it('handles error on deleteAllDocs', async () => {
+    model.deleteMany = jest.fn(() => Promise.reject(new Error('bad')));
+    c = new Controller(model);
+    await expect(c.deleteAllDocs()).rejects.toThrow('bad');
+  });
+  it('handles error on createDocs', async () => {
+    model.create = jest.fn(() => Promise.reject(new Error('bad')));
+    c = new Controller(model);
+    await expect(c.createDocs()).rejects.toThrow('bad');
   });
 });
