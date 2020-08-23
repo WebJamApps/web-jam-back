@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import superagent from 'superagent';
 import controller from '../../../src/model/user/user-controller';
 
