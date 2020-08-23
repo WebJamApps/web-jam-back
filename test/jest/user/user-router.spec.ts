@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import request from 'supertest';
 import app from '../../../src/index';
 import user from '../../../src/model/user/user-facade';
@@ -5,7 +6,7 @@ import google from '../../../src/auth/google';
 import controller from '../../../src/model/user/user-controller';
 import authUtils from '../../../src/auth/authUtils';
 
-const allowedUrl = JSON.parse(process.env.AllowUrl || "{}").urls[0];
+const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
 
 describe('User Router', () => {
   let r;

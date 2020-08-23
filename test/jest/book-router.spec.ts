@@ -5,7 +5,7 @@ import authUtils from '../../src/auth/authUtils';
 
 describe('The Book API', () => {
   let r;
-  const allowedUrl = JSON.parse(process.env.AllowUrl || "{}").urls[0];
+  const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
   beforeEach(async () => {
     await BookModel.deleteMany({});
   });

@@ -11,13 +11,13 @@ class Controller {
 
   userRoles: any;
 
-  constructor(model) {
+  constructor(model: any) {
     this.model = model;
     this.authUtils = AuthUtils;
     this.userRoles = process.env.userRoles;
   }
 
-  async findOne(req, res) {
+  async findOne(req: any, res: any) {
     let book;
     try {
       book = await this.model.findOne(req.query);
@@ -28,20 +28,20 @@ class Controller {
     return res.status(200).json(book);
   }
 
-  async findOneAndUpdate(req, res) {
+  async findOneAndUpdate(req: any, res: any) {
     let updatedBook;
     try { updatedBook = await this.model.findOneAndUpdate(req.query, req.body); } catch (e) { return res.status(500).json({ message: e.message }); }
     if (updatedBook === null || updatedBook === undefined) return res.status(400).json({ message: 'invalid request' });
     return res.status(200).json(updatedBook);
   }
 
-  async find(req, res) {
+  async find(req: any, res: any) {
     let collection;
     try { collection = await this.model.find(req.query); } catch (e) { return res.status(500).json({ message: e.message }); }
     return res.status(200).json(collection);
   }
 
-  async findById(req, res) {
+  async findById(req: any, res: any) {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Find id is invalid' });
     let doc;
     try { doc = await this.model.findById(req.params.id); } catch (e) { return res.status(500).json({ message: e.message }); }
@@ -50,7 +50,7 @@ class Controller {
     return res.status(200).json(doc);
   }
 
-  async create(req, res) {
+  async create(req: any, res: any) {
     debug('create');
     debug(req.body);
     let doc;
@@ -58,7 +58,7 @@ class Controller {
     return res.status(201).json(doc);
   }
 
-  async contFBIandU(req, res) {
+  async contFBIandU(req: any, res: any) {
     let doc;
     try { doc = await this.model.findByIdAndUpdate(req.params.id, req.body); } catch (e) { return res.status(500).json({ message: e.message }); }
     if (!doc) return res.status(400).json({ message: 'Id Not Found' });
@@ -66,7 +66,7 @@ class Controller {
     return res.status(200).json(doc);
   }
 
-  findByIdAndUpdate(req, res):Promise<any> {
+  findByIdAndUpdate(req: any, res: any):Promise<any> {
     const uR = JSON.parse(this.userRoles);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Update id is invalid' });
     if (req.body.userType && uR.roles.indexOf(req.body.userType) === -1) return res.status(400).json({ message: 'userType not valid' });
@@ -74,7 +74,7 @@ class Controller {
     return this.contFBIandU(req, res);
   }
 
-  async findByIdAndRemove(req, res) {
+  async findByIdAndRemove(req: any, res: any) {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'id is invalid' });
     let doc;
     try { doc = await this.model.findByIdAndRemove(req.params.id); } catch (e) { return res.status(500).json({ message: e.message }); }
@@ -82,22 +82,22 @@ class Controller {
     return res.status(200).json({ message: `${this.model.Schema.modelName} was deleted successfully` });
   }
 
-  deleteMany(req: { query: any; }, 
-    res: { status: (arg0: number) 
-    => { (): any; new(): any; json: { (arg0: { message: any; }): any; new(): any; }; }; }):Promise<any> {
+  deleteMany(req: { query: any; },
+    res: { status: (arg0: number)
+    => { (): any; new(): any; json: { (arg0: { message: string; }): string; new(): any; }; }; }): Promise<any> {
     return this.model.deleteMany(req.query)
       .then(() => res.status(200).json({ message: `${this.model.Schema.modelName} deleteMany was successful` }))
       .catch((e) => res.status(500).json({ message: e.message }));
   }
 
-  async deleteAllDocs():Promise<any> {
+  async deleteAllDocs():Promise<Error> {
     debug('deleteAllDocs');
     let result: any;
     try { result = await this.model.deleteMany({}); } catch (e) { return Promise.reject(e); }
     return result;
   }
 
-  async createDocs(body: any):Promise<any> {
+  async createDocs(body: any): Promise<Error> {
     debug('createDocs');
     let result: any;
     try { result = await this.model.create(body); } catch (e) { return Promise.reject(e); }
