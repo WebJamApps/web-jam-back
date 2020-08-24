@@ -3,6 +3,10 @@ import jwt from 'jwt-simple';
 import dotenv from 'dotenv';
 import sgMail from '@sendgrid/mail';
 
+interface IAuthUtils {
+  status(num: number): { send({ message }: { message: string; }): void; };
+}
+
 dotenv.config();
 class AuthUtils {
   static createJWT(user: any): any {
@@ -14,7 +18,7 @@ class AuthUtils {
     return jwt.encode(payload, process.env.HashString || /* istanbul ignore next */'');
   }
 
-  static ensureAuthenticated(req: any, res: any, next: any) {
+  static ensureAuthenticated(req: any, res: IAuthUtils, next: any): void {
     if (!req.headers.authorization) {
       return res.status(401).send({ message: 'Please make sure your request has an Authorization header' });
     }
@@ -29,7 +33,7 @@ class AuthUtils {
     return next();
   }
 
-  static sendGridEmail(bodyhtml: any, toemail: any, subjectline: any): void {
+  static sendGridEmail(bodyhtml: string, toemail: string, subjectline: string): void {
     sgMail.setApiKey(process.env.SENDGRID_API_KEY || /* istanbul ignore next */'');
     const msg = {
       to: toemail,
@@ -48,7 +52,7 @@ class AuthUtils {
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-  static checkEmailSyntax(req: any): Promise<boolean> { // eslint-disable-next-line security/detect-unsafe-regex
+  static checkEmailSyntax(req: { body: { changeemail: string; }}): Promise<boolean> { // eslint-disable-next-line security/detect-unsafe-regex
     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
       return Promise.resolve(true);
     }

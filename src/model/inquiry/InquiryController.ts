@@ -11,7 +11,7 @@ class InquiryController {
   }
 
   sendGridEmail(bodyhtml: any, toemail: any, subjectline: any, res: any) {
-    this.sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    this.sgMail.setApiKey(process.env.SENDGRID_API_KEY || /* istanbul ignore next */'');
     const msg = {
       to: toemail,
       from: 'user-service@web-jam.com',
