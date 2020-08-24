@@ -37,7 +37,9 @@ if (process.env.NODE_ENV === 'test') mongoDbUri = process.env.TEST_DB || /* ista
 mongoose.connect(mongoDbUri, {
   useNewUrlParser: true, useUnifiedTopology: true, useFindAndModify: false, useCreateIndex: true,
 });
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,
+}));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(morgan('tiny'));
