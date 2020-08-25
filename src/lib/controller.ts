@@ -99,7 +99,7 @@ class Controller {
   deleteMany(req: Request, res: Response): Request {
     return this.model.deleteMany(req.query)
       .then(() => res.status(200).json({ message: `${this.model.Schema.modelName} deleteMany was successful` }))
-      .catch((e) => res.status(500).json({ message: e.message }));
+      .catch((e: Error) => res.status(500).json({ message: e.message }));
   }
 
   async deleteAllDocs(): Promise<Error> {
