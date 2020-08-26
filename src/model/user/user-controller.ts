@@ -18,7 +18,7 @@ class UserController extends Controller {
     return res.status(500).json({ message: e.message });
   }
 
-  async findByEmail(req: Request, res: Response) {
+  async findByEmail(req: any, res: any) {
     let user;
     try { user = await this.model.findOne({ email: req.body.email }); } catch (e) { return this.resErr(res, e); }
     if (user === undefined || user === null || user._id === null || user._id === undefined) {
@@ -48,7 +48,7 @@ class UserController extends Controller {
     return this.findOneAndUpdate({ query: matcher, body: update }, res);
   }
 
-  async pswdreset(req: Request, res: Response) { // changes the password after code is verified
+  async pswdreset(req: any, res: any) { // changes the password after code is verified
     if (req.body.password === null || req.body.password === undefined || req.body.password.length < 8) {
       return res.status(400).json({ message: 'Password is not min 8 characters' });
     }
@@ -61,7 +61,7 @@ class UserController extends Controller {
     return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
   }
 
-  async resetpswd(req: Request, res: Response) { // initial request to reset password
+  async resetpswd(req: any, res: any) { // initial request to reset password
     debug('resetpswd');
     let user;
     const updateUser: any = {};
@@ -81,14 +81,14 @@ class UserController extends Controller {
     return res.status(200).json({ email: user.email });
   }
 
-  async validateChangeEmail(req: Request) {
+  async validateChangeEmail(req: any) {
     let user1;
     try { user1 = await this.model.findOne({ email: req.body.changeemail }); } catch (e) { return Promise.reject(e); }
     if (user1 !== null) return Promise.reject(new Error('Email address already exists'));
     return Promise.resolve(user1);
   }
 
-  async changeemail(req: Request, res: Response) {
+  async changeemail(req: any, res: any) {
     let result;
     const updateUser: any = {};
     try {
@@ -109,7 +109,7 @@ class UserController extends Controller {
     return res.status(200).json({ success: true });
   }
 
-  async finishLogin(res: Response, isPW: boolean, user: any) {
+  async finishLogin(res: any, isPW: boolean, user: any) {
     let loginUser;
     const updateData: any = {};
     if (!isPW) return res.status(401).json({ message: 'Wrong password' });
@@ -122,7 +122,7 @@ class UserController extends Controller {
     return res.status(200).json(userToken);
   }
 
-  async login(req: Request, res: Response) {
+  async login(req: any, res: any) {
     let user, fourOone = '', isPW;
     const reqUserEmail = this.authUtils.setIfExists(req.body.email);
     const myPassword = this.authUtils.setIfExists(req.body.password);
@@ -138,7 +138,7 @@ class UserController extends Controller {
     return this.finishLogin(res, isPW, user);
   }
 
-  async finishSignup(res: Response, user: any, randomNumba: number) {
+  async finishSignup(res: any, user: any, randomNumba: number) {
     let userSave;
     try { userSave = await this.model.create(user); } catch (e) { return this.resErr(res, e); }
     const mailbody = `<h1>Welcome ${userSave.name
@@ -150,7 +150,7 @@ class UserController extends Controller {
     return res.status(201).json(userSave);
   }
 
-  async signup(req: Request, res: Response) {
+  async signup(req: any, res: any) {
     let existingUser;
     const randomNumba = this.authUtils.generateCode(99999, 10000);
     const user = {
@@ -173,7 +173,7 @@ class UserController extends Controller {
     return this.finishSignup(res, user, randomNumba);
   }
 
-  async google(req: Request, res: Response) {
+  async google(req: any, res: any) {
     debug(req.body);
     let newUser, existingUser, profile;
     try { profile = await this.authGoogle.authenticate(req); } catch (e) { debug(e.message); return this.resErr(res, e); }

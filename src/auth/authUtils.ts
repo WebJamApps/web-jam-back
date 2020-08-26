@@ -1,6 +1,5 @@
 import moment from 'moment';
 import jwt from 'jwt-simple';
-import { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import sgMail from '@sendgrid/mail';
 
@@ -15,7 +14,7 @@ class AuthUtils {
     return jwt.encode(payload, process.env.HashString || /* istanbul ignore next */'');
   }
 
-  static ensureAuthenticated(req: any, res: Response<any>, next: any): any {
+  static ensureAuthenticated(req: any, res: any, next: any): any {
     if (!req.headers.authorization) {
       return res.status(401).send({ message: 'Please make sure your request has an Authorization header' });
     }
@@ -49,7 +48,7 @@ class AuthUtils {
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-  static checkEmailSyntax(req: Request): Promise<boolean> { // eslint-disable-next-line security/detect-unsafe-regex
+  static checkEmailSyntax(req: any): Promise<boolean> { // eslint-disable-next-line security/detect-unsafe-regex
     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
       return Promise.resolve(true);
     }

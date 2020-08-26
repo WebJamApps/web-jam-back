@@ -4,7 +4,7 @@ import app from '../src/index';
 const AllowUrl = JSON.parse(process.env.AllowUrl || '{}');
 
 describe('Index test', () => {
-  let allowedUrl, r, server, agent;
+  let allowedUrl: any, r, server: any, agent: any;
   beforeAll((done) => {
     server = app.listen(7000, (err) => {
       if (err) return done(err);
@@ -39,7 +39,7 @@ describe('Index test', () => {
     expect(r.status).toBe(500);
   });
   it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
-    const delay = (ms) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
+    const delay = (ms: any) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
     await delay(4000);
   });
 });
