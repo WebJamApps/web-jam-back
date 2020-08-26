@@ -21,10 +21,10 @@ describe('the authUtils', () => {
   it('returns 401 without authorization', () => {
     const req = { headers: { authorization: false } };
     const res = {
-      status(num) {
+      status(num: number) {
         expect(num).toBe(401);
         return {
-          send({ message }) {
+          send({ message }: any) {
             expect(message.includes('Authorization')).toBe(true);
           },
         };
@@ -35,10 +35,10 @@ describe('the authUtils', () => {
   it('returns 401 when jwt.decode fails', () => {
     const req = { headers: { authorization: 'this will fail jwt.decode' } };
     const res = {
-      status(num) {
+      status(num: number) {
         expect(num).toBe(401);
         return {
-          send({ message }) {
+          send({ message }: any) {
             expect(message.includes('Not enough or too many segments')).toBe(true);
           },
         };
@@ -51,10 +51,10 @@ describe('the authUtils', () => {
     const auth = jwt.encode(payload, config.hashString || '');
     const req = { headers: { authorization: `Bearer ${auth}` } };
     const res = {
-      status(num) {
+      status(num: number) {
         expect(num).toBe(401);
         return {
-          send({ message }) {
+          send({ message }: any) {
             expect(message.includes('expired')).toBe(true);
           },
         };
