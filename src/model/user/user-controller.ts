@@ -28,7 +28,7 @@ class UserController extends Controller {
     return res.status(200).json(user);
   }
 
-  handleAuth(req: Request, res: Response) { return this[req.params.id](req, res); }
+  // handleAuth(req: Request, res: Response) { return this[req.params.id](req, res); }
 
   authFindOneAndUpdate(matcher: any, update: any, res: Response) { return this.findOneAndUpdate({ query: matcher, body: update }, res); }
 
