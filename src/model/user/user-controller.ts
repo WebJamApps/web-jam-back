@@ -18,7 +18,7 @@ class UserController extends Controller {
     return res.status(500).json({ message: e.message });
   }
 
-  async findByEmail(req: Request, res: Response) {
+  async findByEmail(req: any, res: any) {
     let user;
     try { user = await this.model.findOne({ email: req.body.email }); } catch (e) { return this.resErr(res, e as Error); }
     if (user === undefined || user === null || user._id === null || user._id === undefined) {
@@ -109,7 +109,7 @@ class UserController extends Controller {
   //   return res.status(200).json({ success: true });
   // }
 
-  async finishLogin(res: Response, isPW: boolean, user: any) {
+  async finishLogin(res: any, isPW: boolean, user: any) {
     let loginUser;
     const updateData: any = {};
     if (!isPW) return res.status(401).json({ message: 'Wrong password' });
