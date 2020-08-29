@@ -5,7 +5,7 @@ import sgMail from '@sendgrid/mail';
 
 dotenv.config();
 class AuthUtils {
-  static createJWT(user) {
+  static createJWT(user: any): any {
     const payload = {
       sub: user._id,
       iat: moment().unix(),
@@ -14,7 +14,7 @@ class AuthUtils {
     return jwt.encode(payload, process.env.HashString || /* istanbul ignore next */'');
   }
 
-  static ensureAuthenticated(req, res, next) {
+  static ensureAuthenticated(req: any, res: any, next: any): any {
     if (!req.headers.authorization) {
       return res.status(401).send({ message: 'Please make sure your request has an Authorization header' });
     }
@@ -29,7 +29,7 @@ class AuthUtils {
     return next();
   }
 
-  static sendGridEmail(bodyhtml, toemail, subjectline): void {
+  static sendGridEmail(bodyhtml: string, toemail: string, subjectline: string): void {
     sgMail.setApiKey(process.env.SENDGRID_API_KEY || /* istanbul ignore next */'');
     const msg = {
       to: toemail,
@@ -42,13 +42,13 @@ class AuthUtils {
     if (process.env.NODE_ENV !== 'test') sgMail.send(msg);
   }
 
-  static generateCode(hi, low): number {
+  static generateCode(hi: number, low: number): number {
     const min = Math.ceil(low);
     const max = Math.floor(hi);
     return Math.floor(Math.random() * (max - min)) + min;
   }
 
-  static checkEmailSyntax(req): Promise<any> { // eslint-disable-next-line security/detect-unsafe-regex
+  static checkEmailSyntax(req: any): Promise<boolean> { // eslint-disable-next-line security/detect-unsafe-regex
     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
       return Promise.resolve(true);
     }

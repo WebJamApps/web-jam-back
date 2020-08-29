@@ -1,16 +1,22 @@
 import csvtojson from 'csvtojson';
 
+interface IReadCSV {
+  homeTeam: string;
+  winner: string;
+  awayTeam: string;
+}
+
 class ReadCSV {
   csvtojson: typeof csvtojson;
 
-  soccerMatches: any[];
-  
+  soccerMatches: IReadCSV[];
+
   constructor() {
     this.csvtojson = csvtojson;
     this.soccerMatches = [];
   }
 
-  manUnitedWins(): string { 
+  manUnitedWins(): string {
     enum MatchResult {
       HomeWin = 'H',
       AwayWin = 'A',

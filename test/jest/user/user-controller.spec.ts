@@ -1,10 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import superagent from 'superagent';
 import controller from '../../../src/model/user/user-controller';
 
 describe('User Controller', () => {
   let r;
   const resStub = {
-    status: () => ({ json: (obj) => Promise.resolve(obj) }),
+    status: () => ({ json: (obj: any) => Promise.resolve(obj) }),
   };
   it('catches error on findByEmail', async () => {
     controller.model.findOne = jest.fn(() => Promise.reject(new Error('bad')));

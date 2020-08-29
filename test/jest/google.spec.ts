@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import superagent from 'superagent';
 import google from '../../src/auth/google';
 

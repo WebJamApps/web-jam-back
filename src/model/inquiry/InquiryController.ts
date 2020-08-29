@@ -10,8 +10,8 @@ class InquiryController {
     this.sgMail = sgMail;
   }
 
-  sendGridEmail(bodyhtml, toemail, subjectline, res) {
-    this.sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  sendGridEmail(bodyhtml: any, toemail: any, subjectline: any, res: any) {
+    this.sgMail.setApiKey(process.env.SENDGRID_API_KEY || /* istanbul ignore next */'');
     const msg = {
       to: toemail,
       from: 'user-service@web-jam.com',
@@ -24,7 +24,7 @@ class InquiryController {
     return res.status(200).json({ message: 'email sent' });
   }
 
-  handleInquiry(req, res) { // eslint-disable-line class-methods-use-this
+  handleInquiry(req: any, res: any) { // eslint-disable-line class-methods-use-this
     debug(req.body);
     return this.sendGridEmail(JSON.stringify(req.body), 'web.jam.adm@gmail.com', 'inquiry', res);
   }
