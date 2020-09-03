@@ -1,3 +1,4 @@
+import { Request, Response } from 'express';
 import Debug from 'debug';
 import Controller from '../../lib/controller';
 import userModel from './user-facade';
@@ -8,16 +9,16 @@ const debug = Debug('web-jam-back:user-controller');
 class UserController extends Controller {
   authGoogle: any;
 
-  constructor(uModel) {
+  constructor(uModel: any) {
     super(uModel);
     this.authGoogle = authGoogle;
   }
 
-  resErr(res, e) { // eslint-disable-line class-methods-use-this
+  resErr(res: Response, e: Error) { // eslint-disable-line class-methods-use-this
     return res.status(500).json({ message: e.message });
   }
 
-  async findByEmail(req, res) {
+  async findByEmail(req: any, res: any) {
     let user;
     try { user = await this.model.findOne({ email: req.body.email }); } catch (e) { return this.resErr(res, e); }
     if (user === undefined || user === null || user._id === null || user._id === undefined) {
@@ -27,16 +28,16 @@ class UserController extends Controller {
     return res.status(200).json(user);
   }
 
-  handleAuth(req, res) { return this[req.params.id](req, res); }
+  // handleAuth(req: Request, res: Response) { return this[req.params.id](req, res); }
 
-  authFindOneAndUpdate(matcher, update, res) { return this.findOneAndUpdate({ query: matcher, body: update }, res); }
+  authFindOneAndUpdate(matcher: any, update: any, res: Response) { return this.findOneAndUpdate({ query: matcher, body: update }, res); }
 
-  validateemail(req, res) {
+  validateemail(req: Request, res: Response) {
     const update = { resetCode: '', isPswdReset: false, verifiedEmail: true };
     return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
   }
 
-  updateemail(req, res) { // validate with pin then change the email address
+  updateemail(req: Request, res: Response) { // validate with pin then change the email address
     const update: any = {};
     const matcher: any = { email: req.body.email };
     matcher.resetCode = req.body.resetCode;
@@ -47,7 +48,7 @@ class UserController extends Controller {
     return this.findOneAndUpdate({ query: matcher, body: update }, res);
   }
 
-  async pswdreset(req, res) { // changes the password after code is verified
+  async pswdreset(req: any, res: any) { // changes the password after code is verified
     if (req.body.password === null || req.body.password === undefined || req.body.password.length < 8) {
       return res.status(400).json({ message: 'Password is not min 8 characters' });
     }
@@ -60,7 +61,7 @@ class UserController extends Controller {
     return this.authFindOneAndUpdate({ email: req.body.email, resetCode: req.body.resetCode }, update, res);
   }
 
-  async resetpswd(req, res) { // initial request to reset password
+  async resetpswd(req: any, res: any) { // initial request to reset password
     debug('resetpswd');
     let user;
     const updateUser: any = {};
@@ -80,14 +81,14 @@ class UserController extends Controller {
     return res.status(200).json({ email: user.email });
   }
 
-  async validateChangeEmail(req) {
+  async validateChangeEmail(req: any) {
     let user1;
     try { user1 = await this.model.findOne({ email: req.body.changeemail }); } catch (e) { return Promise.reject(e); }
     if (user1 !== null) return Promise.reject(new Error('Email address already exists'));
     return Promise.resolve(user1);
   }
 
-  async changeemail(req, res) {
+  async changeemail(req: any, res: any) {
     let result;
     const updateUser: any = {};
     try {
@@ -108,7 +109,7 @@ class UserController extends Controller {
     return res.status(200).json({ success: true });
   }
 
-  async finishLogin(res, isPW, user) {
+  async finishLogin(res: any, isPW: boolean, user: any) {
     let loginUser;
     const updateData: any = {};
     if (!isPW) return res.status(401).json({ message: 'Wrong password' });
@@ -121,7 +122,7 @@ class UserController extends Controller {
     return res.status(200).json(userToken);
   }
 
-  async login(req, res) {
+  async login(req: any, res: any) {
     let user, fourOone = '', isPW;
     const reqUserEmail = this.authUtils.setIfExists(req.body.email);
     const myPassword = this.authUtils.setIfExists(req.body.password);
@@ -137,7 +138,7 @@ class UserController extends Controller {
     return this.finishLogin(res, isPW, user);
   }
 
-  async finishSignup(res, user, randomNumba) {
+  async finishSignup(res: any, user: any, randomNumba: number) {
     let userSave;
     try { userSave = await this.model.create(user); } catch (e) { return this.resErr(res, e); }
     const mailbody = `<h1>Welcome ${userSave.name
@@ -149,7 +150,7 @@ class UserController extends Controller {
     return res.status(201).json(userSave);
   }
 
-  async signup(req, res) {
+  async signup(req: any, res: any) {
     let existingUser;
     const randomNumba = this.authUtils.generateCode(99999, 10000);
     const user = {
@@ -172,7 +173,7 @@ class UserController extends Controller {
     return this.finishSignup(res, user, randomNumba);
   }
 
-  async google(req, res) {
+  async google(req: any, res: any) {
     debug(req.body);
     let newUser, existingUser, profile;
     try { profile = await this.authGoogle.authenticate(req); } catch (e) { debug(e.message); return this.resErr(res, e); }

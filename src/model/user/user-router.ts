@@ -18,7 +18,7 @@ router.route('/auth/signup')
   .post((req, res) => controller.signup(req, res));
 router.route('/auth/google')
   .post((req, res) => controller.google(req, res));
-router.route('/auth/:id')
-  .put((req, res) => controller.handleAuth(req, res));
+// router.route('/auth/:id')
+//   .put((req, res) => controller.handleAuth(req, res));
 
 export default router;

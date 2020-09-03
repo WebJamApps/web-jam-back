@@ -29,6 +29,6 @@ describe('lib facade', () => {
   });
   it('catches error on findOneAndUpdate', async () => {
     facade = new Facade(schema);
-    await expect(facade.findOneAndUpdate({})).rejects.toThrow('bad');
+    await expect(facade.findOneAndUpdate({ conditions: '' }, { update: '' })).rejects.toThrow('bad');
   });
 });
