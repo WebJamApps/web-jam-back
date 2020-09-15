@@ -51,7 +51,7 @@ app.use(helmet.contentSecurityPolicy({
     'media-src': ["'self'", 'https://dl.dropboxusercontent.com'],
     'object-src': ["'none'"],
     'script-src': ["'self'", 'https://maps.googleapis.com', 'https://apis.google.com', 'https://cdn.tiny.cloud', 
-      'https://w.soundcloud.com', 'https://www.youtube.com'],
+      'https://w.soundcloud.com', 'https://www.youtube.com', 'https://s.ytimg.com'],
     'script-src-attr': ["'none'"],
     'style-src': ["'self'", 'https:', "'unsafe-inline'"],
     'upgrade-insecure-requests': [],
