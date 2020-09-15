@@ -45,7 +45,7 @@ app.use(helmet.contentSecurityPolicy({
     'base-uri': ["'self'"],
     'block-all-mixed-content': [],
     'font-src': ["'self'", 'https:', 'data:'],
-    'frame-src': ["'self'", 'https://accounts.google.com', 'https://www.facebook.com'],
+    'frame-src': ["'self'", 'https://accounts.google.com', 'https://www.facebook.com', 'https://open.spotify.com'],
     'frame-ancestors': ["'self'"],
     'img-src': ["'self'", 'data:', 'https:'],
     'object-src': ["'none'"],
