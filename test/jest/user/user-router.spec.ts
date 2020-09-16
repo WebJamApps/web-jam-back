@@ -171,10 +171,10 @@ describe('User Router', () => {
   //     .send({ email: 'old@wold.com', changeemail: 'booya' });
   //   expect(cb.status).toBe(400);
   // });
-  it('finds the changeemail that already exists', async () => {
-    controller.model.findOne = jest.fn(() => Promise.resolve({}));
-    await expect(controller.validateChangeEmail({ body: { email: 'yo@yo.com' } })).rejects.toThrow('Email address already exists');
-  });
+  // it('finds the changeemail that already exists', async () => {
+  //   controller.model.findOne = jest.fn(() => Promise.resolve({}));
+  //   await expect(controller.validateChangeEmail({ body: { email: 'yo@yo.com' } })).rejects.toThrow('Email address already exists');
+  // });
   it('catches a error on create new user after google authenticate', async () => {
     const g: any = google;
     g.authenticate = jest.fn(() => Promise.resolve({ emailAddresses: [{ value: 'jb@yo.com' }], names: [{ displayName: 'jb' }] }));
