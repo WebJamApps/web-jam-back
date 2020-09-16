@@ -26,6 +26,12 @@ describe('lib controller', () => {
     r = await c.findOneAndUpdate(req, res) as any;
     expect(r.message).toBe('bad');
   });
+  it('it returns 400 on findOneAndUpdate', async () => {
+    model.findOneAndUpdate = () => Promise.resolve();
+    c = new Controller(model);
+    r = await c.findOneAndUpdate(req, res) as any;
+    expect(r.message).toBe('invalid request');
+  });
   it('it catches error on find', async () => {
     c = new Controller(model);
     r = await c.find(req, res) as any;
