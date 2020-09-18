@@ -2,10 +2,16 @@ import csvtojson from 'csvtojson';
 import Debug from 'debug';
 
 const debug = Debug('web-jam-back:ReadCSV');
+
+enum MatchResult {
+  HomeWin = 'H',
+  AwayWin = 'A',
+  Draw = 'D'
+}
 interface IReadCSV {
   date: string | Date;
   homeTeam: string;
-  winner: string;
+  winner: MatchResult;
   awayTeam: string;
   homeScore: number;
   awayScore: number;
@@ -22,11 +28,6 @@ class ReadCSV {
   }
 
   manUnitedWins(): string {
-    enum MatchResult {
-      HomeWin = 'H',
-      AwayWin = 'A',
-      Draw = 'D'
-    }
     let manWins = 0;
 
     this.soccerMatches.map((match) => {
@@ -41,22 +42,14 @@ class ReadCSV {
     return `Man United won ${manWins} games`;
   }
 
-  convertDates():void{
-    this.soccerMatches = this.soccerMatches.map((m) => {
-      const match = m;
-      if (typeof match.date !== 'string') return match;
-      const tmpDate:string = match.date;
-      const tmpDateArr = tmpDate.split('/');
-      match.date = new Date(Number(tmpDateArr[2]), Number(tmpDate[1]) - 1, Number(tmpDate[0]));
-      return match;
-    });
-  }
-
-  convertScores():void{
+  convertData():void{
     this.soccerMatches = this.soccerMatches.map((m) => {
       const match = m;
       match.homeScore = Number(match.homeScore);
       match.awayScore = Number(match.awayScore);
+      if (typeof match.date !== 'string') return match;
+      const tmpDateArr = match.date.split('/');
+      match.date = new Date(Number(tmpDateArr[2]), Number(tmpDateArr[1]) - 1, Number(tmpDateArr[0]));
       return match;
     });
   }
@@ -69,8 +62,7 @@ class ReadCSV {
       })
         .fromFile('./src/ReadCSV/football.csv');
     } catch (e) { return `${e.message}`; }
-    this.convertDates();
-    this.convertScores();
+    this.convertData();
     return this.manUnitedWins();
   }
 }
