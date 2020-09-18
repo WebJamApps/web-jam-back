@@ -76,8 +76,9 @@ app.use((err:{ status:number, message:string }, _req:Request, res: Response) => 
   app.listen(port, async () => {
     debug('running in debug mode');
     console.log(`Magic happens on port ${port}`); // eslint-disable-line no-console
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const result = await readCsv.run();
-    debug(result);
+    // debug(result);
   });
 }
 /* istanbul ignore else */if (process.env.NODE_ENV !== 'production') {
