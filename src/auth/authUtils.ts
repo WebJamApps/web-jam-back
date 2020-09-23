@@ -25,7 +25,8 @@ class AuthUtils {
     } catch (err) {
       return res.status(401).send({ message: err.message });
     }
-    req.user = payload.sub;
+    req.user = payload.sub;// this is the userId
+    // set the userType by fetching the user by id
     return next();
   }
 

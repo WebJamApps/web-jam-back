@@ -6,5 +6,5 @@ import routeUtils from '../../lib/routeUtils';
 const router = express.Router();
 
 routeUtils.setRoot(router, controller, authUtils);
-
+routeUtils.byId(router, controller, authUtils);
 export default router;

@@ -66,6 +66,11 @@ routes(app);
 app.get('*', (req, res) => {
   res.sendFile(path.normalize(path.join(__dirname, '../JaMmusic/dist/index.html')));
 });
+app.use((req, res, next) => {
+  const error:any = new Error('Route Not found');
+  error.status = 404;
+  next(error);
+});
 app.use((err:{status:number, message:string}, req:Request, res: Response) => {
   res.status(err.status || 500)
     .json({ message: err.message, error: err });
@@ -76,9 +81,8 @@ app.use((err:{status:number, message:string}, req:Request, res: Response) => {
   app.listen(port, async () => {
     debug('running in debug mode');
     console.log(`Magic happens on port ${port}`); // eslint-disable-line no-console
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const result = await readCsv.run();
-    // debug(result);
+    debug(result);
   });
 }
 /* istanbul ignore else */if (process.env.NODE_ENV !== 'production') {
