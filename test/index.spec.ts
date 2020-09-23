@@ -43,6 +43,12 @@ describe('Index test', () => {
       .set('authorization', 'Bearer ');
     expect(r.status).toBe(404);
   });
+  // it('returns 500 error', async () => {
+  //   r = await agent
+  //     .get('/')
+  //     .set('undefined');
+  //   expect(r.status).toBe(500);
+  // }); 
   it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
     const delay = (ms: any) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
     await delay(4000);
