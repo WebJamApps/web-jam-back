@@ -13,4 +13,10 @@ describe('ReadCSV', () => {
     const result = await readc.run();
     expect(result).toBe('bad');
   });
+  it('skips converstion to date if not a string', () => {
+    const readc: any = new ReadCSV();
+    readc.soccerMatches = [{ date: new Date() }];
+    readc.convertData();
+    expect(readc.soccerMatches.length).toBe(1);
+  });
 });
