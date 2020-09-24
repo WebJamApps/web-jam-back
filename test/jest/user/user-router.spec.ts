@@ -12,6 +12,7 @@ describe('User Router', () => {
   let r;
   beforeEach(async () => {
     await user.deleteMany({});
+    authUtils.ensureAuthenticated = jest.fn(() => Promise.resolve(true));
   });
   afterAll(async () => {
     await user.deleteMany({});
@@ -32,8 +33,9 @@ describe('User Router', () => {
     r = await request(app)
       .post('/user')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`)
       .send({ email: 'foo3@example.com' });
+      console.log(r.body);
     expect(r.status).toBe(200);
   });
   it('finds a user by id', async () => {
@@ -41,7 +43,7 @@ describe('User Router', () => {
     r = await request(app)
       .get(`/user/${newUser._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`);
     expect(r.status).toBe(200);
   });
   it('updates a user', async () => {
@@ -49,7 +51,7 @@ describe('User Router', () => {
     r = await request(app)
       .put(`/user/${newUser._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`)
       .send({ name: 'foobar' });
     expect(r.status).toBe(200);
   });
@@ -58,7 +60,7 @@ describe('User Router', () => {
     r = await request(app)
       .delete(`/user/${newUser.id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`);
     expect(r.body.message).toBe('User was deleted successfully');
     expect(r.status).toBe(200);
   });

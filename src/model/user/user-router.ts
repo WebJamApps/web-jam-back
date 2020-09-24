@@ -6,6 +6,7 @@ import routeUtils from '../../lib/routeUtils';
 const router = express.Router();
 
 router.route('/')
+  .get((req, res) => (process.env.NODE_ENV === 'development' ? controller.find(req, res) : res.status(401).json({ message: 'not authorized' })))
   .post(authUtils.ensureAuthenticated, (req, res) => controller.findByEmail(req, res));
 routeUtils.byId(router, controller, authUtils);
 router.route('/auth/login')

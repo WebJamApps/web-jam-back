@@ -8,6 +8,7 @@ describe('The Book API', () => {
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
   beforeEach(async () => {
     await BookModel.deleteMany({});
+    authUtils.ensureAuthenticated = jest.fn(() => Promise.resolve(true));
   });
   it('should find one book', async () => {
     await BookModel.create({
@@ -18,7 +19,7 @@ describe('The Book API', () => {
       .set({
         origin: allowedUrl,
       })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`)
       .query({ type: 'paperback' });
     expect(r.status).toBe(200);
     expect(r.body.title).toBe('Best Test Book Ever');
@@ -32,7 +33,7 @@ describe('The Book API', () => {
       .set({
         origin: allowedUrl,
       })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`)
       .query({ type: 'magazine' });
     expect(r.status).toBe(400);
   });
@@ -45,7 +46,7 @@ describe('The Book API', () => {
       .set({
         origin: allowedUrl,
       })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`)
       .query({ type: 'paperback' })
       .send({ title: 'Bad Book' });
     expect(r.status).toBe(200);
@@ -58,7 +59,7 @@ describe('The Book API', () => {
     r = await request(app)
       .delete(`/book/${newBook._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`);
     expect(r.status).toBe(200);
   });
   it('finds the checked out books', async () => {
@@ -68,7 +69,7 @@ describe('The Book API', () => {
     r = await request(app)
       .get('/book/findcheckedout/33333')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`);
     expect(r.status).toBe(200);
   });
   it('updates a book by id', async () => {
@@ -78,7 +79,7 @@ describe('The Book API', () => {
     r = await request(app)
       .put(`/book/${newBook.id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`)
       .send({ checkedOutBy: '' });
     expect(r.status).toBe(200);
   });
@@ -89,7 +90,7 @@ describe('The Book API', () => {
     r = await request(app)
       .get(`/book/${newBook._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`);
     expect(r.status).toBe(200);
   });
   it('gets all books', async () => {
@@ -99,7 +100,7 @@ describe('The Book API', () => {
     r = await request(app)
       .get('/book')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`);
     expect(r.status).toBe(200);
   });
   it('creates a new book', async () => {
@@ -109,7 +110,7 @@ describe('The Book API', () => {
     r = await request(app)
       .post('/book')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`)
       .send({
         title: 'Best Test Book Ever', type: 'paperback',
       });
@@ -122,7 +123,7 @@ describe('The Book API', () => {
     r = await request(app)
       .delete('/book')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`)
       .query({ type: 'paperback' });
     expect(r.status).toBe(200);
   });
