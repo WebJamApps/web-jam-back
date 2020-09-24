@@ -1,9 +1,13 @@
 import jwt from 'jwt-simple';
 import moment from 'moment';
+import mongoose from 'mongoose';
 import AuthUtils from '../../src/auth/authUtils';
 import config from '../../src/config';
+import userModel from '../../src/model/user/user-schema';
 
 describe('the authUtils', () => {
+  const reqStub:any = { user: '' };
+  let resStub:any = {};
   it('validates email syntax', async () => {
     const cb = await AuthUtils.checkEmailSyntax({ body: { changeemail: 'j@jb.com' } });
     expect(cb).toBe(true);
@@ -61,5 +65,41 @@ describe('the authUtils', () => {
       },
     };
     AuthUtils.ensureAuthenticated(req, res, jest.fn());
+  });
+  it('does not find the user by id', async () => {
+    const uM:any = userModel;
+    uM.findById = jest.fn(() => ({ lean: () => ({ exec: () => Promise.reject(new Error('bad')) }) }));
+    reqStub.user = mongoose.Types.ObjectId();
+    reqStub.baseUrl = '/booya';
+    resStub = {
+      status(num: number) {
+        expect(num).toBe(500);
+        return {
+          json({ message }: any) {
+            expect(message.includes('token does not match')).toBe(true);
+            return Promise.resolve(true);
+          },
+        };
+      },
+    };
+    await AuthUtils.findUserById(reqStub, resStub, jest.fn());
+  });  
+  it('prevents user with incorrect userType', async () => {
+    const uM:any = userModel;
+    uM.findById = jest.fn(() => ({ lean: () => ({ exec: () => Promise.resolve() }) }));
+    reqStub.user = mongoose.Types.ObjectId();
+    reqStub.baseUrl = '/book';
+    resStub = {
+      status(num: number) {
+        expect(num).toBe(401);
+        return {
+          json({ message }: any) {
+            expect(message.includes('user does not have')).toBe(true);
+            return Promise.resolve(true);
+          },
+        };
+      },
+    };
+    await AuthUtils.findUserById(reqStub, resStub, jest.fn());
   });
 });
