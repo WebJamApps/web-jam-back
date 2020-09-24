@@ -110,10 +110,10 @@ class Controller {
   }
 
   async createDocs(body: any): Promise<Error> {
-    debug('createDocs');
+    // debug('createDocs');
     let result: Error;
     try { result = await this.model.create(body); } catch (e) { return Promise.reject(e); }
-    debug(result);
+    // debug(result);
     return result;
   }
 }

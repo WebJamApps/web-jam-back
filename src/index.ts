@@ -66,10 +66,9 @@ routes(app);
 app.get('*', (req, res) => {
   res.sendFile(path.normalize(path.join(__dirname, '../JaMmusic/dist/index.html')));
 });
-app.use((err:{status:number, message:string}, req:Request, res: Response) => {
-  res.status(err.status || 500)
-    .json({ message: err.message, error: err });
-});
+app.use((_req, res) => res.status(404).send('not found'));
+/* istanbul ignore next */
+app.use((err:{status:number, message:string}, _req:Request, res: Response) => res.status(500).json({ message: err.message, error: err }));
 
 /* istanbul ignore if */if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT || 7000;
@@ -91,4 +90,5 @@ app.use((err:{status:number, message:string}, req:Request, res: Response) => {
   })();
 }
 debug(`isTTY?: ${process.stderr.isTTY}`);
+
 export default app;
