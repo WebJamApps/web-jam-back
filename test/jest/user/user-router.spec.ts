@@ -28,37 +28,43 @@ describe('User Router', () => {
   //   expect(r.body.resetCode).toBe('');
   // });
   it('finds a user by email', async () => {
-    await user.create({ name: 'foo', email: 'foo3@example.com' });
+    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
     r = await request(app)
       .post('/user')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
       .send({ email: 'foo3@example.com' });
+    expect(r.status).toBe(200);
+  });  
+  it('finds all users', async () => {
+    await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
+    r = await request(app)
+      .get('/user');
     expect(r.status).toBe(200);
   });
   it('finds a user by id', async () => {
-    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com' });
+    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
     r = await request(app)
       .get(`/user/${newUser._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`);
     expect(r.status).toBe(200);
   });
   it('updates a user', async () => {
-    const newUser = await user.create({ name: 'foo1', email: 'foo3@example.com' });
+    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
     r = await request(app)
       .put(`/user/${newUser._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
       .send({ name: 'foobar' });
     expect(r.status).toBe(200);
   });
   it('deletes a user', async () => {
-    const newUser = await user.create({ name: 'foo2', email: 'foo3@example.com' });
+    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
     r = await request(app)
       .delete(`/user/${newUser.id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`);
     expect(r.body.message).toBe('User was deleted successfully');
     expect(r.status).toBe(200);
   });
