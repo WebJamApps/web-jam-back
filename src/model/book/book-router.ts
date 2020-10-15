@@ -11,11 +11,6 @@ router.route('/one')
   .put(authUtils.ensureAuthenticated, (req, res) => controller.findOneAndUpdate(req, res));
 routeUtils.byId(router, controller, authUtils);
 
-// router.route('/:id')
-//   .put(authUtils.ensureAuthenticated, (req, res) => controller.findByIdAndUpdate(req, res))
-//   .get(authUtils.ensureAuthenticated, (req, res) => controller.findById(req, res))
-//   .delete(authUtils.ensureAuthenticated, (req, res) => controller.findByIdAndRemove(req, res));
-
 router.route('/findcheckedout/:id')
   .get(authUtils.ensureAuthenticated, (req, res) => controller.findCheckedOut(req, res));
 

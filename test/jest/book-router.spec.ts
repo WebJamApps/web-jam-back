@@ -1,11 +1,15 @@
 import request from 'supertest';
 import app from '../../src/index';
 import BookModel from '../../src/model/book/book-facade';
+import userModel from '../../src/model/user/user-facade';
 import authUtils from '../../src/auth/authUtils';
 
 describe('The Book API', () => {
-  let r;
+  let r, newUser:any;
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
+  beforeAll(async () => {
+    newUser = await userModel.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
+  });
   beforeEach(async () => {
     await BookModel.deleteMany({});
   });
@@ -18,7 +22,7 @@ describe('The Book API', () => {
       .set({
         origin: allowedUrl,
       })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
       .query({ type: 'paperback' });
     expect(r.status).toBe(200);
     expect(r.body.title).toBe('Best Test Book Ever');
@@ -32,7 +36,7 @@ describe('The Book API', () => {
       .set({
         origin: allowedUrl,
       })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`)
       .query({ type: 'magazine' });
     expect(r.status).toBe(400);
   });
@@ -45,7 +49,7 @@ describe('The Book API', () => {
       .set({
         origin: allowedUrl,
       })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
       .query({ type: 'paperback' })
       .send({ title: 'Bad Book' });
     expect(r.status).toBe(200);
@@ -58,7 +62,7 @@ describe('The Book API', () => {
     r = await request(app)
       .delete(`/book/${newBook._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`);
     expect(r.status).toBe(200);
   });
   it('finds the checked out books', async () => {
@@ -68,7 +72,7 @@ describe('The Book API', () => {
     r = await request(app)
       .get('/book/findcheckedout/33333')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`);
     expect(r.status).toBe(200);
   });
   it('updates a book by id', async () => {
@@ -78,7 +82,7 @@ describe('The Book API', () => {
     r = await request(app)
       .put(`/book/${newBook.id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
       .send({ checkedOutBy: '' });
     expect(r.status).toBe(200);
   });
@@ -89,7 +93,7 @@ describe('The Book API', () => {
     r = await request(app)
       .get(`/book/${newBook._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`);
     expect(r.status).toBe(200);
   });
   it('gets all books', async () => {
@@ -99,7 +103,7 @@ describe('The Book API', () => {
     r = await request(app)
       .get('/book')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`);
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: '123456' })}`);
     expect(r.status).toBe(200);
   });
   it('creates a new book', async () => {
@@ -109,7 +113,7 @@ describe('The Book API', () => {
     r = await request(app)
       .post('/book')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
       .send({
         title: 'Best Test Book Ever', type: 'paperback',
       });
@@ -122,7 +126,7 @@ describe('The Book API', () => {
     r = await request(app)
       .delete('/book')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT('foo2@example.com')}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
       .query({ type: 'paperback' });
     expect(r.status).toBe(200);
   });

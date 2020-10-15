@@ -1,9 +1,20 @@
 import csvtojson from 'csvtojson';
+import Debug from 'debug';
 
+const debug = Debug('web-jam-back:ReadCSV');
+
+enum MatchResult {
+  HomeWin = 'H',
+  AwayWin = 'A',
+  Draw = 'D'
+}
 interface IReadCSV {
+  date: string | Date;
   homeTeam: string;
-  winner: string;
+  winner: MatchResult;
   awayTeam: string;
+  homeScore: number;
+  awayScore: number;
 }
 
 class ReadCSV {
@@ -17,34 +28,41 @@ class ReadCSV {
   }
 
   manUnitedWins(): string {
-    enum MatchResult {
-      HomeWin = 'H',
-      AwayWin = 'A',
-      Draw = 'D'
-    }
     let manWins = 0;
 
-    // eslint-disable-next-line no-restricted-syntax
-    for (const match of this.soccerMatches) {
+    this.soccerMatches.map((match) => {
       if (match.homeTeam === 'Man United' && match.winner === MatchResult.HomeWin) {
-        // eslint-disable-next-line no-plusplus
-        manWins++;
+        manWins += 1;
       } else if (match.awayTeam === 'Man United' && match.winner === MatchResult.AwayWin) {
-        // eslint-disable-next-line no-plusplus
-        manWins++;
+        manWins += 1;
       }
-    }
+      return match;
+    });
+    debug(this.soccerMatches);
     return `Man United won ${manWins} games`;
+  }
+
+  convertData():void{
+    this.soccerMatches = this.soccerMatches.map((m) => {
+      const match = m;
+      match.homeScore = Number(match.homeScore);
+      match.awayScore = Number(match.awayScore);
+      if (typeof match.date !== 'string') return match;
+      const tmpDateArr = match.date.split('/');
+      match.date = new Date(Number(tmpDateArr[2]), Number(tmpDateArr[1]) - 1, Number(tmpDateArr[0]));
+      return match;
+    });
   }
 
   async run(): Promise<string> {
     try {
       this.soccerMatches = await this.csvtojson({
         noheader: true,
-        headers: ['data', 'homeTeam', 'awayTeam', 'homeScore', 'awayScore', 'winner', 'mvp'],
+        headers: ['date', 'homeTeam', 'awayTeam', 'homeScore', 'awayScore', 'winner', 'mvp'],
       })
         .fromFile('./src/ReadCSV/football.csv');
     } catch (e) { return `${e.message}`; }
+    this.convertData();
     return this.manUnitedWins();
   }
 }

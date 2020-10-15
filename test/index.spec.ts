@@ -31,13 +31,19 @@ describe('Index test', () => {
       .set('authorization', 'Bearer ');
     expect(r.status).toBe(200);
   });
-  it('should return 500 error', async () => {
+  it('should return 404 error', async () => {
     r = await agent
       .delete('/bogus')
       .set({ origin: 'bogus' })
       .set('authorization', 'Bearer ');
-    expect(r.status).toBe(500);
+    expect(r.status).toBe(404);
   });
+  // it('returns 500 error', async () => {
+  //   r = await agent
+  //     .get('/')
+  //     .set('undefined');
+  //   expect(r.status).toBe(500);
+  // }); 
   it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
     const delay = (ms: any) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
     await delay(4000);

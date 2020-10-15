@@ -5,6 +5,7 @@ const { Schema } = mongoose;
 const songSchema = new Schema({
   title: { type: String, required: true },
   artist: { type: String, required: true },
+  composer: { type: String, required: false },
   category: { type: String, required: true, enum: ['original', 'pub', 'mission'] },
   album: { type: String, required: false },
   year: { type: Number, required: false },
