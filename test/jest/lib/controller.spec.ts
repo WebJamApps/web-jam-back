@@ -15,7 +15,7 @@ describe('lib controller', () => {
     findByIdAndRemove: () => Promise.reject(new Error('bad')),
   };
   const req:any = { query: '', body: {}, params: {} };
-  const res = { status: () => ({ json: (obj: any) => Promise.resolve(obj) }) };
+  const res:any = { status: () => ({ json: (obj: any) => Promise.resolve(obj) }) };
   it('it catches error on findOne', async () => {
     c = new Controller(model) as any;
     r = await c.findOne(req, res) as any;

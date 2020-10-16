@@ -1,6 +1,6 @@
-import mongoose from 'mongoose';
+import mongoose, { Schema } from 'mongoose';
 import Debug from 'debug';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils';
 
 const debug = Debug('web-jam-back:lib/controller');
@@ -14,8 +14,12 @@ interface IModel {
   create: any;
   findByIdAndUpdate: any;
   findByIdAndRemove: any;
-  Schema: any;
+  Schema: ISchema;
   deleteMany: any;
+}
+
+interface ISchema extends Schema {
+  modelName: string;
 }
 
 class Controller {
@@ -31,7 +35,7 @@ class Controller {
     this.userRoles = process.env.userRoles;
   }
 
-  async findOne(req: Request, res: any): Promise<unknown> {
+  async findOne(req: Request, res: Response): Promise<unknown> {
     let book;
     try {
       book = await this.model.findOne(req.query);
@@ -42,20 +46,20 @@ class Controller {
     return res.status(200).json(book);
   }
 
-  async findOneAndUpdate(req: {query: any, body: any}, res: any): Promise<unknown> {
+  async findOneAndUpdate(req: {query: any, body: any}, res: Response): Promise<unknown> {
     let updatedBook;
     try { updatedBook = await this.model.findOneAndUpdate(req.query, req.body); } catch (e) { return res.status(500).json({ message: e.message }); }
     if (updatedBook === null || updatedBook === undefined) return res.status(400).json({ message: 'invalid request' });
     return res.status(200).json(updatedBook);
   }
 
-  async find(req: Request, res: any): Promise<unknown> {
+  async find(req: Request, res: Response): Promise<unknown> {
     let collection;
     try { collection = await this.model.find(req.query); } catch (e) { return res.status(500).json({ message: e.message }); }
     return res.status(200).json(collection);
   }
 
-  async findById(req: Request, res: any): Promise<unknown> {
+  async findById(req: Request, res: Response): Promise<unknown> {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Find id is invalid' });
     let doc;
     try { doc = await this.model.findById(req.params.id); } catch (e) { return res.status(500).json({ message: e.message }); }
@@ -64,7 +68,7 @@ class Controller {
     return res.status(200).json(doc);
   }
 
-  async create(req: Request, res: any): Promise<unknown> {
+  async create(req: Request, res: Response): Promise<unknown> {
     debug('create');
     debug(req.body);
     let doc;
@@ -72,7 +76,7 @@ class Controller {
     return res.status(201).json(doc);
   }
 
-  async contFBIandU(req: Request, res: any): Promise<unknown> {
+  async contFBIandU(req: Request, res: Response): Promise<unknown> {
     let doc;
     try { doc = await this.model.findByIdAndUpdate(req.params.id, req.body); } catch (e) { return res.status(500).json({ message: e.message }); }
     if (!doc) return res.status(400).json({ message: 'Id Not Found' });
@@ -80,7 +84,7 @@ class Controller {
     return res.status(200).json(doc);
   }
 
-  findByIdAndUpdate(req: Request, res: any): any {
+  findByIdAndUpdate(req: Request, res: any): Promise<unknown> {
     const uR = JSON.parse(this.userRoles);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Update id is invalid' });
     if (req.body.userType && uR.roles.indexOf(req.body.userType) === -1) return res.status(400).json({ message: 'userType not valid' });
@@ -88,7 +92,7 @@ class Controller {
     return this.contFBIandU(req, res);
   }
 
-  async findByIdAndRemove(req: Request, res: any): Promise<unknown> {
+  async findByIdAndRemove(req: Request, res: Response): Promise<unknown> {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'id is invalid' });
     let doc;
     try { doc = await this.model.findByIdAndRemove(req.params.id); } catch (e) { return res.status(500).json({ message: e.message }); }
@@ -96,7 +100,7 @@ class Controller {
     return res.status(200).json({ message: `${this.model.Schema.modelName} was deleted successfully` });
   }
 
-  deleteMany(req: Request, res: any): Request {
+  deleteMany(req: Request, res: Response): Request {
     return this.model.deleteMany(req.query)
       .then(() => res.status(200).json({ message: `${this.model.Schema.modelName} deleteMany was successful` }))
       .catch((e: Error) => res.status(500).json({ message: e.message }));
