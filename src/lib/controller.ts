@@ -84,11 +84,11 @@ class Controller {
     return res.status(200).json(doc);
   }
 
-  findByIdAndUpdate(req: Request, res: any): Promise<unknown> {
+  findByIdAndUpdate(req: Request, res: Response<unknown>): Response<unknown> | Promise<unknown> {
     const uR = JSON.parse(this.userRoles);
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Update id is invalid' });
-    if (req.body.userType && uR.roles.indexOf(req.body.userType) === -1) return res.status(400).json({ message: 'userType not valid' });
-    if (req.body.name === '') return res.status(400).json({ message: 'Name is required' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) { return res.status(400).json({ message: 'Update id is invalid' }); }
+    if (req.body.userType && uR.roles.indexOf(req.body.userType) === -1) { return res.status(400).json({ message: 'userType not valid' }); }
+    if (req.body.name === '') { return res.status(400).json({ message: 'Name is required' }); }
     return this.contFBIandU(req, res);
   }
 

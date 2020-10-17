@@ -1,25 +1,25 @@
 class Facade {
-  Schema:any;
+  Schema: any;
 
   constructor(Schema: any) {
     this.Schema = Schema;
   }
 
-  create(input: any) { return this.Schema.create(input); }
+  create(input: Record<string, unknown>): any { return this.Schema.create(input); }
 
-  async f(query: any, method: any) {
+  async f(query: Record<string, unknown>, method: string): Promise<unknown> {
     let result;// eslint-disable-next-line security/detect-object-injection
     try { result = await this.Schema[method](query).lean().exec(); } catch (e) { return Promise.reject(e); }
     return Promise.resolve(result);
   }
 
-  find(query: any) { return this.f(query, 'find'); }
+  find(query: Record<string, unknown>): Promise<unknown> { return this.f(query, 'find'); }
 
-  findOne(query: any) { return this.f(query, 'findOne'); }
+  findOne(query: Record<string, unknown>): Promise<unknown> { return this.f(query, 'findOne'); }
 
-  deleteMany(query: any) { return this.Schema.deleteMany(query); }
+  deleteMany(query: Record<string, unknown>): any { return this.Schema.deleteMany(query); }
 
-  async findOneAndUpdate(conditions: any, update: any) {
+  async findOneAndUpdate(conditions: Record<string, unknown>, update: Record<string, unknown>): Promise<unknown> {
     let result;
     try {
       result = await this.Schema.findOneAndUpdate(conditions, update, { new: true }).lean().exec();
@@ -27,11 +27,11 @@ class Facade {
     return Promise.resolve(result);
   }
 
-  findByIdAndUpdate(id: any, update: any) { return this.Schema.findByIdAndUpdate(id, update, { new: true }).lean().exec(); }
+  findByIdAndUpdate(id: string, update: string): void { return this.Schema.findByIdAndUpdate(id, update, { new: true }).lean().exec(); }
 
-  findById(id: any) { return this.Schema.findById(id).lean().exec(); }
+  findById(id: string): void { return this.Schema.findById(id).lean().exec(); }
 
-  findByIdAndRemove(id: any) { return this.Schema.findByIdAndRemove(id).lean().exec(); }
+  findByIdAndRemove(id: string): void { return this.Schema.findByIdAndRemove(id).lean().exec(); }
 }
 
 export default Facade;
