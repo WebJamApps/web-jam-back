@@ -25,7 +25,7 @@ interface ISchema extends Schema {
 class Controller {
   model: IModel;
 
-  authUtils: any;
+  authUtils: typeof AuthUtils;
 
   userRoles: any;
 
@@ -46,7 +46,7 @@ class Controller {
     return res.status(200).json(book);
   }
 
-  async findOneAndUpdate(req: {query: any, body: any}, res: Response): Promise<unknown> {
+  async findOneAndUpdate(req: Request, res: Response): Promise<unknown> {
     let updatedBook;
     try { updatedBook = await this.model.findOneAndUpdate(req.query, req.body); } catch (e) { return res.status(500).json({ message: e.message }); }
     if (updatedBook === null || updatedBook === undefined) return res.status(400).json({ message: 'invalid request' });
