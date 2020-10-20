@@ -1,38 +1,21 @@
-import mongoose, { Schema } from 'mongoose';
+import mongoose from 'mongoose';
 import Debug from 'debug';
 import { Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils';
 
 const debug = Debug('web-jam-back:lib/controller');
 
-interface IModel {
-  [x: string]: any;
-  findOne: any;
-  findOneAndUpdate: any;
-  find: any;
-  findById: any;
-  create: any;
-  findByIdAndUpdate: any;
-  findByIdAndRemove: any;
-  Schema: ISchema;
-  deleteMany: any;
-}
-
-interface ISchema extends Schema {
-  modelName: string;
-}
-
 class Controller {
-  model: IModel;
+  model;
 
   authUtils: typeof AuthUtils;
 
-  userRoles: any;
+  userRoles;
 
-  constructor(model: IModel) {
+  constructor(model: any) {
     this.model = model;
     this.authUtils = AuthUtils;
-    this.userRoles = process.env.userRoles;
+    this.userRoles = JSON.parse(process.env.userRoles || '{"roles": []}').roles;
   }
 
   async findOne(req: Request, res: Response): Promise<unknown> {
@@ -85,9 +68,8 @@ class Controller {
   }
 
   findByIdAndUpdate(req: Request, res: Response<unknown>): Response<unknown> | Promise<unknown> {
-    const uR = JSON.parse(this.userRoles);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) { return res.status(400).json({ message: 'Update id is invalid' }); }
-    if (req.body.userType && uR.roles.indexOf(req.body.userType) === -1) { return res.status(400).json({ message: 'userType not valid' }); }
+    if (req.body.userType && this.userRoles.indexOf(req.body.userType) === -1) { return res.status(400).json({ message: 'userType not valid' }); }
     if (req.body.name === '') { return res.status(400).json({ message: 'Name is required' }); }
     return this.contFBIandU(req, res);
   }
@@ -100,7 +82,7 @@ class Controller {
     return res.status(200).json({ message: `${this.model.Schema.modelName} was deleted successfully` });
   }
 
-  deleteMany(req: Request, res: Response): Request {
+  deleteMany(req: Request, res: Response): Promise<unknown> {
     return this.model.deleteMany(req.query)
       .then(() => res.status(200).json({ message: `${this.model.Schema.modelName} deleteMany was successful` }))
       .catch((e: Error) => res.status(500).json({ message: e.message }));

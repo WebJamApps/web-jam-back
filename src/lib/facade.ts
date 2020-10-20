@@ -1,4 +1,4 @@
-class Facade {
+export class Facade {
   Schema: any;
 
   constructor(Schema: any) {
