@@ -6,11 +6,11 @@ import AuthUtils from '../auth/authUtils';
 const debug = Debug('web-jam-back:lib/controller');
 
 class Controller {
-  model;
+  model: any;
 
   authUtils: typeof AuthUtils;
 
-  userRoles;
+  userRoles: any;
 
   constructor(model: any) {
     this.model = model;
