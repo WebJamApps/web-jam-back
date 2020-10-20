@@ -1,7 +1,9 @@
+import { Model, Document } from 'mongoose';
+
 export class Facade {
   Schema: any;
 
-  constructor(Schema: any) {
+  constructor(Schema: Model<Document, Record<string, unknown>>) {
     this.Schema = Schema;
   }
 
