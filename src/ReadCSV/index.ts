@@ -1,5 +1,5 @@
 import csvtojson from 'csvtojson';
-import Debug from 'debug';
+// import Debug from 'debug';
 
 enum MatchResult {
   HomeWin = 'H',

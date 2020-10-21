@@ -36,7 +36,7 @@ class Facade {
   async findOneAndUpdate(conditions: Record<string, unknown>, update: Record<string, unknown>): Promise<Document | null> {
     let result;
     try {
-      result = await this.Schema.findOneAndUpdate(conditions, update, { new: true }).lean().exec();
+      result = await this.model.findOneAndUpdate(conditions, update, { new: true }).lean().exec();
     } catch (e) { return Promise.reject(e); }
     return result;
   }
