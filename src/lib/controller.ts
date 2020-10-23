@@ -4,18 +4,21 @@ import { Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils';
 
 const debug = Debug('web-jam-back:lib/controller');
-
+let uRoles:string[] = [];
+try {
+  uRoles = JSON.parse(process.env.userRoles || /* istanbul ignore next */'{"roles": []}').roles;
+} catch (e) { /* istanbul ignore next */ console.log(e.message); }
 class Controller {
   model: any;
 
   authUtils: typeof AuthUtils;
 
-  userRoles: any;
+  userRoles: string[];
 
   constructor(model: any) {
     this.model = model;
     this.authUtils = AuthUtils;
-    this.userRoles = JSON.parse(process.env.userRoles || '{"roles": []}').roles;
+    this.userRoles = uRoles;
   }
 
   async findOne(req: Request, res: Response): Promise<unknown> {
