@@ -2,6 +2,7 @@ import Facade from '../../../src/lib/facade';
 
 describe('lib facade', () => {
   let facade;
+  const matcher:any = {};
   const schema = {
     find: () => ({
       lean: () => (
@@ -21,11 +22,11 @@ describe('lib facade', () => {
   };
   it('catches error on find', async () => {
     facade = new Facade(schema);
-    await expect(facade.find({})).rejects.toThrow('bad');
+    await expect(facade.find(matcher)).rejects.toThrow('bad');
   });
   it('catches error on findOne', async () => {
     facade = new Facade(schema);
-    await expect(facade.findOne({})).rejects.toThrow('bad');
+    await expect(facade.findOne(matcher)).rejects.toThrow('bad');
   });
   it('catches error on findOneAndUpdate', async () => {
     facade = new Facade(schema);
