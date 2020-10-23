@@ -79,6 +79,7 @@ class Controller {
     let doc;
     try { doc = await this.model.findByIdAndRemove(req.params.id); } catch (e) { return res.status(500).json({ message: e.message }); }
     if (!doc) return res.status(400).json({ message: 'Delete id is invalid' });
+    console.log(this.model);
     return res.status(200).json({ message: `${this.model.Schema.modelName} was deleted successfully` });
   }
 

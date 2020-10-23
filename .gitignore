@@ -56,5 +56,4 @@ package-lock.json
 
 codeclimate.html
 build
-testJinja2.json
-Jinja2example.ts
+src/experiments
