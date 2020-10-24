@@ -8,17 +8,17 @@ import userModel from '../model/user/user-schema';
 dotenv.config();
 const debug = Debug('web-jam-back:authUtils');
 
-const findUserById = async (req: { user: any; userType: string; baseUrl:string }, 
-  res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; }): any; new(): any; }; }; }, 
-  next: () => any):Promise<any> => {
-  let myUser:any;
+const findUserById = async (req: { user: string; userType: string; baseUrl:string },
+  res: { status: (arg0: number) => { json: { (arg0: { message: string; }): void;}; }; },
+  next: () => void): Promise<unknown> => {
+  let myUser: any;
   try { myUser = await userModel.findById(req.user).lean().exec(); } catch (e) {
     return res.status(500).json({ message: `token does not match any existing user, ${e.message}` });
   }
   req.userType = myUser ? myUser.userType : 'none';
   debug(req.userType);
   debug(req.baseUrl);
-  const authRoles:any = JSON.parse(process.env.AUTH_ROLES || /* istanbul ignore next */'{}');
+  const authRoles: any = JSON.parse(process.env.AUTH_ROLES || /* istanbul ignore next */'{}');
   const route = req.baseUrl.split('/')[1];
   // eslint-disable-next-line security/detect-object-injection
   const rolesArr: any[] = authRoles[route] || /* istanbul ignore next */[];
@@ -87,5 +87,5 @@ const setIfExists = (item: string | null | undefined): string => {
 };
 
 export default {
-  setIfExists, checkEmailSyntax, generateCode, sendGridEmail, ensureAuthenticated, createJWT, findUserById, 
+  setIfExists, checkEmailSyntax, generateCode, sendGridEmail, ensureAuthenticated, createJWT, findUserById,
 };
