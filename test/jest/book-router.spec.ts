@@ -11,7 +11,8 @@ describe('The Book API', () => {
     newUser = await userModel.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
   });
   beforeEach(async () => {
-    await BookModel.deleteMany({});
+    const deleter:any = {};
+    await BookModel.deleteMany(deleter);
   });
   it('should find one book', async () => {
     await BookModel.create({

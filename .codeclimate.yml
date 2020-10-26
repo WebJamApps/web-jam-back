@@ -44,3 +44,4 @@ exclude_patterns:
   - "JaMmusic/"
   - "build/"
   - "**/reset-song.ts"
+  - "src/experiments/"

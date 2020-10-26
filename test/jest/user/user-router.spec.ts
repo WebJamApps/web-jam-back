@@ -10,11 +10,12 @@ const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
 
 describe('User Router', () => {
   let r;
+  const deleter:any = {};
   beforeEach(async () => {
-    await user.deleteMany({});
+    await user.deleteMany(deleter);
   });
   afterAll(async () => {
-    await user.deleteMany({});
+    await user.deleteMany(deleter);
   });
   // it('validates email', async () => {
   //   await user.create({

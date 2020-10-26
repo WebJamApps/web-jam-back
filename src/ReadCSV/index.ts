@@ -1,7 +1,7 @@
 import csvtojson from 'csvtojson';
-import Debug from 'debug';
+// import Debug from 'debug';
 
-const debug = Debug('web-jam-back:ReadCSV');
+// const debug = Debug('web-jam-back:ReadCSV');
 
 enum MatchResult {
   HomeWin = 'H',
@@ -38,7 +38,7 @@ class ReadCSV {
       }
       return match;
     });
-    debug(this.soccerMatches);
+    // debug(this.soccerMatches);
     return `Man United won ${manWins} games`;
   }
 

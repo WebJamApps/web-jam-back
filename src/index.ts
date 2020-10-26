@@ -14,7 +14,10 @@ import ReadCSV from './ReadCSV';
 import routes from './routes';
 import songData from './model/song/reset-song';
 import songController from './model/song/song-controller';
+// import makeObjectArrays from './makeObjectArrays';
+// import Jinja2 from './Jinja2example';
 
+// Jinja2();
 dotenv.config();
 const debug = Debug('web-jam-back:index');
 /* istanbul ignore else */
@@ -45,14 +48,14 @@ app.use(helmet.contentSecurityPolicy({
     'base-uri': ["'self'"],
     'block-all-mixed-content': [],
     'font-src': ["'self'", 'https:', 'data:'],
-    'frame-src': ["'self'", 'https://accounts.google.com', 'https://www.facebook.com', 'https://open.spotify.com', 
+    'frame-src': ["'self'", 'https://accounts.google.com', 'https://www.facebook.com', 'https://open.spotify.com',
       'https://w.soundcloud.com', 'https://www.youtube.com'],
     'frame-ancestors': ["'self'"],
     'img-src': ["'self'", 'data:', 'https:'],
     'media-src': ["'self'", 'https://dl.dropboxusercontent.com'],
     'object-src': ["'none'"],
-    'script-src': ["'self'", 'https://maps.googleapis.com', 'https://apis.google.com', 'https://cdn.tiny.cloud', 
-      'https://w.soundcloud.com', 'https://www.youtube.com', 'https://s.ytimg.com'],
+    'script-src': ["'self'", 'https://maps.googleapis.com', 'https://apis.google.com', 'https://cdn.tiny.cloud',
+      'https://w.soundcloud.com', 'https://www.youtube.com', 'https://s.ytimg.com', 'https://cdnjs.cloudflare.com'],
     'script-src-attr': ["'none'"],
     'style-src': ["'self'", 'https:', "'unsafe-inline'"],
     'upgrade-insecure-requests': [],
@@ -90,5 +93,5 @@ app.use((err:{status:number, message:string}, _req:Request, res: Response) => re
   })();
 }
 debug(`isTTY?: ${process.stderr.isTTY}`);
-
+// console.log(makeObjectArrays.makeArrayDevicePort());
 export default app;
