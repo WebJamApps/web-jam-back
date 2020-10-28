@@ -134,7 +134,9 @@ class UserController extends Controller {
       fourOone = 'Please reset your password';
     } else if (!user.verifiedEmail) fourOone = '<a href="/userutil">Verify</a> your email';
     if (fourOone !== '') return res.status(401).json({ message: fourOone });
-    try { isPW = await this.model.comparePassword(req.body.password, user.password); } catch (e) { return this.resErr(res, e); }
+    try {
+      isPW = this.model.comparePassword ? await this.model.comparePassword(req.body.password, user.password) : false; 
+    } catch (e) { return this.resErr(res, e); }
     return this.finishLogin(res, isPW, user);
   }
 
@@ -161,7 +163,7 @@ class UserController extends Controller {
       isPswdReset: false,
       resetCode: randomNumba,
     };
-    const validData = this.model.validateSignup(user);
+    const validData = this.model.validateSignup ? this.model.validateSignup(user) : '';
     if (validData !== '') return res.status(400).json({ message: validData });
     try { existingUser = await this.model.findOne({ email: req.body.email }); } catch (e) { return this.resErr(res, e); }
     if (existingUser && existingUser.verifiedEmail) {
