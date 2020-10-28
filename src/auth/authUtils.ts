@@ -8,8 +8,8 @@ import userModel from '../model/user/user-schema';
 dotenv.config();
 const debug = Debug('web-jam-back:authUtils');
 
-const findUserById = async (req: { user: any; userType: string; baseUrl:string }, 
-  res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; }): any; new(): any; }; }; }, 
+const findUserById = async (req: { user: any; userType: string; baseUrl:string },
+  res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; }): any; new(): any; }; }; },
   next: () => any):Promise<any> => {
   let myUser:any;
   try { myUser = await userModel.findById(req.user).lean().exec(); } catch (e) {
@@ -87,5 +87,5 @@ const setIfExists = (item: string | null | undefined): string => {
 };
 
 export default {
-  setIfExists, checkEmailSyntax, generateCode, sendGridEmail, ensureAuthenticated, createJWT, findUserById, 
+  setIfExists, checkEmailSyntax, generateCode, sendGridEmail, ensureAuthenticated, createJWT, findUserById,
 };
