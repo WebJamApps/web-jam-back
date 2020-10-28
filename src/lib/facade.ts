@@ -18,6 +18,19 @@ interface Ischema {
   findOne:(...args:[Query<any, any, any>])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
 }
 
+interface Ischema {
+  create:(...args:any)=>any;
+  deleteMany:(...args:any)=>any;
+  findOneAndUpdate:(...args:any)=>any;
+  findByIdAndUpdate:(...args:any)=>any;
+  findById:(...args:any)=>any;
+  findByIdAndRemove:(...args:any)=>any;
+  find:(...args:any)=>any;
+  findOne:(...args:any)=>any;
+}
+enum Method {
+  find = 'find', findOne = 'findOne',
+}
 class Facade {
   Schema: Ischema;
 
