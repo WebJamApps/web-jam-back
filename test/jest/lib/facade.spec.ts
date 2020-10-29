@@ -3,7 +3,7 @@ import Facade from '../../../src/lib/facade';
 describe('lib facade', () => {
   let facade;
   const matcher:any = {};
-  const schema = {
+  const schema:any = {
     find: () => ({
       lean: () => (
         { exec: () => Promise.reject(new Error('bad')) }
