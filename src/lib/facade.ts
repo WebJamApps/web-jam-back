@@ -19,6 +19,7 @@ interface Ischema {
 }
 
 interface Ischema {
+  modelName:string;
   create:(...args:any)=>any;
   deleteMany:(...args:any)=>any;
   findOneAndUpdate:(...args:any)=>any;
