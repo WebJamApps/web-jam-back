@@ -143,6 +143,6 @@ describe('lib controller', () => {
   it('handles error on createDocs', async () => {
     model.create = jest.fn(() => Promise.reject(new Error('bad')));
     c = new Controller(model);
-    await expect(c.createDocs({ body: '' })).rejects.toThrow('bad');
+    await expect(c.createDocs([{}])).rejects.toThrow('bad');
   });
 });

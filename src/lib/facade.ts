@@ -2,6 +2,7 @@
 import type { Model, Document, Query } from 'mongoose';
 
 interface Ischema {
+  modelName:string;
   create:(...args:any)=>any;
   deleteMany:(...args:any)=>any;
   findOneAndUpdate:(...args:any)=>any;
