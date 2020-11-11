@@ -1,8 +1,5 @@
 import type { Query, Document } from 'mongoose';
 
-// enum Method {
-//   find = 'find', findOne = 'findOne'
-// }
 interface IdeleteMany {
   n:number;
   ok:number;
@@ -28,12 +25,6 @@ class Facade {
   }
 
   create(input: Record<string, unknown>): Promise<Document> { return this.Schema.create(input); }
-
-  // async f(query: Query<Record<string, unknown>>, method: Method):Promise<Document> {
-  //   let result;// eslint-disable-next-line security/detect-object-injection
-  //   try { result = await this.Schema[method](query).lean().exec(); } catch (e) { return Promise.reject(e); }
-  //   return result;
-  // }
 
   find(query: Query<Record<string, unknown>>): Promise<Record<string, unknown>[]> { return this.Schema.find(query).lean().exec(); }
 
