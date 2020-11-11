@@ -3,19 +3,33 @@ import Debug from 'debug';
 import { Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils';
 
+interface Imodel {
+  Schema:{modelName:string},
+  findOne:(...args:any)=>any;
+  findOneAndUpdate:(...args:any)=>any;
+  find:(...args:any)=>any;
+  findById:(...args:any)=>any;
+  create:(...args:any)=>any;
+  findByIdAndUpdate:(...args:any)=>any;
+  findByIdAndRemove:(...args:any)=>any;
+  deleteMany:(...args:any)=>any;
+  comparePassword?:(...args:any)=>any;
+  validateSignup?:(...args:any)=>any;
+}
 const debug = Debug('web-jam-back:lib/controller');
 let uRoles:string[] = [];
 try {
   uRoles = JSON.parse(process.env.userRoles || /* istanbul ignore next */'{"roles": []}').roles;
+// eslint-disable-next-line no-console
 } catch (e) { /* istanbul ignore next */ console.log(e.message); }
 class Controller {
-  model: any;
+  model: Imodel;
 
   authUtils: typeof AuthUtils;
 
   userRoles: string[];
 
-  constructor(model: any) {
+  constructor(model: Imodel) {
     this.model = model;
     this.authUtils = AuthUtils;
     this.userRoles = uRoles;
@@ -82,14 +96,17 @@ class Controller {
     let doc;
     try { doc = await this.model.findByIdAndRemove(req.params.id); } catch (e) { return res.status(500).json({ message: e.message }); }
     if (!doc) return res.status(400).json({ message: 'Delete id is invalid' });
-    console.log(this.model);
+    debug(this.model);
     return res.status(200).json({ message: `${this.model.Schema.modelName} was deleted successfully` });
   }
 
-  deleteMany(req: Request, res: Response): Promise<unknown> {
-    return this.model.deleteMany(req.query)
-      .then(() => res.status(200).json({ message: `${this.model.Schema.modelName} deleteMany was successful` }))
-      .catch((e: Error) => res.status(500).json({ message: e.message }));
+  async deleteMany(req: Request, res: Response): Promise<unknown> {
+    try {
+      await this.model.deleteMany(req.query);
+    } catch (e) {
+      return res.status(500).json({ message: e.message });
+    }
+    return res.status(200).json({ message: `${this.model.Schema.modelName} deleteMany was successful` });
   }
 
   async deleteAllDocs(): Promise<Error> {
@@ -99,11 +116,9 @@ class Controller {
     return result;
   }
 
-  async createDocs(body: any): Promise<Error> {
-    // debug('createDocs');
+  async createDocs(body: Record<string, unknown>[]): Promise<Error> {
     let result: Error;
     try { result = await this.model.create(body); } catch (e) { return Promise.reject(e); }
-    // debug(result);
     return result;
   }
 }

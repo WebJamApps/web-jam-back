@@ -1,28 +1,38 @@
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import type { Model, Document, Query } from 'mongoose';
+import type { Query, Document } from 'mongoose';
+
+interface IdeleteMany {
+  n:number;
+  ok:number;
+  deleteCount:number
+}
+interface Ischema {
+  modelName:string;
+  create:(...args:[Record<string, unknown>])=>Promise<Document>;
+  deleteMany:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<IdeleteMany | null>})});
+  findOneAndUpdate:(...args:[Record<string, unknown>, Record<string, unknown>, {new:boolean}])=>({lean:()=>({exec:()=>Promise<Document | null>})});
+  findByIdAndUpdate:(...args:[string, Record<string, unknown>, {new:boolean}])=>({lean:()=>({exec:()=>Promise<Document | null>})});
+  findById:(...args:[string])=>({lean:()=>({exec:()=>Promise<Document | null>})});
+  findByIdAndRemove:(...args:[string])=>({lean:()=>({exec:()=>Promise<Document | null >})});
+  find:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<Record<string, unknown>[]>})});
+  findOne:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<Document | null>})});
+}
 
 class Facade {
-  Schema: Record<string, any>;
+  Schema: Ischema;
 
-  constructor(Schema: Record<string, any>) {
+  constructor(Schema: Ischema) {
     this.Schema = Schema;
   }
 
-  create(input: Record<string, unknown>): Promise<any> { return this.Schema.create(input); }
+  create(input: Record<string, unknown>): Promise<Document> { return this.Schema.create(input); }
 
-  async f(query: Query<any>, method: string):Promise<any> {
-    let result;// eslint-disable-next-line security/detect-object-injection
-    try { result = await this.Schema[method](query).lean().exec(); } catch (e) { return Promise.reject(e); }
-    return result;
-  }
+  find(query: Query<Record<string, unknown>>): Promise<Record<string, unknown>[]> { return this.Schema.find(query).lean().exec(); }
 
-  find(query: Query<any>): Promise<any> { return this.f(query, 'find'); }
+  findOne(query: Query<Record<string, unknown>>): Promise<Document | null> { return this.Schema.findOne(query).lean().exec(); }
 
-  findOne(query: Query<any>): Promise<any> { return this.f(query, 'findOne'); }
+  deleteMany(query: Query<Record<string, unknown>>): Promise<IdeleteMany | null> { return this.Schema.deleteMany(query).lean().exec(); }
 
-  deleteMany(query: Query<any>): Promise<any> { return this.Schema.deleteMany(query); }
-
-  async findOneAndUpdate(conditions: Record<string, unknown>, update: Record<string, unknown>): Promise<any> {
+  async findOneAndUpdate(conditions: Record<string, unknown>, update: Record<string, unknown>): Promise<Document | null> {
     let result;
     try {
       result = await this.Schema.findOneAndUpdate(conditions, update, { new: true }).lean().exec();
@@ -30,13 +40,13 @@ class Facade {
     return result;
   }
 
-  findByIdAndUpdate(id: string, update: Record<string, unknown>): Promise<any> { 
+  findByIdAndUpdate(id: string, update: Record<string, unknown>): Promise<Document | null> { 
     return this.Schema.findByIdAndUpdate(id, update, { new: true }).lean().exec(); 
   }
 
-  findById(id: string): Promise<any> { return this.Schema.findById(id).lean().exec(); }
+  findById(id: string): Promise<Document | null> { return this.Schema.findById(id).lean().exec(); }
 
-  findByIdAndRemove(id: string): Promise<any> { return this.Schema.findByIdAndRemove(id).lean().exec(); }
+  findByIdAndRemove(id: string): Promise<Document | null> { return this.Schema.findByIdAndRemove(id).lean().exec(); }
 }
 
 export default Facade;
