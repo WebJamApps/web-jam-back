@@ -1,18 +1,22 @@
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import type { Query, Document } from 'mongoose';
 
-enum Method {
-  find = 'find', findOne = 'findOne'
+// enum Method {
+//   find = 'find', findOne = 'findOne'
+// }
+interface IdeleteMany {
+  n:number;
+  ok:number;
+  deleteCount:number
 }
 interface Ischema {
   modelName:string;
   create:(...args:[Record<string, unknown>])=>Promise<Document>;
-  deleteMany:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>any})});
+  deleteMany:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<IdeleteMany | null>})});
   findOneAndUpdate:(...args:[Record<string, unknown>, Record<string, unknown>, {new:boolean}])=>({lean:()=>({exec:()=>Promise<Document | null>})});
   findByIdAndUpdate:(...args:[string, Record<string, unknown>, {new:boolean}])=>({lean:()=>({exec:()=>Promise<Document | null>})});
   findById:(...args:[string])=>({lean:()=>({exec:()=>Promise<Document | null>})});
   findByIdAndRemove:(...args:[string])=>({lean:()=>({exec:()=>Promise<Document | null >})});
-  find:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<any>})});
+  find:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<Record<string, unknown>[]>})});
   findOne:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<Document | null>})});
 }
 
@@ -25,17 +29,17 @@ class Facade {
 
   create(input: Record<string, unknown>): Promise<Document> { return this.Schema.create(input); }
 
-  async f(query: Query<Record<string, unknown>>, method: Method):Promise<any| Document | null> {
-    let result;// eslint-disable-next-line security/detect-object-injection
-    try { result = await this.Schema[method](query).lean().exec(); } catch (e) { return Promise.reject(e); }
-    return result;
-  }
+  // async f(query: Query<Record<string, unknown>>, method: Method):Promise<Document> {
+  //   let result;// eslint-disable-next-line security/detect-object-injection
+  //   try { result = await this.Schema[method](query).lean().exec(); } catch (e) { return Promise.reject(e); }
+  //   return result;
+  // }
 
-  find(query: Query<Record<string, unknown>>): Promise<any> { return this.f(query, Method.find); }
+  find(query: Query<Record<string, unknown>>): Promise<Record<string, unknown>[]> { return this.Schema.find(query).lean().exec(); }
 
-  findOne(query: Query<Record<string, unknown>>): Promise<Document | null> { return this.f(query, Method.findOne); }
+  findOne(query: Query<Record<string, unknown>>): Promise<Document | null> { return this.Schema.findOne(query).lean().exec(); }
 
-  deleteMany(query: Query<Record<string, unknown>>): Promise<any> { return this.Schema.deleteMany(query).lean().exec(); }
+  deleteMany(query: Query<Record<string, unknown>>): Promise<IdeleteMany | null> { return this.Schema.deleteMany(query).lean().exec(); }
 
   async findOneAndUpdate(conditions: Record<string, unknown>, update: Record<string, unknown>): Promise<Document | null> {
     let result;
