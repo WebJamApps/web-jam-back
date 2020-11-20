@@ -16,7 +16,7 @@
 <ui>
 <li>clone this repo</li>
 <li>`yarn install` (frontend build should fail)</li>
-<li>Request a copy of the .env file, which includes credentials to development mLab and to connect to the Google Auth Service. You will need to put a copy of the .env file into the root of the backend folder and also inside of backendroot/frontend so that you can test the production build from the local backend.</li>
+<li>Request a copy of the .env file, which includes credentials to dev & test mongodbs and to connect to the Google auth service. You will need to put a copy of the .env file into the root of the backend folder and also inside of backendroot/frontend so that you can test the production build from the local backend.</li>
 <p>After placing the new .env file into the web-jam-back/frontend folder, you need to rebuild so that these environment variables are used in the output to dist, so just run `yarn install` again
 
 <h3>Run the server</h3>
