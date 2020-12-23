@@ -6,7 +6,7 @@ import csvtojson from 'csvtojson';
 enum MatchResult {
   HomeWin = 'H',
   AwayWin = 'A',
-  Draw = 'D'
+  Draw = 'D',
 }
 interface IReadCSV {
   date: string | Date;
@@ -42,7 +42,7 @@ class ReadCSV {
     return `Man United won ${manWins} games`;
   }
 
-  convertData():void{
+  convertData():void {
     this.soccerMatches = this.soccerMatches.map((m) => {
       const match = m;
       match.homeScore = Number(match.homeScore);
