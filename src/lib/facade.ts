@@ -18,21 +18,6 @@ interface Ischema {
   findOne:(...args:[Query<any, any, any>])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
 }
 
-enum Method {
-  find = 'find', findOne = 'findOne',
-}
-interface Ischema {
-  modelName:string;
-  create:(...args:[Record<string, unknown>])=>Promise<Document>;
-  deleteMany:(...args:[Query<Record<string, unknown>>])=>({ lean:()=>({ exec:()=>any }) });
-  findOneAndUpdate:(...args:[Record<string, unknown>, Record<string, unknown>, { new:boolean }])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
-  findByIdAndUpdate:(...args:[string, Record<string, unknown>, { new:boolean }])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
-  findById:(...args:[string])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
-  findByIdAndRemove:(...args:[string])=>({ lean:()=>({ exec:()=>Promise<Document | null > }) });
-  find:(...args:[Query<Record<string, unknown>>])=>({ lean:()=>({ exec:()=>Promise<any> }) });
-  findOne:(...args:[Query<Record<string, unknown>>])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
-}
-
 class Facade {
   Schema: Ischema;
 
