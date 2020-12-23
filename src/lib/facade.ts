@@ -8,13 +8,13 @@ interface IdeleteMany {
 interface Ischema {
   modelName:string;
   create:(...args:[Record<string, unknown>])=>Promise<Document>;
-  deleteMany:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<IdeleteMany | null>})});
+  deleteMany:(...args:[Query<any, any, any>])=>({lean:()=>({exec:()=>Promise<IdeleteMany | null>})});
   findOneAndUpdate:(...args:[Record<string, unknown>, Record<string, unknown>, {new:boolean}])=>({lean:()=>({exec:()=>Promise<Document | null>})});
   findByIdAndUpdate:(...args:[string, Record<string, unknown>, {new:boolean}])=>({lean:()=>({exec:()=>Promise<Document | null>})});
   findById:(...args:[string])=>({lean:()=>({exec:()=>Promise<Document | null>})});
   findByIdAndRemove:(...args:[string])=>({lean:()=>({exec:()=>Promise<Document | null >})});
-  find:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<Record<string, unknown>[]>})});
-  findOne:(...args:[Query<Record<string, unknown>>])=>({lean:()=>({exec:()=>Promise<Document | null>})});
+  find:(...args:[Query<any, any, any>])=>({lean:()=>({exec:()=>Promise<Record<string, unknown>[]>})});
+  findOne:(...args:[Query<any, any, any>])=>({lean:()=>({exec:()=>Promise<Document | null>})});
 }
 
 class Facade {
@@ -26,11 +26,11 @@ class Facade {
 
   create(input: Record<string, unknown>): Promise<Document> { return this.Schema.create(input); }
 
-  find(query: Query<Record<string, unknown>>): Promise<Record<string, unknown>[]> { return this.Schema.find(query).lean().exec(); }
+  find(query: Query<any, any, any>): Promise<Record<string, unknown>[]> { return this.Schema.find(query).lean().exec(); }
 
-  findOne(query: Query<Record<string, unknown>>): Promise<Document | null> { return this.Schema.findOne(query).lean().exec(); }
+  findOne(query: Query<any, any, any>): Promise<Document | null> { return this.Schema.findOne(query).lean().exec(); }
 
-  deleteMany(query: Query<Record<string, unknown>>): Promise<IdeleteMany | null> { return this.Schema.deleteMany(query).lean().exec(); }
+  deleteMany(query: Query<any, any, any>): Promise<IdeleteMany | null> { return this.Schema.deleteMany(query).lean().exec(); }
 
   async findOneAndUpdate(conditions: Record<string, unknown>, update: Record<string, unknown>): Promise<Document | null> {
     let result;

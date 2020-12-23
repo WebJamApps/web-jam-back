@@ -3,10 +3,10 @@ import app from '../../../src/index';
 
 describe('Inquiry Router', () => {
   afterAll(async () => {
-    await new Promise((resolve) => setTimeout(() => resolve(), 500));
+    await new Promise((resolve) => setTimeout(() => resolve(true), 500));
   });
 
-  let r;
+  let r:any;
   it('sends an email', async () => {
     r = await request(app)
       .post('/inquiry')
