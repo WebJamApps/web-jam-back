@@ -29,7 +29,7 @@ describe('User Router', () => {
   //   expect(r.body.resetCode).toBe('');
   // });
   it('finds a user by email', async () => {
-    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
+    const newUser:any = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
     r = await request(app)
       .post('/user')
       .set({ origin: allowedUrl })
@@ -44,7 +44,7 @@ describe('User Router', () => {
     expect(r.status).toBe(200);
   });
   it('finds a user by id', async () => {
-    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
+    const newUser:any = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
     r = await request(app)
       .get(`/user/${newUser._id}`)
       .set({ origin: allowedUrl })
@@ -52,7 +52,7 @@ describe('User Router', () => {
     expect(r.status).toBe(200);
   });
   it('updates a user', async () => {
-    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
+    const newUser:any = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
     r = await request(app)
       .put(`/user/${newUser._id}`)
       .set({ origin: allowedUrl })
@@ -61,7 +61,7 @@ describe('User Router', () => {
     expect(r.status).toBe(200);
   });
   it('deletes a user', async () => {
-    const newUser = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
+    const newUser:any = await user.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
     r = await request(app)
       .delete(`/user/${newUser.id}`)
       .set({ origin: allowedUrl })
