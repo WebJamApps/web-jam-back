@@ -26,7 +26,7 @@ const findUserById = async (req: { user: any; userType: string; baseUrl:string }
   return next();
 };
 
-const createJWT = (user: {_id:string}): string => {
+const createJWT = (user: { _id:string }): string => {
   const payload = {
     sub: user._id,
     iat: moment().unix(),

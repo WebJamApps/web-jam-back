@@ -4,7 +4,7 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "15.14.0"
+    "node": ">=16.1.0"
   },
   "files": [
     "lib/",
@@ -48,7 +48,7 @@
     "@types/mongoose": "latest",
     "@types/morgan": "latest",
     "@types/superagent": "latest",
-    "@types/supports-color": "latest",
+    "@types/supports-color": "^7.2.0",
     "bcryptjs": "latest",
     "body-parser": "latest",
     "cors": "latest",
@@ -64,14 +64,15 @@
     "mongoose": "5.12.3",
     "morgan": "latest",
     "nodemon": "latest",
+    "node-notifier": "^10.0.0",
     "superagent": "latest",
-    "supports-color": "latest",
+    "supports-color": "^8.1.1",
     "typescript": "latest"
   },
   "devDependencies": {
     "@types/jest": "latest",
     "@types/supertest": "latest",
-    "@types/supports-color": "latest",
+    "@types/supports-color": "^7.2.0",
     "@typescript-eslint/eslint-plugin": "latest",
     "@typescript-eslint/parser": "latest",
     "eslint": "latest",
