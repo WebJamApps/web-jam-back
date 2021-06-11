@@ -58,12 +58,12 @@ codeclimate.html
 build
 src/experiments
 
-# Yarn 2.0 - Zero Install method: https://yarnpkg.com/getting-started/qa#which-files-should-be-gitignored
+# Yarn 2.0 - None Zero Install method: https://yarnpkg.com/getting-started/qa#which-files-should-be-gitignored
 
 .yarn/*
-!.yarn/cache
 !.yarn/patches
-!.yarn/plugins
 !.yarn/releases
+!.yarn/plugins
 !.yarn/sdks
 !.yarn/versions
+.pnp.*
