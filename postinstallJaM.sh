@@ -6,7 +6,7 @@ BRANCH=master
 
 if [[ $BUILD_BRANCH != "master" ]];
 then
-    BRANCH=dev
+    BRANCH=Change-NODE-SASS
 fi
 
 if [ ! -d JaMmusic ]; then
@@ -30,4 +30,5 @@ fi
 (
 cd JaMmusic;
 yarn install;
+yarn start build
 )

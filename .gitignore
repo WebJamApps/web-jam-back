@@ -57,3 +57,13 @@ package-lock.json
 codeclimate.html
 build
 src/experiments
+
+# Yarn 2.0 - Zero Install method: https://yarnpkg.com/getting-started/qa#which-files-should-be-gitignored
+
+.yarn/*
+!.yarn/cache
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions

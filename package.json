@@ -41,6 +41,7 @@
   "dependencies": {
     "@sendgrid/mail": "latest",
     "@types/bcryptjs": "latest",
+    "@types/body-parser": "latest",
     "@types/cors": "latest",
     "@types/debug": "latest",
     "@types/express": "latest",
@@ -63,8 +64,8 @@
     "moment": "latest",
     "mongoose": "5.12.3",
     "morgan": "latest",
-    "nodemon": "latest",
     "node-notifier": "^10.0.0",
+    "nodemon": "latest",
     "superagent": "latest",
     "supports-color": "^8.1.1",
     "typescript": "latest"

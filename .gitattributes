@@ -1,0 +1,4 @@
+# Ensures git won't bother showing massive diffs when plugins and releases are added or updated.
+
+/.yarn/releases/** binary
+/.yarn/plugins/** binary
