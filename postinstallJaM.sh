@@ -29,6 +29,6 @@ fi
 
 (
 cd JaMmusic;
-yarn install;
-yarn start build
+npm install;
+npm start build
 )
