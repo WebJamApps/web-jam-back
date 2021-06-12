@@ -52,8 +52,10 @@ JaMmusic
 WebJamShop
 
 .DS_Store
-package-lock.json
 
 codeclimate.html
 build
 src/experiments
+
+.yarn
+.yarnrc

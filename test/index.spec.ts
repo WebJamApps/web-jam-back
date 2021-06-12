@@ -18,7 +18,10 @@ describe('Index test', () => {
     done();
   });
   // eslint-disable-next-line jest/no-done-callback
-  afterAll((done) => server && server.close(done));
+  afterAll((done) => {
+    server.close();
+    done();
+  });
   it('should return status 200 when use -> app.get', async () => {
     r = await agent
       .get('/anyrul')
