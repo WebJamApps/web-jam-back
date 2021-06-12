@@ -8,13 +8,14 @@ interface IdeleteMany {
 interface Ischema {
   modelName:string;
   create:(...args:[Record<string, unknown>])=>Promise<Document>;
-  deleteMany:(...args:[Query<any, any, any>])=>({lean:()=>({exec:()=>Promise<IdeleteMany | null>})});
-  findOneAndUpdate:(...args:[Record<string, unknown>, Record<string, unknown>, {new:boolean}])=>({lean:()=>({exec:()=>Promise<Document | null>})});
-  findByIdAndUpdate:(...args:[string, Record<string, unknown>, {new:boolean}])=>({lean:()=>({exec:()=>Promise<Document | null>})});
-  findById:(...args:[string])=>({lean:()=>({exec:()=>Promise<Document | null>})});
-  findByIdAndRemove:(...args:[string])=>({lean:()=>({exec:()=>Promise<Document | null >})});
-  find:(...args:[Query<any, any, any>])=>({lean:()=>({exec:()=>Promise<Record<string, unknown>[]>})});
-  findOne:(...args:[Query<any, any, any>])=>({lean:()=>({exec:()=>Promise<Document | null>})});
+  deleteMany:(...args:[Query<any, any, any>])=>({ lean:()=>({ exec:()=>Promise<IdeleteMany | null> }) });
+  findOneAndUpdate:(...args:[Record<string, unknown>, Record<string, unknown>, 
+    { new:boolean }])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
+  findByIdAndUpdate:(...args:[string, Record<string, unknown>, { new:boolean }])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
+  findById:(...args:[string])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
+  findByIdAndRemove:(...args:[string])=>({ lean:()=>({ exec:()=>Promise<Document | null > }) });
+  find:(...args:[Query<any, any, any>])=>({ lean:()=>({ exec:()=>Promise<Record<string, unknown>[]> }) });
+  findOne:(...args:[Query<any, any, any>])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
 }
 
 class Facade {

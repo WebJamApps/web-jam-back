@@ -4,7 +4,7 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": "15.14.0"
+    "node": ">=16.2.0"
   },
   "files": [
     "lib/",
@@ -20,17 +20,17 @@
     "ts-watch": "tsc -w",
     "cc": "codeclimate analyze -f html > codeclimate.html",
     "ts-start": "DEBUG=web-jam-back:* nodemon build/index.js",
-    "installglobals": "yarn global add npm@latest",
+    "installglobals": "npm install -g npm@latest && npm install -g snyk",
     "build:front": "./postinstallJaM.sh && rm -rf ./JaMmusic/src && rm -rf ./JaMmusic/test",
-    "postinstall": "yarn rmrf && tsc && yarn build:front",
-    "rebuild:front": "./postinstallJaM.sh && yarn build:prod",
+    "postinstall": "npm run rmrf && tsc && npm run build:front",
+    "rebuild:front": "./postinstallJaM.sh && npm run build:prod",
     "build:prod": "(cd JaMmusic || exit; npm start -- build)",
     "start": "node build/index.js",
-    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && yarn cache clean && yarn install",
+    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && rm -rf package-lock.json && npm install",
     "node:debug": "node --inspect-brk index.js",
     "test": "eslint ./src && rm -rf coverage && npm run test:jest",
     "test:lint": "eslint ./src --fix",
-    "test:local": "yarn test:lint && rm -rf coverage && yarn test:jest && yarn cc",
+    "test:local": "npm run test:lint && rm -rf coverage && npm run test:jest && npm run cc",
     "test:jest": "jest --no-cache --config jest.config.json --runInBand --detectOpenHandles --forceExit"
   },
   "repository": {
@@ -41,6 +41,7 @@
   "dependencies": {
     "@sendgrid/mail": "latest",
     "@types/bcryptjs": "latest",
+    "@types/body-parser": "latest",
     "@types/cors": "latest",
     "@types/debug": "latest",
     "@types/express": "latest",
@@ -48,7 +49,7 @@
     "@types/mongoose": "latest",
     "@types/morgan": "latest",
     "@types/superagent": "latest",
-    "@types/supports-color": "latest",
+    "@types/supports-color": "^7.2.0",
     "bcryptjs": "latest",
     "body-parser": "latest",
     "cors": "latest",
@@ -63,15 +64,16 @@
     "moment": "latest",
     "mongoose": "5.12.3",
     "morgan": "latest",
+    "node-notifier": "^10.0.0",
     "nodemon": "latest",
+    "snyk": "^1.630.0",
     "superagent": "latest",
-    "supports-color": "latest",
+    "supports-color": "^8.1.1",
     "typescript": "latest"
   },
   "devDependencies": {
     "@types/jest": "latest",
     "@types/supertest": "latest",
-    "@types/supports-color": "latest",
     "@typescript-eslint/eslint-plugin": "latest",
     "@typescript-eslint/parser": "latest",
     "eslint": "latest",

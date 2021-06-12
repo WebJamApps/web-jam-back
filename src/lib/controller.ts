@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils';
 
 interface Imodel {
-  Schema:{modelName:string},
+  Schema:{ modelName:string },
   findOne:(...args:any)=>any;
   findOneAndUpdate:(...args:any)=>any;
   find:(...args:any)=>any;
