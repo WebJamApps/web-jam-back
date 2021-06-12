@@ -31,7 +31,7 @@
     "test": "eslint ./src && rm -rf coverage && npm run test:jest",
     "test:lint": "eslint ./src --fix",
     "test:local": "npm run test:lint && rm -rf coverage && npm run test:jest && npm run cc",
-    "test:jest": "jest --no-cache --config jest.config.json --runInBand --detectOpenHandles --forceExit"
+    "test:jest": "jest --no-cache --config jest.config.json --runInBand --forceExit"
   },
   "repository": {
     "type": "git",
@@ -49,7 +49,7 @@
     "@types/mongoose": "latest",
     "@types/morgan": "latest",
     "@types/superagent": "latest",
-    "@types/supports-color": "^7.2.0",
+    "@types/supports-color": "latest",
     "bcryptjs": "latest",
     "body-parser": "latest",
     "cors": "latest",
@@ -62,9 +62,8 @@
     "helmet": "latest",
     "jwt-simple": "latest",
     "moment": "latest",
-    "mongoose": "5.12.3",
+    "mongoose": "latest",
     "morgan": "latest",
-    "node-notifier": "^10.0.0",
     "nodemon": "latest",
     "snyk": "^1.630.0",
     "superagent": "latest",
