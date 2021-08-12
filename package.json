@@ -1,10 +1,10 @@
 {
   "name": "web-jam-back",
-  "version": "1.3.0",
+  "version": "1.3.2",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=16.2.0"
+    "node": ">=16.5.0"
   },
   "files": [
     "lib/",
@@ -26,7 +26,7 @@
     "rebuild:front": "./postinstallJaM.sh && npm run build:prod",
     "build:prod": "(cd JaMmusic || exit; npm start -- build)",
     "start": "node build/index.js",
-    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && rm -rf package-lock.json && npm install",
+    "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && rm -rf package-lock.json && npm cache clean --force && npm install",
     "node:debug": "node --inspect-brk index.js",
     "test": "eslint ./src && rm -rf coverage && npm run test:jest",
     "test:lint": "eslint ./src --fix",
@@ -65,7 +65,7 @@
     "mongoose": "latest",
     "morgan": "latest",
     "nodemon": "latest",
-    "snyk": "^1.630.0",
+    "snyk": "^1.667.0",
     "superagent": "latest",
     "supports-color": "^8.1.1",
     "typescript": "latest"

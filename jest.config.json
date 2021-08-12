@@ -1,6 +1,6 @@
 {
   "resetMocks": true,
-  "notify": true,
+  "notify": false,
   "verbose": true,
   "bail": true,
   "testPathIgnorePatterns": ["/node_modules/", "/build", "/JaMmusic"],
