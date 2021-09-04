@@ -62,7 +62,7 @@
     "helmet": "latest",
     "jwt-simple": "latest",
     "moment": "latest",
-    "mongoose": "latest",
+    "mongoose": "6.0.4",
     "morgan": "latest",
     "nodemon": "latest",
     "snyk": "^1.667.0",
