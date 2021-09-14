@@ -69,7 +69,7 @@ describe('the authUtils', () => {
   it('does not find the user by id', async () => {
     const uM:any = userModel;
     uM.findById = jest.fn(() => ({ lean: () => ({ exec: () => Promise.reject(new Error('bad')) }) }));
-    reqStub.user = mongoose.Types.ObjectId();
+    reqStub.user = new mongoose.Types.ObjectId();
     reqStub.baseUrl = '/booya';
     resStub = {
       status(num: number) {
@@ -87,7 +87,7 @@ describe('the authUtils', () => {
   it('prevents user with incorrect userType', async () => {
     const uM:any = userModel;
     uM.findById = jest.fn(() => ({ lean: () => ({ exec: () => Promise.resolve() }) }));
-    reqStub.user = mongoose.Types.ObjectId();
+    reqStub.user = new mongoose.Types.ObjectId();
     reqStub.baseUrl = '/book';
     resStub = {
       status(num: number) {

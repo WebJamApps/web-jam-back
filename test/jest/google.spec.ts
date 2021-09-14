@@ -13,7 +13,7 @@ describe('The Unit Test for Google Module', () => {
     sa.post = jest.fn(() => ({ type: () => ({ send: () => ({ set: () => Promise.resolve({}) }) }) }));
     const req = { body: { code: 'whatever', clientId: '123', redirectUri: 'http://whatever.com' } };
     await expect(google.authenticate(req))
-      .rejects.toThrow('Cannot read property \'access_token\' of undefined');
+      .rejects.toThrow("Cannot read properties of undefined (reading 'access_token')");
   });
   it('returns error when profile is null', async () => {
     const sa: any = superagent;
