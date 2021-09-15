@@ -2,7 +2,7 @@
 import superagent from 'superagent';
 import google from '../../src/auth/google';
 
-describe('The Unit Test for Google Module', () => {
+describe('google.ts', () => {
   it('authenticates returns a 401 error', async () => {
     const req = { body: { code: 'whatever', clientId: '123', redirectUri: 'http://whatever.com' } };
     await expect(google.authenticate(req))
@@ -12,8 +12,9 @@ describe('The Unit Test for Google Module', () => {
     const sa: any = superagent;
     sa.post = jest.fn(() => ({ type: () => ({ send: () => ({ set: () => Promise.resolve({}) }) }) }));
     const req = { body: { code: 'whatever', clientId: '123', redirectUri: 'http://whatever.com' } };
+    const partialEmessage = new RegExp('Failed to receive google profile information');
     await expect(google.authenticate(req))
-      .rejects.toThrow('Cannot read property \'access_token\' of undefined');
+      .rejects.toThrow(partialEmessage);
   });
   it('returns error when profile is null', async () => {
     const sa: any = superagent;
@@ -21,7 +22,7 @@ describe('The Unit Test for Google Module', () => {
     sa.get = jest.fn(() => ({ set: () => Promise.resolve(null) }));
     const req = { body: { code: 'whatever', clientId: '123', redirectUri: 'http://whatever.com' } };
     await expect(google.authenticate(req))
-      .rejects.toThrow('failed to retrieve user profile from Google');
+      .rejects.toThrow('Failed to retrieve a proper user profile from Google');
   });
   it('uses http to when localhost auth', async () => {
     const sa: any = superagent;

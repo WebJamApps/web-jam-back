@@ -1,7 +1,4 @@
 import csvtojson from 'csvtojson';
-// import Debug from 'debug';
-
-// const debug = Debug('web-jam-back:ReadCSV');
 
 enum MatchResult {
   HomeWin = 'H',
@@ -38,7 +35,6 @@ class ReadCSV {
       }
       return match;
     });
-    // debug(this.soccerMatches);
     return `Man United won ${manWins} games`;
   }
 
@@ -61,7 +57,7 @@ class ReadCSV {
         headers: ['date', 'homeTeam', 'awayTeam', 'homeScore', 'awayScore', 'winner', 'mvp'],
       })
         .fromFile('./src/ReadCSV/football.csv');
-    } catch (e) { return `${e.message}`; }
+    } catch (e) { const eMessage = (e as Error).message; return `${eMessage}`; }
     this.convertData();
     return this.manUnitedWins();
   }

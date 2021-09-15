@@ -38,9 +38,7 @@ app.use(cors(corsOptions));
 let mongoDbUri: string = process.env.MONGO_DB_URI || /* istanbul ignore next */'';
 /* istanbul ignore else */
 if (process.env.NODE_ENV === 'test') mongoDbUri = process.env.TEST_DB || /* istanbul ignore next */'';
-mongoose.connect(mongoDbUri, {
-  useNewUrlParser: true, useUnifiedTopology: true, useFindAndModify: false, useCreateIndex: true,
-});
+mongoose.connect(mongoDbUri);
 app.use(helmet());
 app.use(helmet.contentSecurityPolicy({
   directives: {
@@ -88,7 +86,7 @@ app.use((err:{ status:number, message:string }, _req:Request, res: Response) => 
     try {
       await songController.deleteAllDocs();
       await songController.createDocs(songs);
-    } catch (e) /* istanbul ignore next */{ debug(e.message); return Promise.resolve(e.message); }
+    } catch (e) /* istanbul ignore next */{ debug((e as Error).message); return Promise.resolve((e as Error).message); }
     return Promise.resolve('songs created');
   })();
 }

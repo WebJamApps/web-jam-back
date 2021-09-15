@@ -5,7 +5,10 @@
     "airbnb-typescript", "plugin:jest/recommended", "plugin:json/recommended"
   ],
   "rules": {
-    "node/no-unsupported-features/es-syntax": 0,
+    "react/jsx-filename-extension":0,
+    "import/extensions":0,
+    "import/no-extraneous-dependencies":0,
+    "node/no-unsupported-features/es-syntax":0,
     "node/no-missing-import": ["error", {
       "tryExtensions": [".js", ".json", ".tsx", ".ts"]
     }],
