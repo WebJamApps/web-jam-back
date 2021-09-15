@@ -30,13 +30,14 @@ async function authenticate(req: { body: { redirectUri: string; code: string; cl
   try { // Step 2. Retrieve profile information about the current user.
     profile = await superagent.get(peopleApiUrl).set({ Authorization: `Bearer ${token.body.access_token}`, Accept: 'application/json' });
   } catch (e) {
-    debug((e as Error).message);
-    return Promise.reject(e);
+    const eMessage = (e as Error).message;
+    debug(eMessage);
+    throw new Error(`Failed to receive google profile information, ${eMessage}`);
   }
   if (profile === null || profile === undefined || profile.body.emailAddresses === null || profile.body.emailAddresses === undefined) {
-    return Promise.reject(new Error('failed to retrieve user profile from Google'));
+    throw new Error('Failed to retrieve a proper user profile from Google');
   }
-  return Promise.resolve(profile.body);
+  return profile.body;
 }
 
 export default { authenticate };
