@@ -13,7 +13,7 @@ const findUserById = async (req: { user: any; userType: string; baseUrl:string }
   next: () => any):Promise<any> => {
   let myUser:any;
   try { myUser = await userModel.findById(req.user).lean().exec(); } catch (e) {
-    return res.status(500).json({ message: `token does not match any existing user, ${e.message}` });
+    return res.status(500).json({ message: `token does not match any existing user, ${(e as Error).message}` });
   }
   req.userType = myUser ? myUser.userType : 'none';
   debug(req.userType);
@@ -44,8 +44,8 @@ const ensureAuthenticated = (req: any, res: any, next: any): Promise<any> => {
   token = token.split(' ')[1];
   try {
     payload = jwt.decode(token, process.env.HashString || /* istanbul ignore next */'');
-  } catch (err) {
-    return res.status(401).send({ message: err.message });
+  } catch (e) {
+    return res.status(401).send({ message: (e as Error).message });
   }
   req.user = payload.sub;// this is the userId
   return findUserById(req, res, next);
