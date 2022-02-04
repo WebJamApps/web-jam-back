@@ -1,10 +1,11 @@
 {
   "name": "web-jam-back",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=16.12.0 <17"
+    "node": ">=16.13.2 <17",
+    "npm": ">=8.4.0 <9"
   },
   "files": [
     "lib/",
@@ -23,8 +24,6 @@
     "installglobals": "npm install -g npm@latest && npm install -g snyk",
     "build:front": "./postinstallJaM.sh && rm -rf ./JaMmusic/src && rm -rf ./JaMmusic/test",
     "postinstall": "npm run rmrf && tsc && npm run build:front",
-    "rebuild:front": "./postinstallJaM.sh && npm run build:prod",
-    "build:prod": "(cd JaMmusic || exit; npm start -- build)",
     "start": "node build/index.js",
     "cleaninstall": "rm -rf yarn.lock && rm -rf node_modules && rm -rf package-lock.json && npm cache clean --force && npm install",
     "node:debug": "node --inspect-brk index.js",
