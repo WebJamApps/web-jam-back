@@ -30,5 +30,4 @@ fi
 (
 cd JaMmusic;
 npm install;
-npm start build
 )
