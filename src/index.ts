@@ -39,7 +39,7 @@ let mongoDbUri: string = process.env.MONGO_DB_URI || /* istanbul ignore next */'
 /* istanbul ignore else */
 if (process.env.NODE_ENV === 'test') mongoDbUri = process.env.TEST_DB || /* istanbul ignore next */'';
 mongoose.connect(mongoDbUri);
-app.use(helmet());
+app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(helmet.contentSecurityPolicy({
   directives: {
     'default-src': ["'self'"],
@@ -47,9 +47,9 @@ app.use(helmet.contentSecurityPolicy({
     'block-all-mixed-content': [],
     'font-src': ["'self'", 'https:', 'data:'],
     'frame-src': ["'self'", 'https://accounts.google.com', 'https://www.facebook.com', 'https://open.spotify.com',
-      'https://w.soundcloud.com', 'https://www.youtube.com'],
+      'https://w.soundcloud.com', 'https://www.youtube.com', 'https://dl.dropboxusercontent.com'],
     'frame-ancestors': ["'self'"],
-    'img-src': ["'self'", 'data:', 'https:'],
+    'img-src': ["'self'", 'data:', 'https:', 'https://dl.dropboxusercontent.com'],
     'media-src': ["'self'", 'https://dl.dropboxusercontent.com'],
     'object-src': ["'none'"],
     'script-src': ["'self'", 'https://maps.googleapis.com', 'https://apis.google.com', 'https://cdn.tiny.cloud',
