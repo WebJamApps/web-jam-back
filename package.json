@@ -57,7 +57,7 @@
     "dotenv": "latest",
     "express": "latest",
     "express-sslify": "latest",
-    "helmet": "latest",
+    "helmet": "^5.0.2",
     "jwt-simple": "latest",
     "moment": "latest",
     "mongoose": "^6.0.4",
