@@ -1,11 +1,11 @@
 {
   "name": "web-jam-back",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=16.14.0 <17",
-    "npm": ">=8.5.0 <9"
+    "node": ">=18.2.0 <19",
+    "npm": ">=8.10.0 <9"
   },
   "files": [
     "lib/",
