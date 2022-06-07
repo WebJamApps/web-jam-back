@@ -40,7 +40,6 @@
   "dependencies": {
     "@sendgrid/mail": "latest",
     "@types/bcryptjs": "latest",
-    "@types/body-parser": "latest",
     "@types/cors": "latest",
     "@types/debug": "latest",
     "@types/express": "latest",
@@ -49,7 +48,6 @@
     "@types/superagent": "latest",
     "@types/supports-color": "latest",
     "bcryptjs": "latest",
-    "body-parser": "latest",
     "cors": "latest",
     "cross-env": "latest",
     "csvtojson": "latest",

@@ -6,7 +6,6 @@ import express from 'express';
 import type { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
-import bodyParser from 'body-parser';
 import morgan from 'morgan';
 import cors from 'cors';
 import enforce from 'express-sslify';
@@ -60,8 +59,8 @@ app.use(helmet.contentSecurityPolicy({
     'connect-src': ["'self'", 'ws:', 'wss:'],
   },
 }));
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 app.use(morgan('tiny'));
 routes(app);
 app.get('*', (req, res) => {
