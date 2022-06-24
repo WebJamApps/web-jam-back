@@ -60,7 +60,7 @@
     "moment": "latest",
     "mongoose": "^6.0.4",
     "morgan": "latest",
-    "nodemon": "latest",
+    "nodemon": "2.0.17",
     "snyk": "^1.667.0",
     "superagent": "latest",
     "supports-color": "^8.1.1",
@@ -84,7 +84,7 @@
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-security": "latest",
     "jest": "latest",
-    "nodemon": "latest",
+    "nodemon": "2.0.17",
     "npm-run-all": "latest",
     "supertest": "latest",
     "ts-jest": "latest"
