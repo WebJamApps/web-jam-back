@@ -4,8 +4,8 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=18.2.0 <19",
-    "npm": ">=8.10.0 <9"
+    "node": ">=16.16.0 <17",
+    "npm": ">=8.13.2 <9"
   },
   "files": [
     "lib/",
@@ -57,10 +57,9 @@
     "express-sslify": "latest",
     "helmet": "^5.0.2",
     "jwt-simple": "latest",
-    "moment": "latest",
+    "moment": "^2.29.4",
     "mongoose": "^6.0.4",
     "morgan": "latest",
-    "nodemon": "latest",
     "snyk": "^1.667.0",
     "superagent": "latest",
     "supports-color": "^8.1.1",
@@ -84,7 +83,7 @@
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-security": "latest",
     "jest": "latest",
-    "nodemon": "latest",
+    "nodemon": "^2.0.19",
     "npm-run-all": "latest",
     "supertest": "latest",
     "ts-jest": "latest"
