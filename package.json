@@ -4,8 +4,8 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=18.2.0 <19",
-    "npm": ">=8.10.0 <9"
+    "node": ">=16.16.0 <17",
+    "npm": ">=8.13.2 <9"
   },
   "files": [
     "lib/",
@@ -40,7 +40,6 @@
   "dependencies": {
     "@sendgrid/mail": "latest",
     "@types/bcryptjs": "latest",
-    "@types/body-parser": "latest",
     "@types/cors": "latest",
     "@types/debug": "latest",
     "@types/express": "latest",
@@ -49,7 +48,6 @@
     "@types/superagent": "latest",
     "@types/supports-color": "latest",
     "bcryptjs": "latest",
-    "body-parser": "latest",
     "cors": "latest",
     "cross-env": "latest",
     "csvtojson": "latest",
@@ -59,10 +57,9 @@
     "express-sslify": "latest",
     "helmet": "^5.0.2",
     "jwt-simple": "latest",
-    "moment": "latest",
-    "mongoose": "^6.0.4",
+    "moment": "^2.29.4",
+    "mongoose": "^6.5.0",
     "morgan": "latest",
-    "nodemon": "latest",
     "snyk": "^1.667.0",
     "superagent": "latest",
     "supports-color": "^8.1.1",
@@ -86,7 +83,7 @@
     "eslint-plugin-react-hooks": "latest",
     "eslint-plugin-security": "latest",
     "jest": "latest",
-    "nodemon": "latest",
+    "nodemon": "^2.0.19",
     "npm-run-all": "latest",
     "supertest": "latest",
     "ts-jest": "latest"
