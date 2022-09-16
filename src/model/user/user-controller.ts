@@ -147,7 +147,7 @@ class UserController extends Controller {
     } to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" `
       + `href="${process.env.frontURL}/userutil/?email=${userSave.email}">link</a>, then enter the following code to verify your email:`
       + `<br><br><strong>${randomNumba}</strong></p>`;
-    this.authUtils.sendGridEmail(mailbody, userSave.email, 'Verify Your Email Address');
+    await this.authUtils.sendGridEmail(mailbody, userSave.email, 'Verify Your Email Address');
     userSave.password = '';
     return res.status(201).json(userSave);
   }

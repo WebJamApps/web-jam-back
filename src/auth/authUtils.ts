@@ -8,9 +8,11 @@ import userModel from '../model/user/user-schema';
 dotenv.config();
 const debug = Debug('web-jam-back:authUtils');
 
-const findUserById = async (req: { user: any; userType: string; baseUrl:string },
+const findUserById = async (
+  req: { user: any; userType: string; baseUrl:string },
   res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; }): any; new(): any; }; }; },
-  next: () => any):Promise<any> => {
+  next: () => any,
+):Promise<any> => {
   let myUser:any;
   try { myUser = await userModel.findById(req.user).lean().exec(); } catch (e) {
     return res.status(500).json({ message: `token does not match any existing user, ${(e as Error).message}` });
@@ -53,7 +55,7 @@ const ensureAuthenticated = (req: any, res: any, next: any): Promise<any> => {
   // return next();
 };
 
-const sendGridEmail = (bodyhtml: string, toemail: string, subjectline: string): void => {
+const sendGridEmail = async (bodyhtml: string, toemail: string, subjectline: string): Promise<void> => {
   sgMail.setApiKey(process.env.SENDGRID_API_KEY || /* istanbul ignore next */'');
   const msg = {
     to: toemail,
@@ -63,7 +65,11 @@ const sendGridEmail = (bodyhtml: string, toemail: string, subjectline: string): 
     html: bodyhtml,
   };
     /* istanbul ignore if */
-  if (process.env.NODE_ENV !== 'test') sgMail.send(msg);
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      await sgMail.send(msg);
+    } catch (e) { console.log((e as Error).message); }
+  }
 };
 
 const generateCode = (hi: number, low: number): number => {
