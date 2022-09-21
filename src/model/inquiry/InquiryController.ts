@@ -10,7 +10,7 @@ class InquiryController {
     this.sgMail = sgMail;
   }
 
-  sendGridEmail(bodyhtml: any, toemail: any, subjectline: any, res: any) {
+  async sendGridEmail(bodyhtml: any, toemail: any, subjectline: any, res: any) {
     this.sgMail.setApiKey(process.env.SENDGRID_API_KEY || /* istanbul ignore next */'');
     const msg = {
       to: toemail,
@@ -20,7 +20,7 @@ class InquiryController {
       html: bodyhtml,
     };
     /* istanbul ignore if */
-    if (process.env.NODE_ENV !== 'test') sgMail.send(msg);
+    if (process.env.NODE_ENV !== 'test') await sgMail.send(msg);
     return res.status(200).json({ message: 'email sent' });
   }
 
