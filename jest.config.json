@@ -9,7 +9,9 @@
   ],
   "collectCoverage": true,
   "testEnvironment": "node",
-  "testURL": "http://localhost/",
+  "testEnvironmentOptions":{
+    "url": "http://localhost/"
+  },
   "roots": ["<rootDir>/test"],
   "moduleFileExtensions": [
     "js",

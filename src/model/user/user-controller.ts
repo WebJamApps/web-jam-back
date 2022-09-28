@@ -116,7 +116,7 @@ class UserController extends Controller {
     updateData.isPswdReset = false;
     updateData.resetCode = '';
     updateData.changeemail = '';
-    try { loginUser = await this.model.findByIdAndUpdate(user._id, updateData); } catch (e) { return this.resErr(res,  e as Error); }
+    try { loginUser = await this.model.findByIdAndUpdate(user._id, updateData); } catch (e) { return this.resErr(res, e as Error); }
     loginUser.password = '';
     const userToken = { token: this.authUtils.createJWT(loginUser), email: loginUser.email };
     return res.status(200).json(userToken);
@@ -147,7 +147,7 @@ class UserController extends Controller {
     } to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" `
       + `href="${process.env.frontURL}/userutil/?email=${userSave.email}">link</a>, then enter the following code to verify your email:`
       + `<br><br><strong>${randomNumba}</strong></p>`;
-    this.authUtils.sendGridEmail(mailbody, userSave.email, 'Verify Your Email Address');
+    await this.authUtils.sendGridEmail(mailbody, userSave.email, 'Verify Your Email Address');
     userSave.password = '';
     return res.status(201).json(userSave);
   }

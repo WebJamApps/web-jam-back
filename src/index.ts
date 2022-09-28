@@ -37,7 +37,7 @@ app.use(cors(corsOptions));
 let mongoDbUri: string = process.env.MONGO_DB_URI || /* istanbul ignore next */'';
 /* istanbul ignore else */
 if (process.env.NODE_ENV === 'test') mongoDbUri = process.env.TEST_DB || /* istanbul ignore next */'';
-mongoose.connect(mongoDbUri);
+mongoose.connect(mongoDbUri).then().catch((e) => console.log(e.message));
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(helmet.contentSecurityPolicy({
   directives: {
@@ -72,6 +72,7 @@ app.use((err:{ status:number, message:string }, _req:Request, res: Response) => 
 
 /* istanbul ignore if */if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT || 7000;
+  // eslint-disable-next-line @typescript-eslint/no-misused-promises
   app.listen(port, async () => {
     debug('running in debug mode');
     console.log(`Magic happens on port ${port}`); // eslint-disable-line no-console
@@ -86,7 +87,7 @@ app.use((err:{ status:number, message:string }, _req:Request, res: Response) => 
       await songController.deleteAllDocs();
       await songController.createDocs(songs);
     } catch (e) /* istanbul ignore next */{ debug((e as Error).message); return Promise.resolve((e as Error).message); }
-    return Promise.resolve('songs created');
+    return 'songs created';
   })();
 }
 debug(`isTTY?: ${process.stderr.isTTY}`);
