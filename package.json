@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
