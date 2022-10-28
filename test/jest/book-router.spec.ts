@@ -8,6 +8,7 @@ describe('The Book API', () => {
   let r, newUser:any;
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
   beforeAll(async () => {
+    await BookModel.deleteMany({} as any);
     newUser = await userModel.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
   });
   beforeEach(async () => {
