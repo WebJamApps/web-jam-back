@@ -47,9 +47,7 @@ jspm_packages
 .env
 
 # frontend
-frontend
 JaMmusic
-WebJamShop
 
 .DS_Store
 
