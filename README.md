@@ -15,14 +15,14 @@
 <h3>Install</h3>
 <ui>
 <li>clone this repo</li>
-<li>`yarn install` (frontend build should fail)</li>
+<li>`npm install` (JaMmusic build should fail)</li>
 <li>Request a copy of the .env file, which includes credentials to dev & test mongodbs and to connect to the Google auth service. You will need to put a copy of the .env file into the root of the backend folder and also inside of backendroot/frontend so that you can test the production build from the local backend.</li>
-<p>After placing the new .env file into the web-jam-back/frontend folder, you need to rebuild so that these environment variables are used in the output to dist, so just run `yarn install` again
+<p>After placing the new .env file into the web-jam-back/frontend folder, you need to rebuild so that these environment variables are used in the output to dist, so just run `npm install` again
 
 <h3>Run the server</h3>
 <b>npm start</b> starts the express server at localhost:7000<br>
 <br>
-<b>npm run debug</b> also starts the node debugger, which allows you to use Chrome browser to debug. You should also install the NIM add-on to Chrome and set it to automatic mode.
+<b>`npm run start:debug`</b> also starts the node debugger, which allows you to use Chrome browser to debug. You should also install the NIM add-on to Chrome and set it to automatic mode.
 
 <h3>Authorization</h3>
 The .env contains a variable that points to the localhost of the front end and other required credentials.<br>

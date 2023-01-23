@@ -63,4 +63,3 @@ class ReadCSV {
   }
 }
 export default ReadCSV;
-
