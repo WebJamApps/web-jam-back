@@ -57,7 +57,7 @@
     "mongoose": "^6.5.0",
     "morgan": "1.10.0",
     "snyk": "^1.1064.0",
-    "superagent": "^8.0.0",
+    "superagent": "^8.0.8",
     "supports-color": "^8.1.1",
     "typescript": "^4.8.3"
   },
