@@ -1,11 +1,11 @@
 {
   "name": "web-jam-back",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=18.13.0 <19",
-    "npm": ">=9.2.0 <10"
+    "node": ">=18.14.0 <19",
+    "npm": ">=9.3.1 <10"
   },
   "files": [
     "src/"
@@ -16,7 +16,7 @@
     "start:debug": "rm -rf build && tsc && npm-run-all -p ts-start ts-watch",
     "ts-watch": "tsc -w",
     "cc": "codeclimate analyze -f html > codeclimate.html",
-    "ts-start": "DEBUG=web-jam-back:* nodemon build/index.js",
+    "ts-start": "DEBUG=web-jam-back:* nodemon --trace-deprecation build/index.js",
     "installglobals": "npm install -g npm@latest && npm install -g snyk",
     "build:front": "./postinstallJaM.sh && rm -rf ./JaMmusic/src && rm -rf ./JaMmusic/test",
     "postinstall": "npm run rmrf && tsc && npm run build:front",
