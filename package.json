@@ -4,8 +4,8 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=18.14.1 <19",
-    "npm": ">=9.3.1 <10"
+    "node": ">=18.14.2 <19",
+    "npm": ">=9.5.0 <10"
   },
   "files": [
     "src/"
