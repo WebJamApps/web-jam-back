@@ -10,12 +10,10 @@ const debug = Debug('web-jam-back:authUtils');
 
 const findUserById = async (
   req: { user: any; userType: string; baseUrl:string },
-  res: { status: (arg0: number) => { (): any; new(): any; json: { (arg0: { message: string; }): any; new(): any; }; }; },
-  next: () => any,
 ):Promise<any> => {
   let myUser:any;
   try { myUser = await userModel.findById(req.user).lean().exec(); } catch (e) {
-    return res.status(500).json({ message: `token does not match any existing user, ${(e as Error).message}` });
+    throw new Error(`token does not match any existing user, ${(e as Error).message}`);
   }
   req.userType = myUser ? myUser.userType : 'none';
   debug(req.userType);
@@ -24,8 +22,9 @@ const findUserById = async (
   const route = req.baseUrl.split('/')[1];
   // eslint-disable-next-line security/detect-object-injection
   const rolesArr: any[] = authRoles[route] || /* istanbul ignore next */[];
-  if (rolesArr.length && rolesArr.indexOf(req.userType) === -1) return res.status(401).json({ message: 'The user does not have the permission' });
-  return next();
+  if (rolesArr.length && rolesArr.indexOf(req.userType) === -1) {
+    throw new Error('The user does not have the permission');
+  }
 };
 
 const createJWT = (user: { _id:string }): string => {
@@ -37,22 +36,16 @@ const createJWT = (user: { _id:string }): string => {
   return jwt.encode(payload, process.env.HashString || /* istanbul ignore next */'');
 };
 
-const ensureAuthenticated = (req: any, res: any, next: any): Promise<any> => {
+const ensureAuthenticated = (req: any): Promise<any> => {
   if (!req.headers.authorization && !req.headers.Authorization) {
-    return res.status(401).send({ message: 'The request does not have an Authorization header' });
+    throw new Error('The request does not have an Authorization header');
   }
   let payload = { sub: '' }, token:string = req.headers.authorization || /* istanbul ignore next */req.headers.Authorization;
   // eslint-disable-next-line prefer-destructuring
   token = token.split(' ')[1];
-  try {
-    payload = jwt.decode(token, process.env.HashString || /* istanbul ignore next */'');
-  } catch (e) {
-    return res.status(401).send({ message: (e as Error).message });
-  }
+  payload = jwt.decode(token, process.env.HashString || /* istanbul ignore next */'');
   req.user = payload.sub;// this is the userId
-  return findUserById(req, res, next);
-  // if (process.env.NODE_ENV !== 'test') return findUserById(req, res, next);
-  // return next();
+  return findUserById(req);
 };
 
 const sendGridEmail = async (bodyhtml: string, toemail: string, subjectline: string): Promise<void> => {

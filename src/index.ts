@@ -1,7 +1,6 @@
 import path from 'path';
 import dotenv from 'dotenv';
 import Debug from 'debug';
-import supportsColor from 'supports-color';
 import express from 'express';
 import type { Request, Response } from 'express';
 import mongoose from 'mongoose';
@@ -13,14 +12,9 @@ import ReadCSV from './ReadCSV';
 import routes from './routes';
 import songData from './model/song/reset-song';
 import songController from './model/song/song-controller';
-// import makeObjectArrays from './makeObjectArrays';
-// import Jinja2 from './Jinja2example';
 
-// Jinja2();
 dotenv.config();
 const debug = Debug('web-jam-back:index');
-/* istanbul ignore else */
-if (supportsColor.stdout) debug('Terminal stdout supports color');
 
 const readCsv = new ReadCSV();
 const corsOptions = {
@@ -91,5 +85,5 @@ app.use((err:{ status:number, message:string }, _req:Request, res: Response) => 
   })();
 }
 debug(`isTTY?: ${process.stderr.isTTY}`);
-// console.log(makeObjectArrays.makeArrayDevicePort());
+
 export default app;

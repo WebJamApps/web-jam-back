@@ -7,11 +7,26 @@ const router = express.Router();
 
 routeUtils.setRoot(router, controller, authUtils);
 router.route('/one')
-  .get((req, res) => controller.findOne(req, res))
-  .put(authUtils.ensureAuthenticated, (req, res) => controller.findOneAndUpdate(req, res));
+  .get((req, res) => { (async () => { await controller.findOne(req, res); })(); })
+  .put((req, res) => {
+    (async () => {
+      try {
+        await authUtils.ensureAuthenticated(req);
+        await controller.findOneAndUpdate(req, res);
+      } catch (err) { res.status(401).json({ message: (err as Error).message }); }
+    })();
+  });
+
 routeUtils.byId(router, controller, authUtils);
 
 router.route('/findcheckedout/:id')
-  .get(authUtils.ensureAuthenticated, (req, res) => controller.findCheckedOut(req, res));
+  .get((req, res) => {
+    (async () => {
+      try {
+        await authUtils.ensureAuthenticated(req);
+        await controller.findCheckedOut(req, res);
+      } catch (err) { res.status(401).json({ message: (err as Error).message }); }
+    })();
+  });
 
 export default router;
