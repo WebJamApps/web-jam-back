@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cors from 'cors';
 import enforce from 'express-sslify';
+import utils from './lib/utils';
 import ReadCSV from './ReadCSV';
 import routes from './routes';
 import songData from './model/song/reset-song';
@@ -28,10 +29,7 @@ const app = express();
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
 app.use(express.static(path.normalize(path.join(__dirname, '../JaMmusic/dist'))));
 app.use(cors(corsOptions));
-let mongoDbUri: string = process.env.MONGO_DB_URI || /* istanbul ignore next */'';
-/* istanbul ignore else */
-if (process.env.NODE_ENV === 'test') mongoDbUri = process.env.TEST_DB || /* istanbul ignore next */'';
-mongoose.connect(mongoDbUri).then().catch((e) => console.log(e.message));
+utils.mongoConnect(mongoose);
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(helmet.contentSecurityPolicy({
   directives: {
