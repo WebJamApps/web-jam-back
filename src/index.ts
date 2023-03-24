@@ -29,7 +29,8 @@ const app = express();
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
 app.use(express.static(path.normalize(path.join(__dirname, '../JaMmusic/dist'))));
 app.use(cors(corsOptions));
-utils.mongoConnect(mongoose);
+// eslint-disable-next-line no-void
+void utils.mongoConnect(mongoose);
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(helmet.contentSecurityPolicy({
   directives: {
