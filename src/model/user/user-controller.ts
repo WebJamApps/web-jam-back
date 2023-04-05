@@ -59,41 +59,6 @@ class UserController extends Controller {
     return this.finishLogin(res, isPW, user);
   }
 
-  async finishSignup(res: any, user: any, randomNumba: number) {
-    let userSave;
-    try { userSave = await this.model.create(user); } catch (e) { return this.resErr(res, e as Error); }
-    const mailbody = `<h1>Welcome ${userSave.name
-    } to Web Jam Apps.</h1><p>Click this <a style="color:blue; text-decoration:underline; cursor:pointer; cursor:hand" `
-      + `href="${process.env.frontURL}/userutil/?email=${userSave.email}">link</a>, then enter the following code to verify your email:`
-      + `<br><br><strong>${randomNumba}</strong></p>`;
-    await this.authUtils.sendEmail(mailbody, userSave.email, 'Verify Your Email Address');
-    userSave.password = '';
-    return res.status(201).json(userSave);
-  }
-
-  async signup(req: any, res: any) {
-    let existingUser;
-    const randomNumba = this.authUtils.generateCode(99999, 10000);
-    const user = {
-      name: req.body.name,
-      verifiedEmail: false,
-      email: req.body.email,
-      password: req.body.password,
-      isPswdReset: false,
-      resetCode: randomNumba,
-    };
-    const validData = this.model.validateSignup ? this.model.validateSignup(user) : /* istanbul ignore next */'';
-    if (validData !== '') return res.status(400).json({ message: validData });
-    try { existingUser = await this.model.findOne({ email: req.body.email }); } catch (e) { return this.resErr(res, e as Error); }
-    if (existingUser && existingUser.verifiedEmail) {
-      return res.status(409).json({ message: 'This email address is already registered' });
-    }
-    if (existingUser && !existingUser.verifiedEmail) {
-      try { await this.model.findByIdAndRemove(existingUser._id); } catch (e) { return this.resErr(res, e as Error); }
-    }
-    return this.finishSignup(res, user, randomNumba);
-  }
-
   async google(req: any, res: any) {
     debug(req.body);
     let newUser, existingUser, profile;

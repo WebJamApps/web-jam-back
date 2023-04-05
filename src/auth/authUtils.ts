@@ -47,24 +47,6 @@ const ensureAuthenticated = (req: any): Promise<any> => {
   return findUserById(req);
 };
 
-// eslint-disable-next-line @typescript-eslint/require-await
-async function sendEmail(bodyhtml: string, toemail: string, subjectline: string): Promise<void> {
-  // sgMail.setApiKey(process.env.SENDGRID_API_KEY || /* istanbul ignore next */'');
-  // const msg = {
-  //   to: toemail,
-  //   from: 'user-service@web-jam.com',
-  //   subject: subjectline,
-  //   text: bodyhtml,
-  //   html: bodyhtml,
-  // };
-  /* istanbul ignore if */
-  if (process.env.NODE_ENV !== 'test') {
-    try {
-      // await sgMail.send(msg);
-    } catch (e) { console.log((e as Error).message); }
-  }
-}
-
 const generateCode = (hi: number, low: number): number => {
   const min = Math.ceil(low);
   const max = Math.floor(hi);
@@ -86,5 +68,5 @@ const setIfExists = (item: string | null | undefined): string => {
 };
 
 export default {
-  setIfExists, checkEmailSyntax, generateCode, sendEmail, ensureAuthenticated, createJWT, findUserById,
+  setIfExists, checkEmailSyntax, generateCode, ensureAuthenticated, createJWT, findUserById,
 };
