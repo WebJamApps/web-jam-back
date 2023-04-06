@@ -25,7 +25,5 @@ router.route('/auth/login')
   .post((req, res) => { (async () => { await controller.login(req, res); })(); });
 router.route('/auth/google')
   .post((req, res) => { (async () => { await controller.google(req, res); })(); });
-// router.route('/auth/:id')
-//   .put((req, res) => controller.handleAuth(req, res));
 
 export default router;
