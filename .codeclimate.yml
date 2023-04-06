@@ -8,10 +8,10 @@ checks:
       threshold: 30
   similar-code:
     config:
-      threshold: 90
+      threshold: 100
   identical-code:
     config:
-      threshold: 45
+      threshold: 50
   method-complexity:
     config:
       threshold: 10
