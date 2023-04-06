@@ -1,11 +1,13 @@
 import { Router, Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils';
 
+interface Icontroller { [x: string]: (req: Request, res: Response) => Promise<any> }
+
 const makeAction = (
-  req: Request, 
+  req: Request,
   res: Response,
-  method:string,
-  controller: { [x: string]: (req:Request, res:Response)=>Promise<any> }, 
+  method: string,
+  controller: { [x: string]: (req: Request, res: Response) => Promise<any> },
   authUtils: typeof AuthUtils,
 ) => async () => {
   try {
@@ -15,7 +17,7 @@ const makeAction = (
   } catch (err) { res.status(401).json({ message: (err as Error).message }); }
 };
 
-function setRoot(router: Router, controller: { [x: string]: (req:Request, res:Response)=>Promise<any> }, authUtils: typeof AuthUtils): void {
+function setRoot(router: Router, controller: Icontroller, authUtils: typeof AuthUtils): void {
   router.route('/')
     .get((req, res) => { (async () => { await controller.find(req, res); })(); })
     .post((req, res) => {
@@ -32,7 +34,7 @@ function setRoot(router: Router, controller: { [x: string]: (req:Request, res:Re
       })();
     });
 }
-function byId(router: Router, controller: { [x: string]: (req:Request, res:Response)=>Promise<any> }, authUtils: typeof AuthUtils): void {
+function byId(router: Router, controller: Icontroller, authUtils: typeof AuthUtils): void {
   router.route('/:id')
     .get((req, res) => {
       const action = makeAction(req, res, 'findById', controller, authUtils);
