@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils';
-import Controller from './controller';
 
 const makeAction = (
   req: Request, 
@@ -24,7 +23,7 @@ function setRoot(router: Router, controller: { [x: string]: (req:Request, res:Re
       // eslint-disable-next-line no-void
       void action();
     })
-    .delete((req, res, next) => {
+    .delete((req, res) => {
       (async () => {
         try {
           await authUtils.ensureAuthenticated(req);
@@ -33,15 +32,18 @@ function setRoot(router: Router, controller: { [x: string]: (req:Request, res:Re
       })();
     });
 }
-function byId(router: Router, controller: Controller, authUtils: typeof AuthUtils): void {
+function byId(router: Router, controller: { [x: string]: (req:Request, res:Response)=>Promise<any> }, authUtils: typeof AuthUtils): void {
   router.route('/:id')
     .get((req, res) => {
-      (async () => {
-        try {
-          await authUtils.ensureAuthenticated(req);
-          await controller.findById(req, res);
-        } catch (err) { res.status(401).json({ message: (err as Error).message }); }
-      })();
+      const action = makeAction(req, res, 'findById', controller, authUtils);
+      // eslint-disable-next-line no-void
+      void action();
+      // (async () => {
+      //   try {
+      //     await authUtils.ensureAuthenticated(req);
+      //     await controller.findById(req, res);
+      //   } catch (err) { res.status(401).json({ message: (err as Error).message }); }
+      // })();
     })
     .put((req, res) => {
       (async () => {

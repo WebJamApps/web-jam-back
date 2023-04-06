@@ -17,7 +17,7 @@ router.route('/one')
     })();
   });
 
-routeUtils.byId(router, controller, authUtils);
+routeUtils.byId(router, controller as any, authUtils);
 
 router.route('/findcheckedout/:id')
   .get((req, res) => {
