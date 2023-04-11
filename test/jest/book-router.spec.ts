@@ -133,4 +133,9 @@ describe('The Book API', () => {
       .query({ type: 'paperback' });
     expect(r.status).toBe(200);
   });
+  it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
+    // eslint-disable-next-line no-promise-executor-return
+    const delay = (ms: any) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
+    await delay(3000);
+  });
 });

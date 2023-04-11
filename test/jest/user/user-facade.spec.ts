@@ -26,7 +26,7 @@ describe('user-facade', () => {
   it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
     // eslint-disable-next-line no-promise-executor-return
     const delay = (ms: any) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
-    await delay(4000);
+    await delay(3000);
   });
   it('comparePassword when is a match', async () => {
     bcrypt.compare = jest.fn(() => Promise.resolve(true));
