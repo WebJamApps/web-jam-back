@@ -47,12 +47,6 @@ const ensureAuthenticated = (req: any): Promise<any> => {
   return findUserById(req);
 };
 
-const generateCode = (hi: number, low: number): number => {
-  const min = Math.ceil(low);
-  const max = Math.floor(hi);
-  return Math.floor(Math.random() * (max - min)) + min;
-};
-
 const checkEmailSyntax = (req: any): Promise<boolean> => { // eslint-disable-next-line security/detect-unsafe-regex
   if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
     return Promise.resolve(true);
@@ -68,5 +62,5 @@ const setIfExists = (item: string | null | undefined): string => {
 };
 
 export default {
-  setIfExists, checkEmailSyntax, generateCode, ensureAuthenticated, createJWT, findUserById,
+  setIfExists, checkEmailSyntax, ensureAuthenticated, createJWT, findUserById,
 };
