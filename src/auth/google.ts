@@ -6,7 +6,7 @@ const debug = Debug('web-jam-back:auth/google');
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';
 const peopleApiUrl = 'https://people.googleapis.com/v1/people/me?personFields=names%2CemailAddresses';
 
-interface GoogleAuthenticateResponse {
+export interface GoogleAuthenticateResponse {
   emailAddresses: { value: string }[];
   names: { displayName: string }[];
 }

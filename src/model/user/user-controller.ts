@@ -27,7 +27,7 @@ class UserController extends Controller {
     user.password = '';
     return res.status(200).json(user);
   }
-  
+
   async finishLogin(res: Response, isPW: boolean, user: any) {
     let loginUser;
     const updateData: any = {};
@@ -54,32 +54,41 @@ class UserController extends Controller {
     } else if (!user.verifiedEmail) fourOone = '<a href="/userutil">Verify</a> your email';
     if (fourOone !== '') return res.status(401).json({ message: fourOone });
     try {
-      isPW = this.model.comparePassword ? await this.model.comparePassword(req.body.password, user.password) : /* istanbul ignore next */false; 
+      isPW = this.model.comparePassword ? await this.model.comparePassword(req.body.password, user.password) : /* istanbul ignore next */false;
     } catch (e) { return this.resErr(res, e as Error); }
     return this.finishLogin(res, isPW, user);
   }
 
-  async google(req: any, res: any) {
-    debug(req.body);
-    let newUser, existingUser, profile;
-    try { profile = await this.authGoogle.authenticate(req); } catch (e) { debug((e as Error).message); return this.resErr(res, e as Error); }
-    // Step 3. Create a new user account or return an existing one.
-    const update: any = {};
-    update.password = '';
-    update.name = profile.names[0].displayName; // force the name of the user to be the name from google account
-    update.verifiedEmail = true;
-    try { existingUser = await this.model.findOneAndUpdate({ email: profile.emailAddresses[0].value }, update); } catch (e) {
-      return this.resErr(res, e as Error);
-    }
-    if (existingUser) return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
+  async handleNewUser(name:string, email:string, req: Request, res: Response) {
     const user: any = {};
-    user.name = profile.names[0].displayName;
-    user.email = profile.emailAddresses[0].value;
+    user.name = name;
+    user.email = email;
     user.isOhafUser = req.body.isOhafUser;
     user.verifiedEmail = true;
-    try { newUser = await this.model.create(user); } catch (e) { return this.resErr(res, e as Error); }
+    const newUser = await this.model.create(user);
     newUser.password = '';
-    return res.status(201).json({ email: newUser.email, token: this.authUtils.createJWT(newUser) });
+    res.status(201).json({ email: newUser.email, token: this.authUtils.createJWT(newUser) });
+  }
+
+  async google(req: Request, res: Response) {
+    debug(req.body);
+    try {
+      const { names, emailAddresses } = await this.authGoogle.authenticate(req);
+      const name = names[0].displayName;
+      const email = emailAddresses[0].value;
+      // Step 3. Create a new user account or return an existing one.
+      const update: any = {};
+      update.password = '';
+      update.name = name; // force the name of the user to be the name from google account
+      update.verifiedEmail = true;
+      const existingUser = await this.model.findOneAndUpdate({ email }, update);
+      if (existingUser) {
+        res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
+      } else await this.handleNewUser(name, email, req, res);
+    } catch (e) {
+      console.log(e);
+      this.resErr(res, e as Error);
+    }
   }
 }
 export default new UserController(userModel);
