@@ -21,8 +21,6 @@ router.route('/')
     })(); 
   });
 routeUtils.byId(router, controller as any, authUtils);
-// router.route('/auth/login')
-//   .post((req, res) => { (async () => { await controller.login(req, res); })(); });
 router.route('/auth/google')
   .post((req, res) => { (async () => { await controller.google(req, res); })(); });
 

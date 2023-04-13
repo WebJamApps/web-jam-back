@@ -29,37 +29,6 @@ class UserController extends Controller {
     } catch (e) { this.resErr(res, e as Error); }
   }
 
-  // async finishLogin(res: Response, isPW: boolean, user: any) {
-  //   let loginUser;
-  //   const updateData: any = {};
-  //   if (!isPW) return res.status(401).json({ message: 'Wrong password' });
-  //   updateData.isPswdReset = false;
-  //   updateData.resetCode = '';
-  //   updateData.changeemail = '';
-  //   try { loginUser = await this.model.findByIdAndUpdate(user._id, updateData); } catch (e) { return this.resErr(res, e as Error); }
-  //   loginUser.password = '';
-  //   const userToken = { token: this.authUtils.createJWT(loginUser), email: loginUser.email };
-  //   return res.status(200).json(userToken);
-  // }
-
-  // async login(req: any, res: any) {
-  //   let user, fourOone = '', isPW;
-  //   const reqUserEmail = this.authUtils.setIfExists(req.body.email);
-  //   const myPassword = this.authUtils.setIfExists(req.body.password);
-  //   if (reqUserEmail === '' || myPassword === '') return res.status(400).json({ message: 'email and password are required' });
-  //   try { user = await this.model.findOne({ email: reqUserEmail }); } catch (e) { return this.resErr(res, e as Error); }
-  //   if (user === undefined || user === null || user._id === undefined || user._id === null) {
-  //     fourOone = 'Wrong email address';
-  //   } else if (user.password === '' || user.password === null || user.password === undefined) {
-  //     fourOone = 'Please reset your password';
-  //   } else if (!user.verifiedEmail) fourOone = '<a href="/userutil">Verify</a> your email';
-  //   if (fourOone !== '') return res.status(401).json({ message: fourOone });
-  //   try {
-  //     isPW = this.model.comparePassword ? await this.model.comparePassword(req.body.password, user.password) : /* istanbul ignore next */false;
-  //   } catch (e) { return this.resErr(res, e as Error); }
-  //   return this.finishLogin(res, isPW, user);
-  // }
-
   async handleNewUser(name:string, email:string, req: Request, res: Response) {
     const user: any = {};
     user.name = name;
