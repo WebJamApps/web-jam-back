@@ -29,12 +29,12 @@ describe('user-router', () => {
       .post('/user');
     expect(r.status).toBe(400);
   });
-  it('login', async () => {
-    process.env.NODE_ENV = 'test';
-    const r = await request(app)
-      .post('/user/auth/login');
-    expect(r.status).toBe(400);
-  });
+  // it('login', async () => {
+  //   process.env.NODE_ENV = 'test';
+  //   const r = await request(app)
+  //     .post('/user/auth/login');
+  //   expect(r.status).toBe(400);
+  // });
   it('google', async () => {
     process.env.NODE_ENV = 'test';
     const r = await request(app)

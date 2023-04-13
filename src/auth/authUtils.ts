@@ -54,13 +54,14 @@ const checkEmailSyntax = (req: any): Promise<boolean> => { // eslint-disable-nex
   return Promise.reject(new Error('email address is not a valid format'));
 };
 
-const setIfExists = (item: string | null | undefined): string => {
-  if (item !== '' && item !== null && item !== undefined) {
-    return item;
-  }
-  return '';
-};
+// const setIfExists = (item: string | null | undefined): string => {
+//   if (item !== '' && item !== null && item !== undefined) {
+//     return item;
+//   }
+//   return '';
+// };
 
 export default {
-  setIfExists, checkEmailSyntax, ensureAuthenticated, createJWT, findUserById,
+  // setIfExists, 
+  checkEmailSyntax, ensureAuthenticated, createJWT, findUserById,
 };
