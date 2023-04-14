@@ -1,7 +1,6 @@
 import path from 'path';
 import dotenv from 'dotenv';
 import Debug from 'debug';
-import supportsColor from 'supports-color';
 import express from 'express';
 import type { Request, Response } from 'express';
 import mongoose from 'mongoose';
@@ -9,18 +8,14 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cors from 'cors';
 import enforce from 'express-sslify';
+import utils from './lib/utils';
 import ReadCSV from './ReadCSV';
 import routes from './routes';
 import songData from './model/song/reset-song';
 import songController from './model/song/song-controller';
-// import makeObjectArrays from './makeObjectArrays';
-// import Jinja2 from './Jinja2example';
 
-// Jinja2();
 dotenv.config();
 const debug = Debug('web-jam-back:index');
-/* istanbul ignore else */
-if (supportsColor.stdout) debug('Terminal stdout supports color');
 
 const readCsv = new ReadCSV();
 const corsOptions = {
@@ -34,10 +29,8 @@ const app = express();
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
 app.use(express.static(path.normalize(path.join(__dirname, '../JaMmusic/dist'))));
 app.use(cors(corsOptions));
-let mongoDbUri: string = process.env.MONGO_DB_URI || /* istanbul ignore next */'';
-/* istanbul ignore else */
-if (process.env.NODE_ENV === 'test') mongoDbUri = process.env.TEST_DB || /* istanbul ignore next */'';
-mongoose.connect(mongoDbUri).then().catch((e) => console.log(e.message));
+// eslint-disable-next-line no-void
+void utils.mongoConnect(mongoose);
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(helmet.contentSecurityPolicy({
   directives: {
@@ -91,5 +84,5 @@ app.use((err:{ status:number, message:string }, _req:Request, res: Response) => 
   })();
 }
 debug(`isTTY?: ${process.stderr.isTTY}`);
-// console.log(makeObjectArrays.makeArrayDevicePort());
+
 export default app;

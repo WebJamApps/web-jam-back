@@ -6,17 +6,22 @@ import routeUtils from '../../lib/routeUtils';
 const router = express.Router();
 
 router.route('/')
-  .get((req, res) => (process.env.NODE_ENV !== 'production' ? controller.find(req, res)
-    : /* istanbul ignore next */ res.status(401).json({ message: 'not authorized' })))
-  .post(authUtils.ensureAuthenticated, (req, res) => controller.findByEmail(req, res));
-routeUtils.byId(router, controller, authUtils);
-router.route('/auth/login')
-  .post((req, res) => controller.login(req, res));
-router.route('/auth/signup')
-  .post((req, res) => controller.signup(req, res));
+  .get((req, res) => {
+    (async () => {
+      if (process.env.NODE_ENV !== 'production') await controller.find(req, res);
+      else res.status(401).json({ message: 'not authorized' });
+    })();
+  })
+  .post((req, res) => { 
+    (async () => {
+      try {
+        await authUtils.ensureAuthenticated(req);
+        await controller.findByEmail(req, res); 
+      } catch (err) { res.status(401).json({ message: (err as Error).message }); }
+    })(); 
+  });
+routeUtils.byId(router, controller as any, authUtils);
 router.route('/auth/google')
-  .post((req, res) => controller.google(req, res));
-// router.route('/auth/:id')
-//   .put((req, res) => controller.handleAuth(req, res));
+  .post((req, res) => { (async () => { await controller.google(req, res); })(); });
 
 export default router;

@@ -7,7 +7,7 @@ describe('Index test', () => {
   let allowedUrl: any, r, server: any, agent: any;
   // eslint-disable-next-line jest/no-done-callback
   beforeAll((done) => {
-    server = app.listen(7000, () => {
+    server = app.listen(3000, () => {
       agent = request.agent(server);
       return done();
     });
@@ -21,6 +21,9 @@ describe('Index test', () => {
   afterAll((done) => {
     server.close();
     done();
+  });
+  it('is defined', () => {
+    expect(app).toBeDefined();
   });
   it('should return status 200 when use -> app.get', async () => {
     r = await agent
@@ -44,7 +47,8 @@ describe('Index test', () => {
     expect(r.status).toBe(404);
   });
   it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
+    // eslint-disable-next-line no-promise-executor-return
     const delay = (ms: any) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
-    await delay(4000);
+    await delay(3000);
   });
 });

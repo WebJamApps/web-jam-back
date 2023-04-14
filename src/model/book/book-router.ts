@@ -5,13 +5,22 @@ import routeUtils from '../../lib/routeUtils';
 
 const router = express.Router();
 
-routeUtils.setRoot(router, controller, authUtils);
+routeUtils.setRoot(router, controller as any, authUtils);
 router.route('/one')
-  .get((req, res) => controller.findOne(req, res))
-  .put(authUtils.ensureAuthenticated, (req, res) => controller.findOneAndUpdate(req, res));
-routeUtils.byId(router, controller, authUtils);
+  .get((req, res) => { (async () => { await controller.findOne(req, res); })(); })
+  .put((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'findOneAndUpdate', controller as any, authUtils);
+    // eslint-disable-next-line no-void
+    void action();
+  });
+
+routeUtils.byId(router, controller as any, authUtils);
 
 router.route('/findcheckedout/:id')
-  .get(authUtils.ensureAuthenticated, (req, res) => controller.findCheckedOut(req, res));
+  .get((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'findCheckedOut', controller as any, authUtils);
+    // eslint-disable-next-line no-void
+    void action();
+  });
 
 export default router;
