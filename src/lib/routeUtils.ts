@@ -1,17 +1,52 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils';
-import Controller from './controller';
 
-function setRoot(router: Router, controller: Controller, authUtils: typeof AuthUtils): void {
+interface Icontroller { [x: string]: (req: Request, res: Response) => Promise<any> }
+
+const makeAction = (
+  req: Request,
+  res: Response,
+  method: string,
+  controller: { [x: string]: (req: Request, res: Response) => Promise<any> },
+  authUtils: typeof AuthUtils,
+) => async () => {
+  try {
+    await authUtils.ensureAuthenticated(req);
+    // eslint-disable-next-line security/detect-object-injection
+    await controller[method](req, res);
+  } catch (err) { res.status(401).json({ message: (err as Error).message }); }
+};
+
+function setRoot(router: Router, controller: Icontroller, authUtils: typeof AuthUtils): void {
   router.route('/')
-    .get((req, res) => controller.find(req, res))
-    .post(authUtils.ensureAuthenticated, (req, res) => controller.create(req, res))
-    .delete(authUtils.ensureAuthenticated, (req, res) => controller.deleteMany(req, res));
+    .get((req, res) => { (async () => { await controller.find(req, res); })(); })
+    .post((req, res) => {
+      const action = makeAction(req, res, 'create', controller, authUtils);
+      // eslint-disable-next-line no-void
+      void action();
+    })
+    .delete((req, res) => {
+      const action = makeAction(req, res, 'deleteMany', controller, authUtils);
+      // eslint-disable-next-line no-void
+      void action();
+    });
 }
-function byId(router: Router, controller: Controller, authUtils: typeof AuthUtils): void {
+function byId(router: Router, controller: Icontroller, authUtils: typeof AuthUtils): void {
   router.route('/:id')
-    .get(authUtils.ensureAuthenticated, (req, res) => controller.findById(req, res))
-    .put(authUtils.ensureAuthenticated, (req, res) => controller.findByIdAndUpdate(req, res))
-    .delete(authUtils.ensureAuthenticated, (req, res) => controller.findByIdAndRemove(req, res));
+    .get((req, res) => {
+      const action = makeAction(req, res, 'findById', controller, authUtils);
+      // eslint-disable-next-line no-void
+      void action();
+    })
+    .put((req, res) => {
+      const action = makeAction(req, res, 'findByIdAndUpdate', controller, authUtils);
+      // eslint-disable-next-line no-void
+      void action();
+    })
+    .delete((req, res) => {
+      const action = makeAction(req, res, 'findByIdAndRemove', controller, authUtils);
+      // eslint-disable-next-line no-void
+      void action();
+    });
 }
-export default { setRoot, byId };
+export default { setRoot, byId, makeAction };
