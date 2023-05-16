@@ -39,7 +39,7 @@ app.use(helmet.contentSecurityPolicy({
     'block-all-mixed-content': [],
     'font-src': ["'self'", 'https:', 'data:'],
     'frame-src': ["'self'", 'https://accounts.google.com', 'https://www.facebook.com', 'https://open.spotify.com',
-      'https://w.soundcloud.com', 'https://www.youtube.com', 'https://dl.dropboxusercontent.com'],
+      'https://w.soundcloud.com', 'https://www.youtube.com', 'https://dl.dropboxusercontent.com', 'https://js.stripe.com'],
     'frame-ancestors': ["'self'"],
     'img-src': ["'self'", 'data:', 'https:', 'https://dl.dropboxusercontent.com'],
     'media-src': ["'self'", 'https://dl.dropboxusercontent.com'],
