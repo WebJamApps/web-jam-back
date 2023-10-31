@@ -24,7 +24,7 @@ class InquiryController {
     return res.status(200).json({ message: 'email sent' });
   }
 
-  handleInquiry(req: any, res: any) { // eslint-disable-line class-methods-use-this
+  handleInquiry(req: any, res: any) {
     debug(req.body);
     return this.sendGridEmail(JSON.stringify(req.body), 'web.jam.adm@gmail.com', 'inquiry', res);
   }
