@@ -18,6 +18,7 @@
     "plugin:@typescript-eslint/recommended-requiring-type-checking"
   ],
   "rules": {
+    "@typescript-eslint/no-explicit-any":1,
     "@typescript-eslint/no-floating-promises":[
       "error",
       {
