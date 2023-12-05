@@ -12,13 +12,13 @@ describe('lib controller', () => {
     findById: () => Promise.reject(new Error('bad')),
     create: () => Promise.reject(new Error('bad')),
     findByIdAndUpdate: () => Promise.reject(new Error('bad')),
-    findByIdAndRemove: () => Promise.reject(new Error('bad')),
+    findByIdAndDelete: () => Promise.reject(new Error('bad')),
   };
   const req:any = { query: '', body: {}, params: {} };
   const res:any = { status: () => ({ json: (obj: any) => Promise.resolve(obj) }) };
   it('catches bad error on findOne', async () => {
     c = new Controller(model) as any;
-    r = await c.findOne(req, res) as any;
+    r = await c.findOne(req, res);
     expect(r.message).toBe('bad');
   });
   it('catches error on findOneAndUpdate', async () => {
@@ -110,23 +110,23 @@ describe('lib controller', () => {
     r = await c.findByIdAndUpdate(req, res) as any;
     expect(r.password).toBe('');
   });
-  it('returns 400 on findByIdAndRemove with bad id', async () => {
+  it('returns 400 on findByIdAndDelete with bad id', async () => {
     req.params.id = 'bad';
     c = new Controller(model);
-    r = await c.findByIdAndRemove(req, res) as any;
+    r = await c.findByIdAndDelete(req, res) as any;
     expect(r.message).toBe('id is invalid');
   });
-  it('returns 500 on findByIdAndRemove', async () => {
+  it('returns 500 on findByIdAndDelete', async () => {
     req.params.id = goodId;
     c = new Controller(model);
-    r = await c.findByIdAndRemove(req, res) as any;
+    r = await c.findByIdAndDelete(req, res) as any;
     expect(r.message).toBe('bad');
   });
-  it('returns 400 on findByIdAndRemove when nothing is found', async () => {
+  it('returns 400 on findByIdAndDelete when nothing is found', async () => {
     req.params.id = goodId;
-    model.findByIdAndRemove = () => Promise.resolve();
+    model.findByIdAndDelete = () => Promise.resolve();
     c = new Controller(model);
-    r = await c.findByIdAndRemove(req, res) as any;
+    r = await c.findByIdAndDelete(req, res) as any;
     expect(r.message).toBe('Delete id is invalid');
   });
   it('returns 500 on deleteMany', async () => {

@@ -44,9 +44,8 @@ function byId(router: Router, controller: Icontroller, authUtils: typeof AuthUti
       void action();
     })
     .delete((req, res) => {
-      const action = makeAction(req, res, 'findByIdAndRemove', controller, authUtils);
-      // eslint-disable-next-line no-void
-      void action();
+      const action = makeAction(req, res, 'findByIdAndDelete', controller, authUtils);
+      (async () => { await action(); })();
     });
 }
 export default { setRoot, byId, makeAction };

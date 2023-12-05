@@ -13,7 +13,7 @@ interface Ischema {
     { new:boolean }])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
   findByIdAndUpdate:(...args:[string, Record<string, unknown>, { new:boolean }])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
   findById:(...args:[string])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
-  findByIdAndRemove:(...args:[string])=>({ lean:()=>({ exec:()=>Promise<Document | null > }) });
+  findByIdAndDelete:(...args:[string])=>({ lean:()=>({ exec:()=>Promise<Document | null > }) });
   find:(...args:[Query<any, any, any>])=>({ lean:()=>({ exec:()=>Promise<Record<string, unknown>[]> }) });
   findOne:(...args:[Query<any, any, any>])=>({ lean:()=>({ exec:()=>Promise<Document | null> }) });
 }
@@ -47,7 +47,7 @@ class Facade {
 
   findById(id: string): Promise<Document | null> { return this.Schema.findById(id).lean().exec(); }
 
-  findByIdAndRemove(id: string): Promise<Document | null> { return this.Schema.findByIdAndRemove(id).lean().exec(); }
+  findByIdAndDelete(id: string): Promise<Document | null> { return this.Schema.findByIdAndDelete(id).lean().exec(); }
 }
 
 export default Facade;
