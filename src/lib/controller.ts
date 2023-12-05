@@ -11,7 +11,7 @@ interface Imodel {
   findById:(...args:any)=>any;
   create:(...args:any)=>any;
   findByIdAndUpdate:(...args:any)=>any;
-  findByIdAndRemove:(...args:any)=>any;
+  findByIdAndDelete:(...args:any)=>any;
   deleteMany:(...args:any)=>any;
   comparePassword?:(...args:any)=>any;
   validateSignup?:(...args:any)=>any;
@@ -89,16 +89,16 @@ class Controller {
   }
 
   findByIdAndUpdate(req: Request, res: Response<unknown>): Response<unknown> | Promise<unknown> {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) { return res.status(400).json({ message: 'Update id is invalid' }); }
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) { return res.status(400).json({ message: 'Update id is invalid' }); }
     if (req.body.userType && this.userRoles.indexOf(req.body.userType) === -1) { return res.status(400).json({ message: 'userType not valid' }); }
     if (req.body.name === '') { return res.status(400).json({ message: 'Name is required' }); }
     return this.contFBIandU(req, res);
   }
 
-  async findByIdAndRemove(req: Request, res: Response): Promise<unknown> {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'id is invalid' });
+  async findByIdAndDelete(req: Request, res: Response): Promise<unknown> {
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'id is invalid' });
     let doc;
-    try { doc = await this.model.findByIdAndRemove(req.params.id); } catch (e) { 
+    try { doc = await this.model.findByIdAndDelete(req.params.id); } catch (e) { 
       return res.status(500).json({ message: (e as Error).message }); 
     }
     if (!doc) return res.status(400).json({ message: 'Delete id is invalid' });
