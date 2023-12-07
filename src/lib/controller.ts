@@ -73,8 +73,10 @@ class Controller {
   async create(req: Request, res: Response): Promise<unknown> {
     debug('create');
     debug(req.body);
+    const { body } = req;
+    delete body._id;
     let doc;
-    try { doc = await this.model.create(req.body); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    try { doc = await this.model.create(body); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     return res.status(201).json(doc);
   }
 
