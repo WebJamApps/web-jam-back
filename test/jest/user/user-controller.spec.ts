@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import controller from '../../../src/model/user/user-controller';
+import controller from 'src/model/user/user-controller';
 
 describe('User Controller', () => {
-  let r:any, testObj:any;
+  let testObj:any;
   const resStub:any = {
     status: () => ({ json: (obj: any) => { testObj = obj; } }),
   };
@@ -11,12 +11,12 @@ describe('User Controller', () => {
   it('catches error on findByEmail', async () => {
     controller.resErr = jest.fn();
     controller.model.findOne = jest.fn(() => Promise.reject(new Error('bad')));
-    r = await controller.findByEmail(reqStub, resStub);
+    await controller.findByEmail(reqStub, resStub);
     expect(controller.resErr).toHaveBeenCalled();
   });
   it('returns 200 on findByEmail', async () => {
     controller.model.findOne = jest.fn(() => Promise.resolve({ _id: 'id' }));
-    r = await controller.findByEmail(reqStub, resStub);
+    await controller.findByEmail(reqStub, resStub);
     expect(testObj._id).toBe('id');
   });
   it('successfully google authenticate', async () => {

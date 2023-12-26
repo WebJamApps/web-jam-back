@@ -22,5 +22,10 @@
   ],
   "transform": {
     "^.+\\.tsx?$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "@sendgrid/mail":"<rootDir>/node_modules/@sendgrid/mail/$1",
+    "^src/(.*)": "<rootDir>/src/$1",
+    "@lib/(.*)": "<rootDir>/src/lib/$1"
   }
 }
