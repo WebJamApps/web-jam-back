@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../../src/index';
+import app from 'src/index';
 import BookModel from '../../src/model/book/book-facade';
 import userModel from '../../src/model/user/user-facade';
 import authUtils from '../../src/auth/authUtils';

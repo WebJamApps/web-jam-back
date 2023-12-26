@@ -1,4 +1,4 @@
-import Model from '../../lib/facade';
+import Model from '@lib/facade';
 import bookSchema from './book-schema';
 
 class BookModel extends Model {

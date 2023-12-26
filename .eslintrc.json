@@ -34,17 +34,7 @@
     "import/extensions": 0,
     "import/no-extraneous-dependencies": 0,
     "node/no-unsupported-features/es-syntax": 0,
-    "node/no-missing-import": [
-      "error",
-      {
-        "tryExtensions": [
-          ".js",
-          ".json",
-          ".tsx",
-          ".ts"
-        ]
-      }
-    ],
+    "node/no-missing-import": 0,//disabled because using alias imports
     "no-underscore-dangle": 0,
     "no-multiple-empty-lines": [
       "error",
@@ -86,6 +76,6 @@
   "parserOptions": {
     "ecmaVersion": 11,
     "sourceType": "module",
-    "project": "./tsconfig.eslint.json"
+    "project": "./tsconfig.json"
   }
 }
