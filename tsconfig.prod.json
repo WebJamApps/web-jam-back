@@ -5,6 +5,8 @@
       "dist",
       "build",
       "coverage",
-      "JaMmusic"
-    ]
+      "JaMmusic",
+      "test"
+    ],
+    "include":["src"]
 }
