@@ -18,8 +18,8 @@ import songController from './model/song/song-controller';
 import apollo from './apollo';
 
 dotenv.config();
-const debug = Debug('web-jam-back:index');
 
+const debug = Debug('web-jam-back:index');
 const readCsv = new ReadCSV();
 const corsOptions = {
   origin: JSON.parse(process.env.AllowUrl || /* istanbul ignore next */'{}').urls,
@@ -30,7 +30,7 @@ const app = express();
 
 /* istanbul ignore next */
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
-app.use(express.static(path.normalize(path.join(__dirname, '../JaMmusic/dist'))));
+app.use(express.static(path.normalize(path.join(__dirname, '../../JaMmusic/dist'))));
 app.use(cors(corsOptions));
 // eslint-disable-next-line no-void
 (async () => { await utils.mongoConnect(mongoose); })();
@@ -62,7 +62,7 @@ routes(app);
 const { server, context } = apollo;
 (async () => {
   await server.start();
-  console.log('apollo server started ...');
+  debug('apollo server started ...');
   app.use(
     '/graphql',
     expressMiddleware(server, {
