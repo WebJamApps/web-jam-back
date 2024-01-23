@@ -1,11 +1,11 @@
 {
   "name": "web-jam-back",
-  "version": "1.9.0",
+  "version": "2.0.0",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=20.9.0 <21",
-    "npm": ">=10.2.1 <11"
+    "node": ">=20.11.0 <21",
+    "npm": ">=10.2.4 <11"
   },
   "files": [
     "src/"
@@ -13,10 +13,10 @@
   "license": "MIT",
   "scripts": {
     "rmrf": "rimraf build && rimraf JaMmusic && rimraf coverage",
-    "start:debug": "rimraf build && tsc -p tsconfig.json && npm-run-all -p ts-start ts-watch",
+    "start:debug": "rimraf build && tsc && concurrently --raw \"npm:ts-start\" \"npm:ts-watch\"",
     "ts-watch": "tsc -w",
     "cc": "codeclimate analyze -f html > codeclimate.html",
-    "ts-start": "DEBUG=web-jam-back:* nodemon --trace-deprecation build/src/index.js",
+    "ts-start": "DEBUG=web-jam-back:* node --watch --trace-deprecation build/src/index.js",
     "installglobals": "npm install -g npm@latest && npm install -g snyk",
     "build:front": "./postinstallJaM.sh && rimraf ./JaMmusic/src && rimraf ./JaMmusic/test",
     "postinstall": "npm run rmrf && tsc -p tsconfig.prod.json && npm run build:front",
@@ -68,6 +68,7 @@
     "@types/supertest": "^2.0.16",
     "@typescript-eslint/eslint-plugin": "^6.16.0",
     "@typescript-eslint/parser": "^6.16.0",
+    "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "eslint": "^8.53.0",
     "eslint-config-airbnb": "^19.0.4",
@@ -81,7 +82,7 @@
     "eslint-plugin-react": "^7.33.2",
     "eslint-plugin-security": "^1.7.1",
     "jest": "^29.7.0",
-    "nodemon": "^3.0.1",
+    "nodemon": "^3.0.3",
     "npm-run-all": "^4.1.5",
     "supertest": "^6.3.3",
     "ts-jest": "^29.1.1"

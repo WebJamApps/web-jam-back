@@ -18,6 +18,7 @@ import songController from './model/song/song-controller';
 import apollo from './apollo';
 
 dotenv.config();
+
 const debug = Debug('web-jam-back:index');
 
 const readCsv = new ReadCSV();
@@ -30,7 +31,7 @@ const app = express();
 
 /* istanbul ignore next */
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
-app.use(express.static(path.normalize(path.join(__dirname, '../JaMmusic/dist'))));
+app.use(express.static(path.normalize(path.join(__dirname, '../../JaMmusic/dist'))));
 app.use(cors(corsOptions));
 // eslint-disable-next-line no-void
 (async () => { await utils.mongoConnect(mongoose); })();
@@ -92,7 +93,9 @@ const { server, context } = apollo;
     const { songs } = songData;
     try {
       await songController.deleteAllDocs();
+      // const result = 
       await songController.createDocs(songs);
+      // debug(result);
     } catch (e) /* istanbul ignore next */ { debug((e as Error).message); return Promise.resolve((e as Error).message); }
     return 'songs created';
   })();
