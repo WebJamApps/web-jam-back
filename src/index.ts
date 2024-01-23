@@ -92,7 +92,9 @@ const { server, context } = apollo;
     const { songs } = songData;
     try {
       await songController.deleteAllDocs();
+      // const result = 
       await songController.createDocs(songs);
+      // debug(result);
     } catch (e) /* istanbul ignore next */ { debug((e as Error).message); return Promise.resolve((e as Error).message); }
     return 'songs created';
   })();
