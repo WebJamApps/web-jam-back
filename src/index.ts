@@ -70,7 +70,7 @@ const { server, context } = apollo;
     }),
   );
   app.get('*', (req, res) => {
-    res.sendFile(path.normalize(path.join(__dirname, '../JaMmusic/dist/index.html')));
+    res.sendFile(path.normalize(path.join(__dirname, '../../JaMmusic/dist/index.html')));
   });
   app.use((_req, res) => res.status(404).send('not found'));
   /* istanbul ignore next */
