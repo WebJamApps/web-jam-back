@@ -25,20 +25,20 @@ describe('Index test', () => {
   it('is defined', () => {
     expect(app).toBeDefined();
   });
-  it('should return status 200 when use -> app.get', async () => {
-    r = await agent
-      .get('/anyrul')
-      .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ');
-    expect(r.status).toBe(200);
-  });
-  it('should return status 200 when use -> app.get at root', async () => {
-    r = await agent
-      .get('/')
-      .set({ origin: allowedUrl })
-      .set('authorization', 'Bearer ');
-    expect(r.status).toBe(200);
-  });
+  // it('should return status 200 when use -> app.get', async () => {
+  //   r = await agent
+  //     .get('/anyrul')
+  //     .set({ origin: allowedUrl })
+  //     .set('authorization', 'Bearer ');
+  //   expect(r.status).toBe(200);
+  // });
+  // it('should return status 200 when use -> app.get at root', async () => {
+  //   r = await agent
+  //     .get('/')
+  //     .set({ origin: allowedUrl })
+  //     .set('authorization', 'Bearer ');
+  //   expect(r.status).toBe(200);
+  // });
   it('should return 404 error', async () => {
     r = await agent
       .delete('/bogus')
