@@ -4,7 +4,7 @@ import Debug from 'debug';
 import express from 'express';
 import 'module-alias/register';
 import { expressMiddleware } from '@apollo/server/express4';
-import type { Request, Response } from 'express';
+// import type { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -16,6 +16,7 @@ import routes from './routes';
 import songData from './model/song/reset-song';
 import songController from './model/song/song-controller';
 import apollo from './apollo';
+import apolloSetup from './apollo/setup';
 
 dotenv.config();
 
@@ -60,23 +61,7 @@ app.use(express.json());
 app.use(morgan('tiny'));
 routes(app);
 const { server, context } = apollo;
-(async () => {
-  await server.start();
-  debug('apollo server started ...');
-  app.use(
-    '/graphql',
-    expressMiddleware(server, {
-      context,
-    }),
-  );
-  app.get('*', (req, res) => {
-    res.sendFile(path.normalize(path.join(__dirname, '../JaMmusic/dist/index.html')));
-  });
-  app.use((_req, res) => res.status(404).send('not found'));
-  /* istanbul ignore next */
-  app.use((err: { status: number, message: string }, _req: Request, res: Response) => res.status(500).json({ message: err.message, error: err }));
-})();
-
+(async () => { await apolloSetup.setupApollo(expressMiddleware, server, context, app); })();
 /* istanbul ignore if */if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT || 7000;
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
