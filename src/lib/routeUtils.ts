@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils';
 
-interface Icontroller { [x: string]: (req: Request, res: Response) => Promise<any> }
+export interface Icontroller { [x: string]: (req: Request, res: Response) => Promise<any> }
 
 const makeAction = (
   req: Request,

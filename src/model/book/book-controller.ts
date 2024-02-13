@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Icontroller } from 'src/lib/routeUtils';
 import Controller from '../../lib/controller';
 import bookModel from './book-facade';
 
@@ -9,4 +10,4 @@ class BookController extends Controller {
   }
 }
 
-export default new BookController(bookModel);
+export default new BookController(bookModel) as unknown as Icontroller;

@@ -5,7 +5,7 @@ import routeUtils from '../../lib/routeUtils';
 
 const router = express.Router();
 
-routeUtils.setRoot(router, controller as any, authUtils);
+routeUtils.setRoot(router, controller, authUtils);
 router.route('/one')
   .get((req, res) => { (async () => { await controller.findOne(req, res); })(); })
   .put((req, res) => {
