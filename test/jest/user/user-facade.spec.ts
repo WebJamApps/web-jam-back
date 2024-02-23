@@ -4,7 +4,7 @@ import userFacade from '../../../src/model/user/user-facade';
 describe('user-facade', () => {
   let r;
   it('validates signup and finds bad data', () => {
-    r = userFacade.validateSignup({ email: 'bad' });
+    r = userFacade.validateSignup({ email: 'bad', name: '', password: '' });
     expect(r).toBe('User Name is missing');
   });
   it('validates signup when good data', () => {
