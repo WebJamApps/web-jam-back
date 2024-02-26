@@ -1,8 +1,7 @@
 import { Request, Response } from 'express';
 import { Icontroller } from 'src/lib/routeUtils';
-import Controller from '../../lib/controller';
+import Controller from 'src/lib/controller';
 import bookModel from './book-facade';
-import { Icontroller } from '../../lib/routeUtils';
 
 class BookController extends Controller {
   findCheckedOut(req: Request, res: Response) {
