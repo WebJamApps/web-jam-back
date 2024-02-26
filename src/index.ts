@@ -4,7 +4,6 @@ import Debug from 'debug';
 import express from 'express';
 import 'module-alias/register';
 import { expressMiddleware } from '@apollo/server/express4';
-// import type { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
 import morgan from 'morgan';
