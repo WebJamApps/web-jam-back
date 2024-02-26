@@ -15,11 +15,8 @@ interface UserHandler {
 }
 
 class UserController extends Controller {
-  // authGoogle: typeof authGoogle;
-
   constructor(uModel: typeof userModel) {
     super(uModel);
-    // this.authGoogle = authGoogle;
   }
 
   resErr(res: Response, e: Error) { // eslint-disable-line class-methods-use-this
