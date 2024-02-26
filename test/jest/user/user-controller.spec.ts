@@ -23,7 +23,7 @@ describe('User Controller', () => {
   it('successfully google authenticate', async () => {
     controller.findOneAndUpdate = jest.fn(() => Promise.resolve({}));
     const authMock:any = jest.fn(() => Promise.resolve({ names: [{ displayName: 'tester' }], emailAddresses: [{ value: 't@s.com' }] }));
-    controller.google.authenticate = authMock;
+    controller.authGoogle.authenticate = authMock;
     await controller.google({ body: {} } as any, resStub);
     expect(testObj.token).toBeDefined();
     testObj = {};
@@ -32,7 +32,7 @@ describe('User Controller', () => {
     controller.create = jest.fn(() => Promise.resolve({ password: 'password' }));
     controller.findOneAndUpdate = jest.fn(() => Promise.resolve(null));
     const authMock:any = jest.fn(() => Promise.resolve({ names: [{ displayName: 'tester' }], emailAddresses: [{ value: 't@s.com' }] }));
-    controller.google = authMock;
+    controller.google.authenticate = authMock;
     await controller.google({ body: {} } as any, resStub);
     expect(controller.create).toHaveBeenCalled();
   }); 
