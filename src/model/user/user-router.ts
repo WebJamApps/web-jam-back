@@ -20,7 +20,7 @@ router.route('/')
       } catch (err) { res.status(401).json({ message: (err as Error).message }); }
     })(); 
   });
-routeUtils.byId(router, controller as any, authUtils);
+routeUtils.byId(router, controller, authUtils);
 router.route('/auth/google')
   .post((req, res) => { (async () => { await controller.google(req, res); })(); });
 

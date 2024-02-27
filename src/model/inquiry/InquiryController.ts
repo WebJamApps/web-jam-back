@@ -1,16 +1,17 @@
-import sgMail from '@sendgrid/mail';
+import sgMail, { MailService } from '@sendgrid/mail';
+import { Request, Response } from 'express';
 import Debug from 'debug';
 
 const debug = Debug('web-jam-back:InquiryController');
 
 class InquiryController {
-  sgMail: any;
+  sgMail: MailService;
 
   constructor() {
     this.sgMail = sgMail;
   }
 
-  async sendGridEmail(bodyhtml: any, toemail: any, subjectline: any, res: any) {
+  async sendGridEmail(bodyhtml: string, toemail: string, subjectline: string, res: Response) {
     this.sgMail.setApiKey(process.env.SENDGRID_API_KEY || /* istanbul ignore next */'');
     const msg = {
       to: toemail,
@@ -24,7 +25,7 @@ class InquiryController {
     return res.status(200).json({ message: 'email sent' });
   }
 
-  handleInquiry(req: any, res: any) {
+  handleInquiry(req: Request, res: Response) {
     debug(req.body);
     return this.sendGridEmail(JSON.stringify(req.body), 'web.jam.adm@gmail.com', 'inquiry', res);
   }

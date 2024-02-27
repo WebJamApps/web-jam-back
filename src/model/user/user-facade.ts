@@ -3,7 +3,7 @@ import Model from '../../lib/facade';
 import userSchema from './user-schema';
 
 class UserModel extends Model {
-  validateSignup(obj: any) { // eslint-disable-line class-methods-use-this
+  validateSignup(obj: { name: string, email: string, password: string }) { // eslint-disable-line class-methods-use-this
     let message = '';
     if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(obj.email)) { // eslint-disable-line security/detect-unsafe-regex
       // the email is valid
@@ -19,13 +19,13 @@ class UserModel extends Model {
     return message;
   }
 
-  async comparePassword(password: any, userP: any) { // eslint-disable-line class-methods-use-this
+  async comparePassword(password: string, userP: string) { // eslint-disable-line class-methods-use-this
     let isMatch;
     try { isMatch = await bcrypt.compare(password, userP); } catch (e) { return Promise.reject(e); }
     return Promise.resolve(isMatch);
   }
 
-  async encryptPswd(password: any) { // eslint-disable-line class-methods-use-this
+  async encryptPswd(password: string) { // eslint-disable-line class-methods-use-this
     let salt, hash;
     try {
       salt = await bcrypt.genSalt(10);
