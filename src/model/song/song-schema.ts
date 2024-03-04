@@ -11,6 +11,7 @@ const songSchema = new Schema({
   year: { type: Number, required: false },
   url: { type: String, required: true, unique: true },
   image: { type: String, required: false },
+  orderBy: { type: Number, required: false },
 });
 
 export default mongoose.model('Song', songSchema);
