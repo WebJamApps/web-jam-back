@@ -4,7 +4,6 @@ import Debug from 'debug';
 import express from 'express';
 import 'module-alias/register';
 import { expressMiddleware } from '@apollo/server/express4';
-// import type { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -15,6 +14,7 @@ import ReadCSV from './ReadCSV';
 import routes from './routes';
 import songData from './model/song/reset-song';
 import songController from './model/song/song-controller';
+import Controller from './lib/controller';
 import apollo from './apollo';
 import apolloSetup from './apollo/setup';
 
@@ -76,8 +76,8 @@ const { server, context } = apollo;
   (async () => {
     const { songs } = songData;
     try {
-      await songController.deleteAllDocs();
-      await songController.createDocs(songs);
+      await (songController as unknown as Controller).deleteAllDocs();
+      await (songController as unknown as Controller).createDocs(songs);
     } catch (e) /* istanbul ignore next */ { debug((e as Error).message); return Promise.resolve((e as Error).message); }
     return 'songs created';
   })();
