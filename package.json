@@ -4,8 +4,8 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=20.12.0 <21",
-    "npm": ">=10.5.0 <11"
+    "node": ">=22.11.0 <23",
+    "npm": ">=10.9.0 <11"
   },
   "files": [
     "src/"
@@ -49,7 +49,7 @@
     "csvtojson": "^2.0.10",
     "debug": "^4.3.4",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
+    "express": "^4.21.1",
     "express-sslify": "^1.2.0",
     "graphql": "^16.8.1",
     "helmet": "^7.1.0",
