@@ -4,8 +4,8 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=22.11.0 <23",
-    "npm": ">=10.9.0 <11"
+    "node": ">=22.13.1 <23",
+    "npm": ">=11.1.0 <12"
   },
   "files": [
     "src/"
@@ -49,14 +49,14 @@
     "csvtojson": "^2.0.10",
     "debug": "^4.3.4",
     "dotenv": "^16.3.1",
-    "express": "^4.21.1",
+    "express": "^4.21.2",
     "express-sslify": "^1.2.0",
     "graphql": "^16.8.1",
     "helmet": "^7.1.0",
     "jwt-simple": "^0.5.6",
     "module-alias": "^2.2.3",
     "moment": "^2.29.4",
-    "mongoose": "^8.8.3",
+    "mongoose": "^8.9.5",
     "morgan": "^1.10.0",
     "rimraf": "^5.0.5",
     "snyk": "^1.1118.0",
