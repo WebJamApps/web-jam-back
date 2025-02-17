@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
@@ -39,8 +39,6 @@
     "@types/bcryptjs": "^2.4.2",
     "@types/cors": "^2.8.13",
     "@types/debug": "^4.1.7",
-    "@types/express": "^4.17.17",
-    "@types/express-sslify": "^1.2.2",
     "@types/module-alias": "^2.0.4",
     "@types/morgan": "^1.9.4",
     "@types/superagent": "^4.1.16",
@@ -49,8 +47,7 @@
     "csvtojson": "^2.0.10",
     "debug": "^4.3.4",
     "dotenv": "^16.3.1",
-    "express": "^4.21.2",
-    "express-sslify": "^1.2.0",
+    "express": "^5.0.1",
     "graphql": "^16.8.1",
     "helmet": "^7.1.0",
     "jwt-simple": "^0.5.6",
