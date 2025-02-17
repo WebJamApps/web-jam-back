@@ -4,7 +4,7 @@
   "description": "web-jam.com",
   "main": "index.js",
   "engines": {
-    "node": ">=22.13.1 <23",
+    "node": ">=22.14.0 <23",
     "npm": ">=11.1.0 <12"
   },
   "files": [
