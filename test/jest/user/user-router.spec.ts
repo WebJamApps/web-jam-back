@@ -25,8 +25,7 @@ describe('user-router', () => {
   it('findByEmail does not find a match', async () => {
     process.env.NODE_ENV = 'test';
     authUtils.ensureAuthenticated = jest.fn();
-    const r = await request(app)
-      .post('/user');
+    const r = (await request(app).post('/user').send({ email: 'test@testing.com' }));
     expect(r.status).toBe(400);
   });
   it('google', async () => {
