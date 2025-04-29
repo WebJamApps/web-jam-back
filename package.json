@@ -60,7 +60,7 @@
     "morgan": "^1.10.0",
     "rimraf": "^5.0.5",
     "snyk": "^1.1118.0",
-    "superagent": "^8.1.2",
+    "superagent": "^10.2.0",
     "typescript": "^5.3.3"
   },
   "devDependencies": {
