@@ -59,7 +59,7 @@
     "mongoose": "^8.9.5",
     "morgan": "^1.10.0",
     "rimraf": "^5.0.5",
-    "snyk": "^1.1118.0",
+    "snyk": "^1.1297.3",
     "superagent": "^8.1.2",
     "typescript": "^5.3.3"
   },
