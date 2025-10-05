@@ -18,9 +18,6 @@ jobs:
           command:     'npm install'
       - run:
           name:        run all tests
-          command:     |
-            ./cc-test-reporter before-build
-            npm test
-            ./cc-test-reporter after-build --coverage-input-type lcov --exit-code $?
+          command:     'npm test'
       - store_artifacts:
           path:        coverage
