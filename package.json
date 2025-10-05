@@ -26,7 +26,8 @@
     "test": "eslint ./src && rimraf coverage && npm run test:jest",
     "test:lint": "eslint ./src --fix",
     "test:local": "npm run test:lint && rimraf coverage && npm run test:jest && npm run cc",
-    "test:jest": "jest --no-cache --config jest.config.json --runInBand --detectOpenHandles --forceExit"
+    "test:jest": "jest --no-cache --config jest.config.json --runInBand --detectOpenHandles --forceExit",
+    "test:all": "npm run test:local"
   },
   "repository": {
     "type": "git",
