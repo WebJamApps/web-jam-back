@@ -7,7 +7,7 @@ jobs:
       - image: cimg/node:lts-browsers
     working_directory: ~/repo
     steps:
-      # - checkout
+      - checkout
       # - run:
       #     name: Setup Code Climate test-reporter
       #     command: |
