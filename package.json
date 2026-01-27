@@ -47,7 +47,7 @@
     "@types/superagent": "^4.1.16",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "csvtojson": "^2.0.10",
+    "csvtojson": "^2.0.13",
     "debug": "^4.3.4",
     "dotenv": "^16.3.1",
     "express": "^4.21.2",
