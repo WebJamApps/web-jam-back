@@ -35,7 +35,7 @@
   },
   "author": "HandlersAndKickers <>",
   "dependencies": {
-    "@apollo/server": "^4.9.5",
+    "@apollo/server": "^5.4.0",
     "@sendgrid/mail": "^8.0.0",
     "@types/bcryptjs": "^2.4.2",
     "@types/cors": "^2.8.13",
