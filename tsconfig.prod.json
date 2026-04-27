@@ -1,12 +1,41 @@
 {
   "extends": "./tsconfig.json",
-    "exclude": [
-      "node_modules",
-      "dist",
-      "build",
-      "coverage",
-      "JaMmusic",
-      "test"
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    "JaMmusic",
+    "test"
+  ],
+  "include": [
+    "src"
+  ],
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": false,
+    "checkJs": false,
+    "outDir": "./build",
+    "rootDir": ".",
+    "resolveJsonModule": true,
+    "types": [
+      "node"
     ],
-    "include":["src"]
+    "strict": true,
+    "noImplicitAny": true,
+    "paths": {
+      "#src/*": [
+        "./src/*"
+      ],
+      "#lib/*": [
+        "./src/lib/*"
+      ]
+    },
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
 }
