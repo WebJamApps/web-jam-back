@@ -14,4 +14,4 @@ const songSchema = new Schema({
   orderBy: { type: Number, required: false },
 });
 
-export default mongoose.model('Song', songSchema);
+export default mongoose.models.Song || mongoose.model('Song', songSchema);

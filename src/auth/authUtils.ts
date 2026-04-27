@@ -2,7 +2,7 @@ import moment from 'moment';
 import jwt from 'jwt-simple';
 import Debug from 'debug';
 import dotenv from 'dotenv';
-import userModel from '../model/user/user-schema';
+import userModel from '../model/user/user-schema.js';
 
 dotenv.config();
 const debug = Debug('web-jam-back:authUtils');

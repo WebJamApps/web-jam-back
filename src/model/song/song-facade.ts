@@ -1,5 +1,5 @@
-import Model from '../../lib/facade';
-import songSchema from './song-schema';
+import Model from '../../lib/facade.js';
+import songSchema from './song-schema.js';
 
 class SongModel extends Model {
 

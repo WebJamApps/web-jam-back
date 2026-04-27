@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import utils from '../../../src/lib/utils';
+import utils from '../../../src/lib/utils.js';
 
 describe('utils', () => {
   it('mongoConnect catches error', async () => {
     let eMessage = '';
-    const mg:any = { connect: jest.fn(() => Promise.reject(new Error('failed'))) };
+    const mg:any = { connect: vi.fn(() => Promise.reject(new Error('failed'))) };
     try {
       await utils.mongoConnect(mg);
     } catch (err) { eMessage = (err as Error).message; }

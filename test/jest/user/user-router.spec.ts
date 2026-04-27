@@ -1,6 +1,6 @@
 import request from 'supertest';
-import authUtils from '../../../src/auth/authUtils';
-import app from '../../../src/index';
+import authUtils from '../../../src/auth/authUtils.js';
+import app from '../../../src/index.js';
 
 describe('user-router', () => {
   it('should find matching users', async () => {
@@ -24,7 +24,7 @@ describe('user-router', () => {
   });
   it('findByEmail does not find a match', async () => {
     process.env.NODE_ENV = 'test';
-    authUtils.ensureAuthenticated = jest.fn();
+    authUtils.ensureAuthenticated = vi.fn();
     const r = await request(app)
       .post('/user');
     expect(r.status).toBe(400);

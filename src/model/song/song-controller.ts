@@ -1,6 +1,6 @@
-import Controller from '../../lib/controller';
-import songModel from './song-facade';
-import { Icontroller } from '../../lib/routeUtils';
+import Controller from '../../lib/controller.js';
+import songModel from './song-facade.js';
+import { Icontroller } from '../../lib/routeUtils.js';
 
 class SongController extends Controller {
 

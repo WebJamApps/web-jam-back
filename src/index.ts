@@ -1,22 +1,21 @@
-import path from 'path';
+import path from 'node:path';
 import dotenv from 'dotenv';
 import Debug from 'debug';
 import express from 'express';
-import 'module-alias/register';
 import { expressMiddleware } from '@apollo/server/express4';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import cors from 'cors';
 import enforce from 'express-sslify';
-import utils from './lib/utils';
-import ReadCSV from './ReadCSV';
-import routes from './routes';
-import songData from './model/song/reset-song';
-import songController from './model/song/song-controller';
-import Controller from './lib/controller';
-import apollo from './apollo';
-import apolloSetup from './apollo/setup';
+import utils from './lib/utils.js';
+import ReadCSV from './ReadCSV/index.js';
+import routes from './routes.js';
+import songData from './model/song/reset-song.js';
+import songController from './model/song/song-controller.js';
+import Controller from './lib/controller.js';
+import apollo from './apollo/index.js';
+import apolloSetup from './apollo/setup.js';
 
 dotenv.config();
 
@@ -31,7 +30,7 @@ const app = express();
 
 /* istanbul ignore next */
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'master') app.use(enforce.HTTPS({ trustProtoHeader: true }));
-app.use(express.static(path.normalize(path.join(__dirname, '../../JaMmusic/dist'))));
+app.use(express.static(path.normalize(path.join(import.meta.dirname, '../../JaMmusic/dist'))));
 app.use(cors(corsOptions));
 // eslint-disable-next-line no-void
 (async () => { await utils.mongoConnect(mongoose); })();

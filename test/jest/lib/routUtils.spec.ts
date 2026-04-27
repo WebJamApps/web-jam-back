@@ -1,15 +1,15 @@
-import routeUtils from '../../../src/lib/routeUtils';
+import routeUtils from '../../../src/lib/routeUtils.js';
 
 describe('routeUtils', () => {
   it('makeAction catches error', async () => {
-    const json = jest.fn();
-    const status = jest.fn(() => ({ json }));
+    const json = vi.fn();
+    const status = vi.fn(() => ({ json }));
     const action = routeUtils.makeAction(
       {} as any, 
       { status } as any, 
       '', 
       {},
-      { ensureAuthenticated: jest.fn(() => Promise.reject(new Error('failed'))) } as any,
+      { ensureAuthenticated: vi.fn(() => Promise.reject(new Error('failed'))) } as any,
     );
     await action();
     expect(json).toHaveBeenCalledWith({ message: 'failed' });
