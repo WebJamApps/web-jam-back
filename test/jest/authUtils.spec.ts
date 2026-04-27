@@ -1,9 +1,9 @@
 import jwt from 'jwt-simple';
 import moment from 'moment';
 import mongoose from 'mongoose';
-import AuthUtils from '../../src/auth/authUtils';
-import config from '../../src/config';
-import userModel from '../../src/model/user/user-schema';
+import AuthUtils from '../../src/auth/authUtils.js';
+import config from '../../src/config.js';
+import userModel from '../../src/model/user/user-schema.js';
 
 describe('the authUtils', () => {
   const reqStub:any = { user: '' };
@@ -24,7 +24,7 @@ describe('the authUtils', () => {
   it('does not find the user by id', async () => {
     let eMessage = '';
     const uM:any = userModel;
-    uM.findById = jest.fn(() => ({ lean: () => ({ exec: () => Promise.reject(new Error('bad')) }) }));
+    uM.findById = vi.fn(() => ({ lean: () => ({ exec: () => Promise.reject(new Error('bad')) }) }));
     reqStub.user = new mongoose.Types.ObjectId();
     reqStub.baseUrl = '/booya';
     try {
@@ -35,7 +35,7 @@ describe('the authUtils', () => {
   it('prevents user with incorrect userType', async () => {
     let eMessage = '';
     const uM:any = userModel;
-    uM.findById = jest.fn(() => ({ lean: () => ({ exec: () => Promise.resolve() }) }));
+    uM.findById = vi.fn(() => ({ lean: () => ({ exec: () => Promise.resolve() }) }));
     reqStub.user = new mongoose.Types.ObjectId();
     reqStub.baseUrl = '/book';
     try {

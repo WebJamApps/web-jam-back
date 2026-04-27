@@ -1,4 +1,4 @@
-import apollo, { resolvers } from 'src/apollo';
+import apollo, { resolvers } from '#src/apollo/index.js';
 
 describe('apollo', () => {
   it('resolvers', () => {

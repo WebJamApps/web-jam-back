@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-useless-constructor */
 import { Request, Response } from 'express';
 import Debug from 'debug';
-import authGoogle from 'src/auth/google';
-import Controller from 'src/lib/controller';
-import { Icontroller } from 'src/lib/routeUtils';
-import userModel from './user-facade';
+import authGoogle from '#src/auth/google.js';
+import Controller from '#src/lib/controller.js';
+import { Icontroller } from '#src/lib/routeUtils.js';
+import userModel from './user-facade.js';
 
 const debug = Debug('web-jam-back:user-controller');
 

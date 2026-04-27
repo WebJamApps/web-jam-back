@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs';
-import Model from '../../lib/facade';
-import userSchema from './user-schema';
+import Model from '../../lib/facade.js';
+import userSchema from './user-schema.js';
 
 class UserModel extends Model {
   validateSignup(obj: { name: string, email: string, password: string }) { // eslint-disable-line class-methods-use-this

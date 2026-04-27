@@ -1,7 +1,7 @@
 import express from 'express';
-import controller from './book-controller';
-import authUtils from '../../auth/authUtils';
-import routeUtils from '../../lib/routeUtils';
+import controller from './book-controller.js';
+import authUtils from '../../auth/authUtils.js';
+import routeUtils from '../../lib/routeUtils.js';
 
 const router = express.Router();
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import AuthUtils from '../auth/authUtils';
+import AuthUtils from '../auth/authUtils.js';
 
 export interface Icontroller { [x: string]: (req: Request, res: Response) => Promise<any> }
 

@@ -1,5 +1,5 @@
 import express from 'express';
-import InquiryController from './InquiryController';
+import InquiryController from './InquiryController.js';
 
 const router = express.Router();
 

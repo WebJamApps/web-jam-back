@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import ReadCSV from '../../src/ReadCSV';
+import ReadCSV from '../../src/ReadCSV/index.js';
 
 describe('ReadCSV', () => {
   it('runs', async () => {
@@ -9,7 +9,7 @@ describe('ReadCSV', () => {
   });
   it('runs with error', async () => {
     const readc: any = new ReadCSV();
-    readc.csvtojson = jest.fn(() => ({ fromFile: () => Promise.reject(new Error('bad')) }));
+    readc.csvtojson = vi.fn(() => ({ fromFile: () => Promise.reject(new Error('bad')) }));
     const result = await readc.run();
     expect(result).toBe('bad');
   });

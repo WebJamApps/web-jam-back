@@ -1,7 +1,7 @@
 import { ApolloServer, ContextFunction } from '@apollo/server';
-import authUtils from 'src/auth/authUtils';
 import Debug from 'debug';
 import type { Request, Response } from 'express';
+import authUtils from '#src/auth/authUtils.js';
 
 const debug = Debug('web-jam-back:apollo');
 // A schema is a collection of type definitions (hence "typeDefs")

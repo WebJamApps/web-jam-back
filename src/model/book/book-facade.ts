@@ -1,5 +1,5 @@
-import Model from '@lib/facade';
-import bookSchema from './book-schema';
+import Model from '#lib/facade.js';
+import bookSchema from './book-schema.js';
 
 class BookModel extends Model {
 

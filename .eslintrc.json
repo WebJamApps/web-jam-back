@@ -2,7 +2,6 @@
   "plugins": [
     "node",
     "security",
-    "jest",
     "@typescript-eslint",
     "json"
   ],
@@ -13,7 +12,6 @@
     "plugin:security/recommended",
     "plugin:json/recommended",
     "plugin:node/recommended",
-    "plugin:jest/recommended",
     "plugin:@typescript-eslint/recommended",
     "plugin:@typescript-eslint/recommended-requiring-type-checking"
   ],
@@ -33,8 +31,9 @@
     "@typescript-eslint/restrict-template-expressions":0,
     "import/extensions": 0,
     "import/no-extraneous-dependencies": 0,
+    "import/no-unresolved": 0,
     "node/no-unsupported-features/es-syntax": 0,
-    "node/no-missing-import": 0,//disabled because using alias imports
+    "node/no-missing-import": 0,
     "no-underscore-dangle": 0,
     "no-multiple-empty-lines": [
       "error",
@@ -68,13 +67,22 @@
       }
     ]
   },
+  "globals": {
+    "vi": "readonly",
+    "describe": "readonly",
+    "it": "readonly",
+    "expect": "readonly",
+    "beforeAll": "readonly",
+    "beforeEach": "readonly",
+    "afterAll": "readonly",
+    "afterEach": "readonly"
+  },
   "env": {
-    "jest": true,
     "node": true
   },
   "parser": "@typescript-eslint/parser",
   "parserOptions": {
-    "ecmaVersion": 11,
+    "ecmaVersion": "latest",
     "sourceType": "module",
     "project": "./tsconfig.json"
   }
