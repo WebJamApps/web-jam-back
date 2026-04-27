@@ -1,7 +1,7 @@
 import express from 'express';
-import controller from './song-controller';
-import authUtils from '../../auth/authUtils';
-import routeUtils from '../../lib/routeUtils';
+import controller from './song-controller.js';
+import authUtils from '../../auth/authUtils.js';
+import routeUtils from '../../lib/routeUtils.js';
 
 const router = express.Router();
 

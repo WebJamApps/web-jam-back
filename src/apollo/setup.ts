@@ -1,4 +1,4 @@
-import path from 'path';
+import path from 'node:path';
 import type { Response, Request } from 'express';
 
 const setupApollo = async (expressMiddleware:any, server:any, context:any, app:any) => {
@@ -12,7 +12,7 @@ const setupApollo = async (expressMiddleware:any, server:any, context:any, app:a
       }),
     );
     app.get('*', (_req:Request, res:Response) => {
-      res.sendFile(path.normalize(path.join(__dirname, '../../../JaMmusic/dist/index.html')));
+      res.sendFile(path.normalize(path.join(import.meta.dirname, '../../../JaMmusic/dist/index.html')));
     });
     app.use((_req:Request, res:Response) => res.status(404).send('not found'));
     /* istanbul ignore next */

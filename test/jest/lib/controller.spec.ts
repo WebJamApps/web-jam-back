@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
-import Controller from '../../../src/lib/controller';
+import Controller from '../../../src/lib/controller.js';
 
 describe('lib controller', () => {
   const goodId = new mongoose.Types.ObjectId();
@@ -136,12 +136,12 @@ describe('lib controller', () => {
     expect(r.message).toBe('bad');
   });
   it('handles error on deleteAllDocs', async () => {
-    model.deleteMany = jest.fn(() => Promise.reject(new Error('bad')));
+    model.deleteMany = vi.fn(() => Promise.reject(new Error('bad')));
     c = new Controller(model);
     await expect(c.deleteAllDocs()).rejects.toThrow('bad');
   });
   it('handles error on createDocs', async () => {
-    model.create = jest.fn(() => Promise.reject(new Error('bad')));
+    model.create = vi.fn(() => Promise.reject(new Error('bad')));
     c = new Controller(model);
     await expect(c.createDocs([{}])).rejects.toThrow('bad');
   });

@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import Debug from 'debug';
 import { Request, Response } from 'express';
-import AuthUtils from '../auth/authUtils';
+import AuthUtils from '../auth/authUtils.js';
 
 interface Imodel {
   Schema:{ modelName:string },

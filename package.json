@@ -2,20 +2,24 @@
   "name": "web-jam-back",
   "version": "2.0.0",
   "description": "web-jam.com",
-  "main": "index.js",
+  "type": "module",
+  "main": "build/src/index.js",
   "engines": {
-    "node": ">=22.13.1 <23",
-    "npm": ">=11.1.0 <12"
+    "node": "24.15.0",
+    "npm": "11.12.1"
   },
   "files": [
     "src/"
   ],
   "license": "MIT",
+  "imports": {
+    "#src/*": "./build/src/*",
+    "#lib/*": "./build/src/lib/*"
+  },
   "scripts": {
     "rmrf": "rimraf build && rimraf JaMmusic && rimraf coverage",
     "start:debug": "rimraf build && tsc && concurrently --raw \"npm:ts-start\" \"npm:ts-watch\"",
     "ts-watch": "tsc -w",
-    "cc": "codeclimate analyze -f html > codeclimate.html",
     "ts-start": "DEBUG=web-jam-back:* node --watch --trace-deprecation build/src/index.js",
     "installglobals": "npm install -g npm@latest && npm install -g snyk",
     "build:front": "./postinstallJaM.sh && rimraf ./JaMmusic/src && rimraf ./JaMmusic/test",
@@ -23,10 +27,10 @@
     "start": "node build/src/index.js",
     "cleaninstall": "npm install -g rimraf && rimraf yarn.lock && rimraf node_modules && rimraf package-lock.json && npm install -g npm@latest && npm run rmrf && npm cache clean --force && npm install",
     "node:debug": "node --inspect-brk index.js",
-    "test": "eslint ./src && rimraf coverage && npm run test:jest",
+    "test": "eslint ./src && rimraf coverage && npm run test:unit",
     "test:lint": "eslint ./src --fix",
-    "test:local": "npm run test:lint && rimraf coverage && npm run test:jest && npm run cc",
-    "test:jest": "jest --no-cache --config jest.config.json --runInBand --detectOpenHandles --forceExit",
+    "test:local": "npm run test:lint && rimraf coverage && npm run test:unit",
+    "test:unit": "vitest run",
     "test:all": "npm run test:local"
   },
   "repository": {
@@ -42,8 +46,8 @@
     "@types/debug": "^4.1.7",
     "@types/express": "^4.17.17",
     "@types/express-sslify": "^1.2.2",
-    "@types/module-alias": "^2.0.4",
     "@types/morgan": "^1.9.4",
+    "@types/node": "^24.0.0",
     "@types/superagent": "^4.1.16",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -55,7 +59,6 @@
     "graphql": "^16.8.1",
     "helmet": "^7.1.0",
     "jwt-simple": "^0.5.6",
-    "module-alias": "^2.2.3",
     "moment": "^2.29.4",
     "mongoose": "^8.9.5",
     "morgan": "^1.10.0",
@@ -65,10 +68,10 @@
     "typescript": "^5.3.3"
   },
   "devDependencies": {
-    "@types/jest": "^29.5.9",
     "@types/supertest": "^2.0.16",
     "@typescript-eslint/eslint-plugin": "^6.16.0",
     "@typescript-eslint/parser": "^6.16.0",
+    "@vitest/coverage-v8": "^1.6.0",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "eslint": "^8.53.0",
@@ -76,19 +79,13 @@
     "eslint-config-airbnb-typescript": "^17.1.0",
     "eslint-plugin-es": "^4.1.0",
     "eslint-plugin-import": "^2.29.0",
-    "eslint-plugin-jest": "^27.6.0",
     "eslint-plugin-json": "^3.1.0",
     "eslint-plugin-jsx-a11y": "^6.8.0",
     "eslint-plugin-node": "^11.1.0",
     "eslint-plugin-react": "^7.33.2",
     "eslint-plugin-security": "^1.7.1",
-    "jest": "^29.7.0",
     "supertest": "^6.3.3",
-    "ts-jest": "^29.1.1"
-  },
-  "_moduleAliases": {
-    "src": "build/src",
-    "@lib": "build/src/lib"
+    "vitest": "^1.6.0"
   },
   "snyk": true
 }

@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import userFacade from '../../../src/model/user/user-facade';
+import userFacade from '../../../src/model/user/user-facade.js';
 
 describe('user-facade', () => {
   let r;
@@ -12,7 +12,7 @@ describe('user-facade', () => {
     expect(r).toBe('');
   });
   it('handles error from bcrypt', async () => {
-    bcrypt.compare = jest.fn(() => Promise.reject(new Error('bad')));
+    bcrypt.compare = vi.fn(() => Promise.reject(new Error('bad')));
     await expect(userFacade.comparePassword('pw', 'p')).rejects.toThrow('bad');
   });
   it('successfully encrypts the password', async () => {
@@ -20,7 +20,7 @@ describe('user-facade', () => {
     expect(r).toBeDefined();
   });
   it('catches error on encrypts the password', async () => {
-    bcrypt.hash = jest.fn(() => Promise.reject(new Error('bad')));
+    bcrypt.hash = vi.fn(() => Promise.reject(new Error('bad')));
     await expect(userFacade.encryptPswd('pw')).rejects.toThrow('bad');
   });
   it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
@@ -29,7 +29,7 @@ describe('user-facade', () => {
     await delay(3000);
   });
   it('comparePassword when is a match', async () => {
-    bcrypt.compare = jest.fn(() => Promise.resolve(true));
+    bcrypt.compare = vi.fn(() => Promise.resolve(true));
     expect((await userFacade.comparePassword('pw', 'pw'))).toBe(true);
   });
 });
