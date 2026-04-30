@@ -63,6 +63,7 @@ export default [
       ...vitest.configs.recommended.rules,
       'vitest/no-conditional-expect': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
     },
   },
   {

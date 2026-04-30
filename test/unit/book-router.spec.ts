@@ -83,7 +83,7 @@ describe('The Book API', () => {
       title: 'Best Test Book Ever', type: 'paperback', checkedOutBy: '33333',
     });
     r = await request(app)
-      .put(`/book/${newBook.id}`)
+      .put(`/book/${newBook._id}`)
       .set({ origin: allowedUrl })
       .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
       .send({ checkedOutBy: '' });

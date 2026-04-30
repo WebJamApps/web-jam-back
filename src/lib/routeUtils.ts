@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils.js';
 
-export interface Icontroller { [x: string]: (req: Request, res: Response) => Promise<any> }
+export interface Icontroller { [x: string]: (req: Request, res: Response) => Promise<unknown> }
 
 const makeAction = (
   req: Request,
   res: Response,
   method: string,
-  controller: { [x: string]: (req: Request, res: Response) => Promise<any> },
+  controller: { [x: string]: (req: Request, res: Response) => Promise<unknown> },
   authUtils: typeof AuthUtils,
 ) => async () => {
   try {

@@ -1,14 +1,21 @@
 import path from 'node:path';
-import type { Response, Request } from 'express';
+import type { Response, Request, Express } from 'express';
+import type { ApolloServer, BaseContext, ContextFunction } from '@apollo/server';
+import type { expressMiddleware as ExpressMiddleware } from '@as-integrations/express5';
 
-const setupApollo = async (expressMiddleware:any, server:any, context:any, app:any) => {
+const setupApollo = async (
+  expressMiddleware: typeof ExpressMiddleware,
+  server: ApolloServer<BaseContext>,
+  context: ContextFunction<[{ request: Request; response: Response }], BaseContext>,
+  app: Express,
+) => {
   try {
     await server.start();
     console.log('apollo server started ...');
     app.use(
       '/graphql',
       expressMiddleware(server, {
-        context,
+        context: context as unknown as ContextFunction<[{ req: Request; res: Response }], BaseContext>,
       }),
     );
     app.get('/*splat', (_req:Request, res:Response) => {

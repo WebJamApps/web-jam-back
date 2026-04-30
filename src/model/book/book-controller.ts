@@ -6,7 +6,7 @@ import bookModel from './book-facade.js';
 class BookController extends Controller {
   findCheckedOut(req: Request, res: Response) {
     return this.model.find({ checkedOutBy: req.params.id })
-      .then((collection: string) => res.status(200).json(collection));
+      .then((collection) => res.status(200).json(collection));
   }
 }
 

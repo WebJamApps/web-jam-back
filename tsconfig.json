@@ -11,6 +11,7 @@
     "types": ["node", "vitest/globals"],
     "strict": true,
     "noImplicitAny": true,
+    "noUncheckedIndexedAccess": false,
     "paths": {
       "#src/*": ["./src/*"],
       "#lib/*": ["./src/lib/*"]
