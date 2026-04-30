@@ -4,7 +4,7 @@ import Debug from 'debug';
 import dotenv from 'dotenv';
 import userModel from '../model/user/user-schema.js';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 const debug = Debug('web-jam-back:authUtils');
 
 const findUserById = async (
