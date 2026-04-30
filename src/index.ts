@@ -17,7 +17,7 @@ import Controller from './lib/controller.js';
 import apollo from './apollo/index.js';
 import apolloSetup from './apollo/setup.js';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const debug = Debug('web-jam-back:index');
 const readCsv = new ReadCSV();
