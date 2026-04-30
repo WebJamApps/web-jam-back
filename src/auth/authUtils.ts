@@ -1,4 +1,3 @@
-import moment from 'moment';
 import jwt from 'jwt-simple';
 import Debug from 'debug';
 import dotenv from 'dotenv';
@@ -27,10 +26,11 @@ const findUserById = async (
 };
 
 const createJWT = (user: { _id:string }): string => {
+  const nowSeconds = Math.floor(Date.now() / 1000);
   const payload = {
     sub: user._id,
-    iat: moment().unix(),
-    exp: moment().add(14, 'days').unix(),
+    iat: nowSeconds,
+    exp: nowSeconds + 14 * 24 * 60 * 60,
   };
   return jwt.encode(payload, process.env.HashString || /* istanbul ignore next */'');
 };

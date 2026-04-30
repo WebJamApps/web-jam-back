@@ -1,5 +1,4 @@
 import jwt from 'jwt-simple';
-import moment from 'moment';
 import mongoose from 'mongoose';
 import AuthUtils from '../../src/auth/authUtils.js';
 import config from '../../src/config.js';
