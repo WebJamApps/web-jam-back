@@ -1,20 +1,22 @@
-import mongoose from 'mongoose';
+import mongoose, { type QueryFilter, type UpdateQuery } from 'mongoose';
 import Debug from 'debug';
 import { Request, Response } from 'express';
 import AuthUtils from '../auth/authUtils.js';
 
+type AnyDoc = Record<string, unknown>;
+
 interface Imodel {
-  Schema:{ modelName:string },
-  findOne:(...args:any)=>any;
-  findOneAndUpdate:(...args:any)=>any;
-  find:(...args:any)=>any;
-  findById:(...args:any)=>any;
-  create:(...args:any)=>any;
-  findByIdAndUpdate:(...args:any)=>any;
-  findByIdAndDelete:(...args:any)=>any;
-  deleteMany:(...args:any)=>any;
-  comparePassword?:(...args:any)=>any;
-  validateSignup?:(...args:any)=>any;
+  Schema: { modelName: string };
+  findOne: (query: QueryFilter<AnyDoc>) => Promise<AnyDoc | null>;
+  findOneAndUpdate: (conditions: QueryFilter<AnyDoc>, update: UpdateQuery<AnyDoc>) => Promise<AnyDoc | null>;
+  find: (query: QueryFilter<AnyDoc>) => Promise<AnyDoc[]>;
+  findById: (id: string) => Promise<AnyDoc | null>;
+  create: (input: AnyDoc) => Promise<AnyDoc>;
+  findByIdAndUpdate: (id: string, update: UpdateQuery<AnyDoc>) => Promise<AnyDoc | null>;
+  findByIdAndDelete: (id: string) => Promise<AnyDoc | null>;
+  deleteMany: (query: QueryFilter<AnyDoc>) => Promise<unknown>;
+  comparePassword?: (password: string, hash: string) => Promise<boolean>;
+  validateSignup?: (obj: { name: string; email: string; password: string }) => string;
 }
 const debug = Debug('web-jam-back:lib/controller');
 let uRoles:string[] = [];
@@ -48,8 +50,8 @@ class Controller {
 
   async findOneAndUpdate(req: Request, res: Response): Promise<unknown> {
     let updatedBook;
-    try { updatedBook = await this.model.findOneAndUpdate(req.query, req.body); } catch (e) { 
-      return res.status(500).json({ message: (e as Error).message }); 
+    try { updatedBook = await this.model.findOneAndUpdate(req.query, req.body); } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
     }
     if (updatedBook === null || updatedBook === undefined) return res.status(400).json({ message: 'invalid request' });
     return res.status(200).json(updatedBook);
@@ -61,7 +63,7 @@ class Controller {
     return res.status(200).json(collection);
   }
 
-  async findById(req: Request, res: Response): Promise<unknown> {
+  async findById(req: Request<{ id: string }>, res: Response): Promise<unknown> {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Find id is invalid' });
     let doc;
     try { doc = await this.model.findById(req.params.id); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
@@ -80,28 +82,28 @@ class Controller {
     return res.status(201).json(doc);
   }
 
-  async contFBIandU(req: Request, res: Response): Promise<unknown> {
+  async contFBIandU(req: Request<{ id: string }>, res: Response): Promise<unknown> {
     let doc;
-    try { doc = await this.model.findByIdAndUpdate(req.params.id, req.body); } catch (e) { 
-      return res.status(500).json({ message: (e as Error).message }); 
+    try { doc = await this.model.findByIdAndUpdate(req.params.id, req.body); } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
     }
     if (!doc) return res.status(400).json({ message: 'Id Not Found' });
     if (doc.password !== null && doc.password !== undefined) doc.password = '';
     return res.status(200).json(doc);
   }
 
-  findByIdAndUpdate(req: Request, res: Response<unknown>): Response<unknown> | Promise<unknown> {
+  findByIdAndUpdate(req: Request<{ id: string }>, res: Response<unknown>): Response<unknown> | Promise<unknown> {
     if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) { return res.status(400).json({ message: 'Update id is invalid' }); }
     if (req.body.userType && this.userRoles.indexOf(req.body.userType) === -1) { return res.status(400).json({ message: 'userType not valid' }); }
     if (req.body.name === '') { return res.status(400).json({ message: 'Name is required' }); }
     return this.contFBIandU(req, res);
   }
 
-  async findByIdAndDelete(req: Request, res: Response): Promise<unknown> {
+  async findByIdAndDelete(req: Request<{ id: string }>, res: Response): Promise<unknown> {
     if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'id is invalid' });
     let doc;
-    try { doc = await this.model.findByIdAndDelete(req.params.id); } catch (e) { 
-      return res.status(500).json({ message: (e as Error).message }); 
+    try { doc = await this.model.findByIdAndDelete(req.params.id); } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
     }
     if (!doc) return res.status(400).json({ message: 'Delete id is invalid' });
     debug(this.model);
@@ -117,16 +119,16 @@ class Controller {
     return res.status(200).json({ message: `${this.model.Schema.modelName} deleteMany was successful` });
   }
 
-  async deleteAllDocs(): Promise<Error> {
+  async deleteAllDocs(): Promise<unknown> {
     debug('deleteAllDocs');
-    let result: Error;
+    let result: unknown;
     try { result = await this.model.deleteMany({}); } catch (e) { return Promise.reject(e); }
     return result;
   }
 
-  async createDocs(body: Record<string, unknown>[]): Promise<Error> {
-    let result: Error;
-    try { result = await this.model.create(body); } catch (e) { return Promise.reject(e); }
+  async createDocs(body: AnyDoc[]): Promise<unknown> {
+    let result: unknown;
+    try { result = await this.model.create(body as unknown as AnyDoc); } catch (e) { return Promise.reject(e); }
     return result;
   }
 }

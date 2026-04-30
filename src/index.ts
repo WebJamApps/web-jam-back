@@ -2,7 +2,7 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import Debug from 'debug';
 import express from 'express';
-import { expressMiddleware } from '@apollo/server/express4';
+import { expressMiddleware } from '@as-integrations/express5';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
 import morgan from 'morgan';

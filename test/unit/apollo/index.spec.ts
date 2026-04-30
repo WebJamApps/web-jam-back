@@ -5,7 +5,7 @@ describe('apollo', () => {
     expect(resolvers.Query.gqldocs().length).toBe(2);
   });
   it('context return an object', async () => {
-    const obj = { request: {}, response: { text: 'test' } };
+    const obj = { request: {}, response: { text: 'test' } } as any;
     const result:any = await apollo.context(obj);
     expect(result.response.text).toBe('test');
   });

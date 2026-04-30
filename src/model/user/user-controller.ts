@@ -8,7 +8,7 @@ import userModel from './user-facade.js';
 
 const debug = Debug('web-jam-back:user-controller');
 
-interface UserHandler {
+interface UserHandler extends Record<string, unknown> {
   arg1: string;
   arg2: string;
   verified: boolean;
@@ -25,7 +25,7 @@ class UserController extends Controller {
 
   async findByEmail(req: Request, res: Response) {
     try {
-      const user = await this.model.findOne({ email: req.body.email });
+      const user = await this.model.findOne({ email: req.body?.email });
       if (!user || !user._id) res.status(400).json({ message: 'wrong email' });
       else {
         user.password = '';
@@ -38,7 +38,7 @@ class UserController extends Controller {
     const user: UserHandler = { arg1: name, arg2: email, verified: true };
     const newUser = await this.model.create(user);
     newUser.password = '';
-    return res.status(201).json({ email: newUser.email, token: this.authUtils.createJWT(newUser) });
+    return res.status(201).json({ email: newUser.email, token: this.authUtils.createJWT(newUser as unknown as { _id: string }) });
   }
 
   async google(req: Request, res: Response) {
@@ -51,7 +51,7 @@ class UserController extends Controller {
       const update: UserHandler = { arg1: '', arg2: name, verified: true };
       const existingUser = await this.model.findOneAndUpdate({ email }, update);
       if (existingUser) {
-        return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser) });
+        return res.status(200).json({ email: existingUser.email, token: this.authUtils.createJWT(existingUser as unknown as { _id: string }) });
       } return await this.handleNewUser(name, email, req, res);
     } catch (e) {
       return this.resErr(res, e as Error);

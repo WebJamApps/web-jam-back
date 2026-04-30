@@ -50,7 +50,9 @@ const server = new ApolloServer({
   resolvers,
 });
 
-const context:ContextFunction<any> = async ({ request, response }: { request: Request, response: Response }) => {
+type ApolloContextArg = { request: Request; response: Response };
+
+const context: ContextFunction<[ApolloContextArg]> = async ({ request, response }) => {
   try {
     await authUtils.ensureAuthenticated(request);
   } catch (err) { 
