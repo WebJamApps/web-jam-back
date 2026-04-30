@@ -15,7 +15,7 @@ export default defineConfig({
     bail: 1,
     mockReset: true,
     pool: 'forks',
-    poolOptions: { forks: { singleFork: true } },
+    forks: { singleFork: true },
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],

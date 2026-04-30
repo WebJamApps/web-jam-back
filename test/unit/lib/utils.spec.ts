@@ -10,7 +10,7 @@ describe('utils', () => {
     } catch (err) { eMessage = (err as Error).message; }
     expect(eMessage.includes('failed')).toBe(true);
   });
-  it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
+  it('should wait unit tests finish before exiting', async () => { // eslint-disable-line vitest/expect-expect
     // eslint-disable-next-line no-promise-executor-return
     const delay = (ms: any) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
     await delay(3000);

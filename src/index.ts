@@ -2,7 +2,7 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import Debug from 'debug';
 import express from 'express';
-import { expressMiddleware } from '@apollo/server/express4';
+import { expressMiddleware } from '@as-integrations/express5';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -17,7 +17,7 @@ import Controller from './lib/controller.js';
 import apollo from './apollo/index.js';
 import apolloSetup from './apollo/setup.js';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const debug = Debug('web-jam-back:index');
 const readCsv = new ReadCSV();

@@ -83,7 +83,7 @@ describe('The Book API', () => {
       title: 'Best Test Book Ever', type: 'paperback', checkedOutBy: '33333',
     });
     r = await request(app)
-      .put(`/book/${newBook.id}`)
+      .put(`/book/${newBook._id}`)
       .set({ origin: allowedUrl })
       .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
       .send({ checkedOutBy: '' });
@@ -133,7 +133,7 @@ describe('The Book API', () => {
       .query({ type: 'paperback' });
     expect(r.status).toBe(200);
   });
-  it('should wait unit tests finish before exiting', async () => { // eslint-disable-line jest/expect-expect
+  it('should wait unit tests finish before exiting', async () => { // eslint-disable-line vitest/expect-expect
     // eslint-disable-next-line no-promise-executor-return
     const delay = (ms: any) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
     await delay(3000);
