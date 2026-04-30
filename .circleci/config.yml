@@ -1,16 +1,42 @@
-version:  2.1
+version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/node:lts-browsers
+      - image: cimg/node:24.15-browsers
     working_directory: ~/repo
     steps:
       - checkout
       - run:
-          name:        Test install
-          command:     'npm install'
+          name: Test install (skip postinstall — frontend not needed for tests)
+          command: npm install --ignore-scripts
       - run:
-          name:        run all tests
-          command:     'npm test'
+          name: typecheck
+          command: npm run typecheck
+      - run:
+          name: run all tests
+          command: npm test
       - store_artifacts:
-          path:        coverage
+          path: coverage
+      - run:
+          name: Smoketest - clean install without devDependencies
+          command: |
+            rm -rf node_modules package-lock.json JaMmusic build
+            npm install --omit=dev
+      - run:
+          name: Smoketest - verify production build artifact exists
+          command: test -f build/src/index.js
+      - run:
+          name: Smoketest - verify production server serves JaMmusic homepage
+          command: |
+            NODE_ENV=development PORT=7777 NODE_OPTIONS=--unhandled-rejections=warn node build/src/index.js &
+            SERVER_PID=$!
+            STATUS=1
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+              sleep 2
+              if curl --fail --silent --show-error -4 http://127.0.0.1:7777/ 2>/dev/null | grep -q '<title>Web Jam LLC</title>'; then
+                STATUS=0
+                break
+              fi
+            done
+            kill $SERVER_PID || true
+            exit $STATUS
