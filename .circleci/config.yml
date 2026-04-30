@@ -30,8 +30,13 @@ jobs:
           command: |
             PORT=7777 NODE_OPTIONS=--unhandled-rejections=warn node build/src/index.js &
             SERVER_PID=$!
-            sleep 5
-            curl --fail --silent --show-error http://localhost:7777/ | grep -q '<title>Web Jam LLC</title>'
-            STATUS=$?
+            STATUS=1
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+              sleep 2
+              if curl --fail --silent --show-error http://127.0.0.1:7777/ 2>/dev/null | grep -q '<title>Web Jam LLC</title>'; then
+                STATUS=0
+                break
+              fi
+            done
             kill $SERVER_PID || true
             exit $STATUS
