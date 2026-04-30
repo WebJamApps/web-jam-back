@@ -7,8 +7,8 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Test install
-          command: npm install
+          name: Test install (skip postinstall — frontend not needed for tests)
+          command: npm install --ignore-scripts
       - run:
           name: typecheck
           command: npm run typecheck
