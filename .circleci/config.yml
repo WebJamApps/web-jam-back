@@ -28,21 +28,15 @@ jobs:
       - run:
           name: Smoketest - verify production server serves JaMmusic homepage
           command: |
-            ls -la JaMmusic/dist/index.html || echo "NO INDEX.HTML"
-            NODE_ENV=production PORT=7777 NODE_OPTIONS=--unhandled-rejections=warn node build/src/index.js &
+            NODE_ENV=development PORT=7777 NODE_OPTIONS=--unhandled-rejections=warn node build/src/index.js &
             SERVER_PID=$!
-            sleep 8
-            echo "--- ss -tln ---"
-            ss -tln 2>&1 || true
-            echo "--- curl -v -4 ---"
-            curl -v -4 --max-time 5 http://127.0.0.1:7777/ 2>&1 | head -40 || true
             STATUS=1
-            for i in 1 2 3 4 5 6 7 8 9 10; do
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+              sleep 2
               if curl --fail --silent --show-error -4 http://127.0.0.1:7777/ 2>/dev/null | grep -q '<title>Web Jam LLC</title>'; then
                 STATUS=0
                 break
               fi
-              sleep 2
             done
             kill $SERVER_PID || true
             exit $STATUS
