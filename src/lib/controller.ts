@@ -61,7 +61,7 @@ class Controller {
     return res.status(200).json(collection);
   }
 
-  async findById(req: Request, res: Response): Promise<unknown> {
+  async findById(req: Request<{ id: string }>, res: Response): Promise<unknown> {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Find id is invalid' });
     let doc;
     try { doc = await this.model.findById(req.params.id); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
@@ -80,7 +80,7 @@ class Controller {
     return res.status(201).json(doc);
   }
 
-  async contFBIandU(req: Request, res: Response): Promise<unknown> {
+  async contFBIandU(req: Request<{ id: string }>, res: Response): Promise<unknown> {
     let doc;
     try { doc = await this.model.findByIdAndUpdate(req.params.id, req.body); } catch (e) { 
       return res.status(500).json({ message: (e as Error).message }); 
@@ -90,14 +90,14 @@ class Controller {
     return res.status(200).json(doc);
   }
 
-  findByIdAndUpdate(req: Request, res: Response<unknown>): Response<unknown> | Promise<unknown> {
+  findByIdAndUpdate(req: Request<{ id: string }>, res: Response<unknown>): Response<unknown> | Promise<unknown> {
     if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) { return res.status(400).json({ message: 'Update id is invalid' }); }
     if (req.body.userType && this.userRoles.indexOf(req.body.userType) === -1) { return res.status(400).json({ message: 'userType not valid' }); }
     if (req.body.name === '') { return res.status(400).json({ message: 'Name is required' }); }
     return this.contFBIandU(req, res);
   }
 
-  async findByIdAndDelete(req: Request, res: Response): Promise<unknown> {
+  async findByIdAndDelete(req: Request<{ id: string }>, res: Response): Promise<unknown> {
     if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'id is invalid' });
     let doc;
     try { doc = await this.model.findByIdAndDelete(req.params.id); } catch (e) { 

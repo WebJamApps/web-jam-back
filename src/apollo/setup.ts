@@ -11,7 +11,7 @@ const setupApollo = async (expressMiddleware:any, server:any, context:any, app:a
         context,
       }),
     );
-    app.get('*', (_req:Request, res:Response) => {
+    app.get('/*splat', (_req:Request, res:Response) => {
       res.sendFile(path.normalize(path.join(import.meta.dirname, '../../../JaMmusic/dist/index.html')));
     });
     app.use((_req:Request, res:Response) => res.status(404).send('not found'));

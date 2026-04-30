@@ -25,7 +25,7 @@ class UserController extends Controller {
 
   async findByEmail(req: Request, res: Response) {
     try {
-      const user = await this.model.findOne({ email: req.body.email });
+      const user = await this.model.findOne({ email: req.body?.email });
       if (!user || !user._id) res.status(400).json({ message: 'wrong email' });
       else {
         user.password = '';
