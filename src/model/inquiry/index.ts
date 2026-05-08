@@ -6,6 +6,12 @@ const router = express.Router();
 const controller = new InquiryController();
 
 router.route('/')
-  .post((req, res) => { (async () => { await controller.handleInquiry(req, res); })(); });
+  .post(async (req, res, next) => {
+    try {
+      await controller.handleInquiry(req, res);
+    } catch (err) {
+      next(err);
+    }
+  });
 
 export default router;
