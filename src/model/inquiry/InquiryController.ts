@@ -21,7 +21,15 @@ class InquiryController {
       html: bodyhtml,
     };
     /* istanbul ignore if */
-    if (process.env.NODE_ENV !== 'test') await sgMail.send(msg);
+    if (process.env.NODE_ENV !== 'test') {
+      try {
+        await sgMail.send(msg);
+      } catch (err) {
+        const e = err as { code?: number; message?: string };
+        debug('SendGrid send failed: %o', e);
+        return res.status(502).json({ message: 'email provider error', code: e.code, error: e.message });
+      }
+    }
     return res.status(200).json({ message: 'email sent' });
   }
 

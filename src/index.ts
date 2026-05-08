@@ -20,6 +20,15 @@ import apolloSetup from './apollo/setup.js';
 dotenv.config({ quiet: true });
 
 const debug = Debug('web-jam-back:index');
+
+/* Safety net: surface unhandled promise rejections as a log line instead
+   of letting Node terminate the dev server. Caught the day SendGrid
+   returned 401 ("Maximum credits exceeded") and the inquiry route's
+   fire-and-forget IIFE swallowed the rejection past Express. */
+/* istanbul ignore next */
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason); // eslint-disable-line no-console
+});
 const readCsv = new ReadCSV();
 const corsOptions = {
   origin: JSON.parse(process.env.AllowUrl || /* istanbul ignore next */'{}').urls,
