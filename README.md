@@ -27,6 +27,23 @@ After placing the new .env file into the web-jam-back/frontend folder, you need 
 
 The .env contains a variable that points to the localhost of the front end and other required credentials.
 
+## Email (`/inquiry` route)
+
+The `/inquiry` route sends a booking-inquiry email via Gmail SMTP using `nodemailer`. As of 2026-05-17 this replaces the previous `@sendgrid/mail` integration (see [docs/inquiry-sendgrid-crash.md](docs/inquiry-sendgrid-crash.md) for the post-mortem on the SendGrid failure mode that motivated the swap).
+
+Two env vars must be set on the deployed environment (and in your local `.env` for end-to-end testing):
+
+- `GMAIL_USER` — the Gmail address used to authenticate and as the `From` address. Production value: `joshua.v.sherman@gmail.com`.
+- `GMAIL_APP_PASSWORD` — a Gmail App Password (NOT the regular account password). To generate one:
+  1. Sign in to the Google account at <https://myaccount.google.com>.
+  2. Security → 2-Step Verification (must be ON; App Passwords are unavailable without it).
+  3. App passwords → choose "Mail" and a device label like "web-jam-back".
+  4. Copy the 16-character password Google shows. Store it as `GMAIL_APP_PASSWORD` in `.env` locally and as a Heroku config var in production.
+
+The destination address (`To`) is hardcoded to `joshua.v.sherman@gmail.com` in `src/model/inquiry/InquiryController.ts`. Change there if you need a different recipient.
+
+In `NODE_ENV=test` the route returns 200 without actually sending email, so unit tests don't require live credentials.
+
 ## Test
 
 **`npm test`** runs the tests and generates a coverage report.

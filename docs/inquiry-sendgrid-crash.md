@@ -2,6 +2,8 @@
 
 Reference: issue [#747](https://github.com/WebJamApps/web-jam-back/issues/747), PR [#748](https://github.com/WebJamApps/web-jam-back/pull/748).
 
+**Update 2026-05-17:** SendGrid was removed entirely in issue [#752](https://github.com/WebJamApps/web-jam-back/issues/752) (Phase 3 of [#749](https://github.com/WebJamApps/web-jam-back/issues/749)). The `/inquiry` route now sends via Gmail SMTP through `nodemailer`. The post-mortem below is preserved as historical context for the SendGrid-era failure mode. See the [README "Email" section](../README.md) for the current setup.
+
 ## TL;DR
 
 A latent unhandled-rejection bug in the `/inquiry` route was crashing the

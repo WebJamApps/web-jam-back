@@ -1,21 +1,31 @@
-import sgMail, { MailService } from '@sendgrid/mail';
+import nodemailer, { Transporter } from 'nodemailer';
 import { Request, Response } from 'express';
 import Debug from 'debug';
 
 const debug = Debug('web-jam-back:InquiryController');
 
-class InquiryController {
-  sgMail: MailService;
+const RECIPIENT_EMAIL = 'joshua.v.sherman@gmail.com';
 
-  constructor() {
-    this.sgMail = sgMail;
+class InquiryController {
+  private transporter: Transporter | null = null;
+
+  private getTransporter(): Transporter {
+    /* istanbul ignore else */
+    if (this.transporter) return this.transporter;
+    this.transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.GMAIL_USER || /* istanbul ignore next */ '',
+        pass: process.env.GMAIL_APP_PASSWORD || /* istanbul ignore next */ '',
+      },
+    });
+    return this.transporter;
   }
 
-  async sendGridEmail(bodyhtml: string, toemail: string, subjectline: string, res: Response) {
-    this.sgMail.setApiKey(process.env.SENDGRID_API_KEY || /* istanbul ignore next */'');
+  async sendEmail(bodyhtml: string, toemail: string, subjectline: string, res: Response) {
     const msg = {
       to: toemail,
-      from: 'user-service@web-jam.com',
+      from: process.env.GMAIL_USER || /* istanbul ignore next */ '',
       subject: subjectline,
       text: bodyhtml,
       html: bodyhtml,
@@ -23,10 +33,10 @@ class InquiryController {
     /* istanbul ignore if */
     if (process.env.NODE_ENV !== 'test') {
       try {
-        await sgMail.send(msg);
+        await this.getTransporter().sendMail(msg);
       } catch (err) {
-        const e = err as { code?: number; message?: string };
-        debug('SendGrid send failed: %o', e);
+        const e = err as { code?: string; message?: string };
+        debug('Email send failed: %o', e);
         return res.status(502).json({ message: 'email provider error', code: e.code, error: e.message });
       }
     }
@@ -35,7 +45,7 @@ class InquiryController {
 
   handleInquiry(req: Request, res: Response) {
     debug(req.body);
-    return this.sendGridEmail(JSON.stringify(req.body), 'web.jam.adm@gmail.com', 'inquiry', res);
+    return this.sendEmail(JSON.stringify(req.body), RECIPIENT_EMAIL, 'inquiry', res);
   }
 }
 export default InquiryController;
