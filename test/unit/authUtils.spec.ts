@@ -20,6 +20,15 @@ describe('the authUtils', () => {
     const decoded = jwt.decode(payload, config.hashString || '');
     expect(decoded.sub).toBe(user._id);
   });
+  it('creates a service token without an exp claim', () => {
+    const user = { _id: 'svc-id' };
+    const token = AuthUtils.createServiceJWT(user);
+    expect(token).toBeDefined();
+    const decoded = jwt.decode(token, config.hashString || '');
+    expect(decoded.sub).toBe(user._id);
+    expect(decoded.iat).toBeDefined();
+    expect(decoded.exp).toBeUndefined();
+  });
   it('does not find the user by id', async () => {
     let eMessage = '';
     const uM:any = userModel;
