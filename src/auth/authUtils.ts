@@ -43,6 +43,14 @@ const createJWT = (user: { _id: string }): string => {
   return jwt.encode(payload, process.env.HashString || /* istanbul ignore next */'');
 };
 
+const createServiceJWT = (user: { _id: string }): string => {
+  const payload = {
+    sub: user._id,
+    iat: Math.floor(Date.now() / 1000),
+  };
+  return jwt.encode(payload, process.env.HashString || /* istanbul ignore next */'');
+};
+
 const ensureAuthenticated = (req: AuthRequest): Promise<void> => {
   if (!req.headers.authorization && !req.headers.Authorization) {
     throw new Error('The request does not have an Authorization header');
@@ -64,5 +72,5 @@ const checkEmailSyntax = (req: { body: { changeemail: string } }): Promise<boole
 };
 
 export default {
-  checkEmailSyntax, ensureAuthenticated, createJWT, findUserById,
+  checkEmailSyntax, ensureAuthenticated, createJWT, createServiceJWT, findUserById,
 };

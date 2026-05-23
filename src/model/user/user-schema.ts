@@ -15,6 +15,7 @@ const userSchema = new Schema({
   userState: { type: String, required: false },
   userZip: { type: String, required: false },
   userDetails: { type: String, required: false },
+  privileges: { type: [String], required: false, default: [] },
 });
 
 export default mongoose.models.User || mongoose.model('User', userSchema);
