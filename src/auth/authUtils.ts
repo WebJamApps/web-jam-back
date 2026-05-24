@@ -7,25 +7,38 @@ import userModel from '../model/user/user-schema.js';
 dotenv.config({ quiet: true });
 const debug = Debug('web-jam-back:authUtils');
 
-interface AuthRequest extends Request {
+export interface AuthRequest extends Request {
   user?: string;
   userType?: string;
+}
+
+export interface EmailCheckRequest {
+  body: {
+    changeemail: string;
+  };
 }
 
 interface UserDoc {
   userType?: string;
 }
 
+interface JwtPayload {
+  sub: string;
+  iat: number;
+  exp?: number;
+}
+
 const findUserById = async (req: AuthRequest): Promise<void> => {
   let myUser: UserDoc | null;
-  try { myUser = await userModel.findById(req.user).lean().exec() as UserDoc | null; } catch (e) {
-    throw new Error(`token does not match any existing user, ${(e as Error).message}`);
+  try { myUser = await userModel.findById(req.user || '').lean().exec() as UserDoc | null; } catch (err) {
+    const e = err as Error;
+    throw new Error(`token does not match any existing user, ${e.message}`);
   }
   req.userType = myUser ? myUser.userType : 'none';
   debug(req.userType);
   debug(req.baseUrl);
-  const authRoles: Record<string, string[]> = JSON.parse(process.env.AUTH_ROLES || /* istanbul ignore next */'{}');
-  const route = req.baseUrl.split('/')[1];
+  const authRoles = JSON.parse(process.env.AUTH_ROLES || /* istanbul ignore next */'{}') as Record<string, string[]>;
+  const route = req.baseUrl.split('/')[1] || '';
   // eslint-disable-next-line security/detect-object-injection
   const rolesArr: string[] = authRoles[route] || /* istanbul ignore next */[];
   if (rolesArr.length && rolesArr.indexOf(req.userType ?? '') === -1) {
@@ -35,7 +48,7 @@ const findUserById = async (req: AuthRequest): Promise<void> => {
 
 const createJWT = (user: { _id: string }): string => {
   const nowSeconds = Math.floor(Date.now() / 1000);
-  const payload = {
+  const payload: JwtPayload = {
     sub: user._id,
     iat: nowSeconds,
     exp: nowSeconds + 14 * 24 * 60 * 60,
@@ -44,7 +57,7 @@ const createJWT = (user: { _id: string }): string => {
 };
 
 const createServiceJWT = (user: { _id: string }): string => {
-  const payload = {
+  const payload: JwtPayload = {
     sub: user._id,
     iat: Math.floor(Date.now() / 1000),
   };
@@ -55,16 +68,17 @@ const ensureAuthenticated = (req: AuthRequest): Promise<void> => {
   if (!req.headers.authorization && !req.headers.Authorization) {
     throw new Error('The request does not have an Authorization header');
   }
-  let payload = { sub: '' };
-  let token: string = (req.headers.authorization || /* istanbul ignore next */req.headers.Authorization) as string;
-  // eslint-disable-next-line prefer-destructuring
-  token = token.split(' ')[1];
-  payload = jwt.decode(token, process.env.HashString || /* istanbul ignore next */'');
+  const authHeader = req.headers.authorization || req.headers.Authorization || '';
+  const tokenStr = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+
+  const parts = tokenStr.split(' ');
+  const token = parts.length > 1 ? parts[1] : parts[0];
+  const payload = jwt.decode(token, process.env.HashString || /* istanbul ignore next */'') as JwtPayload;
   req.user = payload.sub;
   return findUserById(req);
 };
 
-const checkEmailSyntax = (req: { body: { changeemail: string } }): Promise<boolean> => { // eslint-disable-next-line security/detect-unsafe-regex
+const checkEmailSyntax = (req: EmailCheckRequest): Promise<boolean> => { // eslint-disable-next-line security/detect-unsafe-regex
   if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
     return Promise.resolve(true);
   }

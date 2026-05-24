@@ -1,20 +1,25 @@
-import request from 'supertest';
+import request, { type Response } from 'supertest';
 import app from '#src/index.js';
 import BookModel from '../../src/model/book/book-facade.js';
 import userModel from '../../src/model/user/user-facade.js';
 import authUtils from '../../src/auth/authUtils.js';
 
 describe('The Book API', () => {
-  let r, newUser:any;
+  let r: Response, newUser: { _id: string; userType: string };
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
   beforeAll(async () => {
-    await BookModel.deleteMany({} as any);
-    await userModel.deleteMany({} as any);
-    newUser = await userModel.create({ name: 'foo', email: 'foo3@example.com', userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0] });
+    await BookModel.deleteMany({});
+    await userModel.deleteMany({});
+    const createdUser = await userModel.create({
+      name: 'foo',
+      email: 'foo3@example.com',
+      userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0],
+    }) as unknown as { _id: { toString(): string }; userType: string };
+    // Map the Mongoose Document to the plain object type expected by the tests
+    newUser = { _id: createdUser._id.toString(), userType: createdUser.userType };
   });
   beforeEach(async () => {
-    const deleter:any = {};
-    await BookModel.deleteMany(deleter);
+    await BookModel.deleteMany({});
   });
   it('should find one book', async () => {
     await BookModel.create({
@@ -135,7 +140,7 @@ describe('The Book API', () => {
   });
   it('should wait unit tests finish before exiting', async () => { // eslint-disable-line vitest/expect-expect
     // eslint-disable-next-line no-promise-executor-return
-    const delay = (ms: any) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
+    const delay = (ms: number) => new Promise((resolve) => setTimeout(() => resolve(true), ms));
     await delay(3000);
   });
 });
