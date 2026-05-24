@@ -5,6 +5,10 @@ const debug = Debug('web-jam-back:auth/google');
 const accessTokenUrl = 'https://accounts.google.com/o/oauth2/token';
 const peopleApiUrl = 'https://people.googleapis.com/v1/people/me?personFields=names%2CemailAddresses';
 
+interface GoogleTokenResponse {
+  access_token: string;
+}
+
 export interface GoogleAuthenticateResponse {
   emailAddresses: { value: string }[];
   names: { displayName: string }[];
@@ -12,8 +16,8 @@ export interface GoogleAuthenticateResponse {
 
 async function authenticate(req: { body: { redirectUri: string; code: string; clientId: string; }; }): Promise<GoogleAuthenticateResponse> {
   let reUri = req.body.redirectUri;
-  let tokenBody;
-  let profileBody;
+  let tokenBody: GoogleTokenResponse;
+  let profileBody: GoogleAuthenticateResponse;
   if (reUri && reUri.includes('localhost')) {
     reUri = reUri.replace('https', 'http');
   }
@@ -31,7 +35,7 @@ async function authenticate(req: { body: { redirectUri: string; code: string; cl
       body: params,
     });
     if (!tokenRes.ok) throw new Error(`${tokenRes.status} ${tokenRes.statusText}`);
-    tokenBody = await tokenRes.json();
+    tokenBody = await tokenRes.json() as GoogleTokenResponse;
     debug(tokenBody);
   } catch (e) { debug(e); return Promise.reject(e); }
   try { // Step 2. Retrieve profile information about the current user.
@@ -39,7 +43,7 @@ async function authenticate(req: { body: { redirectUri: string; code: string; cl
       headers: { Authorization: `Bearer ${tokenBody.access_token}`, Accept: 'application/json' },
     });
     if (!profileRes.ok) throw new Error(`${profileRes.status} ${profileRes.statusText}`);
-    profileBody = await profileRes.json();
+    profileBody = await profileRes.json() as GoogleAuthenticateResponse;
   } catch (e) {
     const eMessage = (e as Error).message;
     debug(eMessage);

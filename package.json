@@ -5,8 +5,7 @@
   "type": "module",
   "main": "build/src/index.js",
   "engines": {
-    "node": "24.15.0",
-    "npm": "11.12.1"
+    "node": "24.16.0"
   },
   "files": [
     "src/"
