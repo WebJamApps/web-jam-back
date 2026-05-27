@@ -1,6 +1,6 @@
-import request from 'supertest';
 import authUtils from '../../../src/auth/authUtils.js';
 import app from '../../../src/index.js';
+import request from '../../helpers/api.js';
 
 describe('user-router', () => {
   it('should find matching users', async () => {
