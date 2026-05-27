@@ -1,11 +1,11 @@
-import request, { type Response } from 'supertest';
 import app from '#src/index.js';
 import BookModel from '../../src/model/book/book-facade.js';
 import userModel from '../../src/model/user/user-facade.js';
 import authUtils from '../../src/auth/authUtils.js';
+import request, { type ApiResponse } from '../helpers/api.js';
 
 describe('The Book API', () => {
-  let r: Response, newUser: { _id: string; userType: string };
+  let r: ApiResponse, newUser: { _id: string; userType: string };
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
   beforeAll(async () => {
     await BookModel.deleteMany({});

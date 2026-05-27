@@ -28,6 +28,8 @@ interface JwtPayload {
   exp?: number;
 }
 
+const authRoles = JSON.parse(process.env.AUTH_ROLES || /* istanbul ignore next */'{}') as Record<string, string[]>;
+
 const findUserById = async (req: AuthRequest): Promise<void> => {
   let myUser: UserDoc | null;
   try { myUser = await userModel.findById(req.user || '').lean().exec() as UserDoc | null; } catch (err) {
@@ -37,7 +39,6 @@ const findUserById = async (req: AuthRequest): Promise<void> => {
   req.userType = myUser ? myUser.userType : 'none';
   debug(req.userType);
   debug(req.baseUrl);
-  const authRoles = JSON.parse(process.env.AUTH_ROLES || /* istanbul ignore next */'{}') as Record<string, string[]>;
   const route = req.baseUrl.split('/')[1] || '';
   // eslint-disable-next-line security/detect-object-injection
   const rolesArr: string[] = authRoles[route] || /* istanbul ignore next */[];
@@ -78,11 +79,11 @@ const ensureAuthenticated = (req: AuthRequest): Promise<void> => {
   return findUserById(req);
 };
 
-const checkEmailSyntax = (req: EmailCheckRequest): Promise<boolean> => { // eslint-disable-next-line security/detect-unsafe-regex
+const checkEmailSyntax = async (req: EmailCheckRequest): Promise<boolean> => { // eslint-disable-next-line security/detect-unsafe-regex
   if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
-    return Promise.resolve(true);
+    return true;
   }
-  return Promise.reject(new Error('email address is not a valid format'));
+  throw new Error('email address is not a valid format');
 };
 
 export default {

@@ -37,7 +37,7 @@ async function authenticate(req: { body: { redirectUri: string; code: string; cl
     if (!tokenRes.ok) throw new Error(`${tokenRes.status} ${tokenRes.statusText}`);
     tokenBody = await tokenRes.json() as GoogleTokenResponse;
     debug(tokenBody);
-  } catch (e) { debug(e); return Promise.reject(e); }
+  } catch (e) { debug(e); throw e; }
   try { // Step 2. Retrieve profile information about the current user.
     const profileRes = await fetch(peopleApiUrl, {
       headers: { Authorization: `Bearer ${tokenBody.access_token}`, Accept: 'application/json' },

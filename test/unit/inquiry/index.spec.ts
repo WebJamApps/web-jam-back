@@ -1,8 +1,8 @@
-import request from 'supertest';
 import app from '#src/index.js';
+import request from '../../helpers/api.js';
 
 describe('Inquiry Router', () => {
-  let r:any;
+  let r: any;
   it('sends an email', async () => {
     r = await request(app)
       .post('/inquiry')
