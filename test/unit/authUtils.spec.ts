@@ -1,11 +1,11 @@
 import jwt from 'jwt-simple';
 import mongoose from 'mongoose';
-import AuthUtils from '../../src/auth/authUtils.js';
+import AuthUtils, { type AuthRequest } from '../../src/auth/authUtils.js';
 import config from '../../src/config.js';
 import userModel from '../../src/model/user/user-schema.js';
 
 describe('the authUtils', () => {
-  const reqStub:any = { user: '' };
+  const reqStub = { user: '', userType: '', baseUrl: '' } as unknown as AuthRequest;
   it('validates email syntax', async () => {
     const cb = await AuthUtils.checkEmailSyntax({ body: { changeemail: 'j@jb.com' } });
     expect(cb).toBe(true);
@@ -31,20 +31,20 @@ describe('the authUtils', () => {
   });
   it('does not find the user by id', async () => {
     let eMessage = '';
-    const uM:any = userModel;
+    const uM = userModel as any; // Mocking Mongoose models often requires 'any' or complex type overrides
     uM.findById = vi.fn(() => ({ lean: () => ({ exec: () => Promise.reject(new Error('bad')) }) }));
-    reqStub.user = new mongoose.Types.ObjectId();
+    reqStub.user = new mongoose.Types.ObjectId().toHexString();
     reqStub.baseUrl = '/booya';
     try {
       await AuthUtils.findUserById(reqStub);
     } catch (err) { eMessage = (err as Error).message; }
     expect(eMessage.includes('token does not match')).toBe(true);
-  });  
+  });
   it('prevents user with incorrect userType', async () => {
     let eMessage = '';
-    const uM:any = userModel;
+    const uM = userModel as any;
     uM.findById = vi.fn(() => ({ lean: () => ({ exec: () => Promise.resolve() }) }));
-    reqStub.user = new mongoose.Types.ObjectId();
+    reqStub.user = new mongoose.Types.ObjectId().toHexString();
     reqStub.baseUrl = '/book';
     try {
       await AuthUtils.findUserById(reqStub);

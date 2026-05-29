@@ -1,12 +1,11 @@
 {
   "name": "web-jam-back",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
   "engines": {
-    "node": "24.15.0",
-    "npm": "11.12.1"
+    "node": "24.16.0"
   },
   "files": [
     "src/"
@@ -42,8 +41,6 @@
   },
   "author": "HandlersAndKickers <>",
   "dependencies": {
-    "@apollo/server": "^5.5.0",
-    "@as-integrations/express5": "^1.1.2",
     "@types/bcryptjs": "^2.4.2",
     "@types/cors": "^2.8.13",
     "@types/debug": "^4.1.7",
@@ -59,7 +56,6 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-sslify": "^1.2.0",
-    "graphql": "^16.8.1",
     "helmet": "^8.1.0",
     "jwt-simple": "^0.5.6",
     "mongoose": "^9.6.1",
@@ -71,7 +67,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/supertest": "^7.2.0",
     "@vitest/coverage-v8": "^4.1.5",
     "@vitest/eslint-plugin": "^1.6.16",
     "concurrently": "^9.2.1",
@@ -80,8 +75,8 @@
     "eslint-plugin-json": "^4.0.1",
     "eslint-plugin-n": "^17.24.0",
     "eslint-plugin-security": "^4.0.0",
+    "eslint-plugin-sonarjs": "^4.0.3",
     "globals": "^17.5.0",
-    "supertest": "^7.2.2",
     "typescript-eslint": "^8.59.1",
     "vitest": "^4.1.5"
   },
