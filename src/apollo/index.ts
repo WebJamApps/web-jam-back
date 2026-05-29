@@ -56,8 +56,7 @@ const context: ContextFunction<[ApolloContextArg]> = async ({ request, response 
   try {
     await authUtils.ensureAuthenticated(request);
   } catch (err) { 
-    debug(`graphql ensure authenticated error ${(err as Error).message}`); 
-    // return response.status(500).json({ status: 500, error: err }); 
+    debug(`graphql ensure authenticated error ${(err as Error).message}`);
   }
   console.log(request);
   return ({

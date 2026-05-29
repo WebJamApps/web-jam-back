@@ -28,9 +28,8 @@ class ReadCSV {
     let manWins = 0;
 
     this.soccerMatches.map((match) => {
-      if (match.homeTeam === 'Man United' && match.winner === MatchResult.HomeWin) {
-        manWins += 1;
-      } else if (match.awayTeam === 'Man United' && match.winner === MatchResult.AwayWin) {
+      if ((match.homeTeam === 'Man United' && match.winner === MatchResult.HomeWin)
+        || (match.awayTeam === 'Man United' && match.winner === MatchResult.AwayWin)) {
         manWins += 1;
       }
       return match;

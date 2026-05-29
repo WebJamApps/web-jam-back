@@ -78,6 +78,7 @@
     "eslint-plugin-json": "^4.0.1",
     "eslint-plugin-n": "^17.24.0",
     "eslint-plugin-security": "^4.0.0",
+    "eslint-plugin-sonarjs": "^4.0.3",
     "globals": "^17.5.0",
     "typescript-eslint": "^8.59.1",
     "vitest": "^4.1.5"

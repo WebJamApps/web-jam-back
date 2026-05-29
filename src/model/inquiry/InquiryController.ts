@@ -17,6 +17,7 @@ class InquiryController {
     if (this.transporter) return this.transporter;
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
+      secure: true,
       auth: {
         user: process.env.GMAIL_USER || /* istanbul ignore next */ '',
         pass: process.env.GMAIL_APP_PASSWORD || /* istanbul ignore next */ '',
