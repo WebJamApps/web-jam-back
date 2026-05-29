@@ -79,8 +79,8 @@ const ensureAuthenticated = (req: AuthRequest): Promise<void> => {
   return findUserById(req);
 };
 
-const checkEmailSyntax = async (req: EmailCheckRequest): Promise<boolean> => { // eslint-disable-next-line security/detect-unsafe-regex
-  if (/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/.test(req.body.changeemail)) {
+const checkEmailSyntax = async (req: EmailCheckRequest): Promise<boolean> => {
+  if (/^[^\s@]+@[^\s@]+\.[^\s.@]+$/.test(req.body.changeemail)) {
     return true;
   }
   throw new Error('email address is not a valid format');

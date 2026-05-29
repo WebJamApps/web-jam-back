@@ -2,7 +2,7 @@ import path from 'node:path';
 import dotenv from 'dotenv';
 import Debug from 'debug';
 import express from 'express';
-import { expressMiddleware } from '@as-integrations/express5';
+import type { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -14,8 +14,6 @@ import routes from './routes.js';
 import songData from './model/song/reset-song.js';
 import songController from './model/song/song-controller.js';
 import Controller from './lib/controller.js';
-import apollo from './apollo/index.js';
-import apolloSetup from './apollo/setup.js';
 
 dotenv.config({ quiet: true });
 
@@ -68,8 +66,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(morgan('tiny'));
 routes(app);
-const { server, context } = apollo;
-(async () => { await apolloSetup.setupApollo(expressMiddleware, server, context, app); })();
+app.get('/*splat', (_req: Request, res: Response) => {
+  res.sendFile(path.normalize(path.join(import.meta.dirname, '../../JaMmusic/dist/index.html')));
+});
+app.use((_req: Request, res: Response) => res.status(404).send('not found'));
+/* istanbul ignore next */
+app.use((err: { status: number, message: string }, _req: Request, res: Response) => res.status(500).json({ message: err.message, error: err }));
 /* istanbul ignore if */if (process.env.NODE_ENV !== 'test') {
   const port = process.env.PORT || 7000;
   // eslint-disable-next-line @typescript-eslint/no-misused-promises

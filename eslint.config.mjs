@@ -5,6 +5,7 @@ import vitest from '@vitest/eslint-plugin';
 import n from 'eslint-plugin-n';
 import security from 'eslint-plugin-security';
 import json from 'eslint-plugin-json';
+import sonarjs from 'eslint-plugin-sonarjs';
 import globals from 'globals';
 
 export default [
@@ -52,6 +53,10 @@ export default [
       'max-len': ['error', { code: 150 }],
       'no-multiple-empty-lines': ['error', { max: 1, maxEOF: 1 }],
     },
+  },
+  {
+    files: ['**/*.ts'],
+    ...sonarjs.configs.recommended,
   },
   {
     files: ['test/**/*.ts', '**/*.spec.ts', '**/*.test.ts'],
