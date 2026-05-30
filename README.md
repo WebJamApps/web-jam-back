@@ -80,6 +80,42 @@ Setting a config var triggers a Heroku dyno restart automatically. The change is
 6. Send a test inquiry from the live site, confirm it arrives at `joshua.v.sherman@gmail.com`.
 7. ONLY after delivery is confirmed, remove `SENDGRID_API_KEY`, `SENDGRID_USERNAME`, `SENDGRID_PASSWORD` from the same Config Vars page (click the X next to each).
 
+## Livestream (`/livestream/current` route)
+
+`GET /livestream/current` powers the CollegeLutheran livestream page's "always show a real video" behavior (CollegeLutheran#706). It queries the YouTube Data API v3 and returns:
+
+- `{ "videoId": "…", "status": "live" }` — the channel is live right now
+- `{ "videoId": "…", "status": "completed" }` — otherwise, the most recent finished stream
+- `{ "videoId": null, "status": "none" }` — on error, nothing found, or when the API key/channel are not configured (the UI then falls back to plain links)
+
+The result is cached in-memory for 15 minutes, because each YouTube `search.list` call costs 100 of the free 10,000-units/day quota.
+
+Two env vars must be set on the deployed environment (and in your local `.env` for end-to-end testing):
+
+- `YOUTUBE_API_KEY` — a YouTube Data API v3 key from the Google Cloud Console (Web Jam LLC project), restricted to the YouTube Data API v3. **Secret — server-side only**, never exposed to the browser (that's the whole reason this lives in the backend).
+- `YOUTUBE_CHANNEL_ID` — the channel to watch. College Lutheran: `UCOra1rXiO-BHzMDNlLd9hFQ` (public).
+
+Without these, the endpoint returns `none` and the page shows its fallback links, so it is safe to deploy before they are set. In `NODE_ENV=test` no real API calls are made (tests stub `fetch`).
+
+### Setting the env vars on Heroku (app: `webjamsalem`)
+
+**Option A — Heroku dashboard (recommended):**
+
+1. Log in to <https://dashboard.heroku.com> and select the `webjamsalem` app.
+2. Settings → Reveal Config Vars.
+3. Add `YOUTUBE_API_KEY` = the key from Google Cloud Console.
+4. Add `YOUTUBE_CHANNEL_ID` = `UCOra1rXiO-BHzMDNlLd9hFQ`.
+
+**Option B — Heroku CLI:**
+
+```bash
+heroku config:set YOUTUBE_API_KEY='<your-key>' -a webjamsalem
+heroku config:set YOUTUBE_CHANNEL_ID=UCOra1rXiO-BHzMDNlLd9hFQ -a webjamsalem
+heroku config:get YOUTUBE_CHANNEL_ID -a webjamsalem   # verify (do NOT echo the key)
+```
+
+Setting a config var triggers a dyno restart automatically; the change is live within ~30 seconds.
+
 ## Test
 
 **`npm test`** runs the tests and generates a coverage report.
