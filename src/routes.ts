@@ -3,6 +3,7 @@ import user from './model/user/user-router.js';
 import adminUser from './model/admin-user/admin-user-router.js';
 import book from './model/book/book-router.js';
 import inquiry from './model/inquiry/index.js';
+import livestream from './model/livestream/index.js';
 import song from './model/song/song-router.js';
 
 const router = express.Router();
@@ -14,4 +15,5 @@ export default function route(app: Express): void {
   router.use('/book', book);
   router.use('/song', song);
   router.use('/inquiry', inquiry);
+  router.use('/livestream', livestream);
 }
