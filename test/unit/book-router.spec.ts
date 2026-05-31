@@ -63,6 +63,17 @@ describe('The Book API', () => {
     expect(r.status).toBe(200);
     expect(r.body.title).toBe('Bad Book');
   });
+  it('persists the enabled toggle on a content doc', async () => {
+    await BookModel.create({ title: 'Stewardship', type: 'stewardshipPageContent' });
+    r = await request(app)
+      .put('/book/one')
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
+      .query({ type: 'stewardshipPageContent' })
+      .send({ title: 'Stewardship', enabled: true });
+    expect(r.status).toBe(200);
+    expect(r.body.enabled).toBe(true);
+  });
   it('deletes a book by id', async () => {
     const newBook = await BookModel.create({
       title: 'Best Test Book Ever', type: 'paperback',

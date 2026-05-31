@@ -21,6 +21,9 @@ const bookSchema = new Schema({
   comments: { type: String, required: false },
   checkedOutBy: { type: String, required: false },
   checkedOutByName: { type: String, required: false },
+  // page-content docs (e.g. type:'stewardshipPageContent') use this as an
+  // admin on/off visibility toggle; absent/false = hidden (CollegeLutheran#707)
+  enabled: { type: Boolean, required: false },
 }, options);
 
 export default mongoose.models.Book || mongoose.model('Book', bookSchema);
