@@ -5,9 +5,9 @@ import { __clearCache } from '#src/model/livestream/LivestreamController.js';
 // The test client (request(app)) uses global fetch to hit the app over HTTP, so
 // we only intercept calls to the YouTube API and pass everything else through.
 const realFetch = globalThis.fetch.bind(globalThis);
-const ytBody = (videoId?: string) => ({
+const ytBody = (videoId?: string, publishedAt?: string) => ({
   ok: true,
-  json: async () => ({ items: videoId ? [{ id: { videoId } }] : [] }),
+  json: async () => ({ items: videoId ? [{ id: { videoId }, snippet: { publishedAt } }] : [] }),
 });
 
 function stubYouTube(...responses: any[]) {
@@ -45,17 +45,17 @@ describe('Livestream Router GET /livestream/current', () => {
   it('returns the active live stream when the channel is live', async () => {
     process.env.YOUTUBE_API_KEY = 'k';
     process.env.YOUTUBE_CHANNEL_ID = 'c';
-    stubYouTube(ytBody('LIVE123'));
+    stubYouTube(ytBody('LIVE123', '2026-05-25T15:00:00Z'));
     const r = await request(app).get('/livestream/current');
-    expect(r.body).toEqual({ videoId: 'LIVE123', status: 'live' });
+    expect(r.body).toEqual({ videoId: 'LIVE123', status: 'live', publishedAt: '2026-05-25T15:00:00Z' });
   });
 
   it('falls back to the latest completed stream when not live', async () => {
     process.env.YOUTUBE_API_KEY = 'k';
     process.env.YOUTUBE_CHANNEL_ID = 'c';
-    const yt = stubYouTube(ytBody(undefined), ytBody('DONE456'));
+    const yt = stubYouTube(ytBody(undefined), ytBody('DONE456', '2026-05-20T15:00:00Z'));
     const r = await request(app).get('/livestream/current');
-    expect(r.body).toEqual({ videoId: 'DONE456', status: 'completed' });
+    expect(r.body).toEqual({ videoId: 'DONE456', status: 'completed', publishedAt: '2026-05-20T15:00:00Z' });
     expect(yt).toHaveBeenCalledTimes(2);
   });
 
