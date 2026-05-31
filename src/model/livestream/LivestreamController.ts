@@ -11,6 +11,7 @@ const SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
 export interface LivestreamResult {
   videoId: string | null;
   status: 'live' | 'completed' | 'none';
+  publishedAt?: string;
 }
 
 let cache: { value: LivestreamResult; at: number } | null = null;
@@ -19,7 +20,7 @@ let cache: { value: LivestreamResult; at: number } | null = null;
 export const __clearCache = (): void => { cache = null; };
 
 class LivestreamController {
-  private async search(eventType: 'live' | 'completed'): Promise<string | null> {
+  private async search(eventType: 'live' | 'completed'): Promise<{ videoId: string; publishedAt?: string } | null> {
     const params = new URLSearchParams({
       part: 'snippet',
       type: 'video',
@@ -31,8 +32,12 @@ class LivestreamController {
     });
     const res = await fetch(`${SEARCH_URL}?${params.toString()}`);
     if (!res.ok) throw new Error(`YouTube API responded ${res.status}`);
-    const body = await res.json() as { items?: Array<{ id?: { videoId?: string } }> };
-    return body.items?.[0]?.id?.videoId || null;
+    const body = await res.json() as {
+      items?: Array<{ id?: { videoId?: string }, snippet?: { publishedAt?: string } }>
+    };
+    const item = body.items?.[0];
+    if (!item?.id?.videoId) return null;
+    return { videoId: item.id.videoId, publishedAt: item.snippet?.publishedAt };
   }
 
   async getCurrent(_req: Request, res: Response): Promise<void> {
@@ -48,10 +53,10 @@ class LivestreamController {
     let result: LivestreamResult = { videoId: null, status: 'none' };
     try {
       const live = await this.search('live');
-      if (live) result = { videoId: live, status: 'live' };
+      if (live) result = { videoId: live.videoId, status: 'live', publishedAt: live.publishedAt };
       else {
         const completed = await this.search('completed');
-        if (completed) result = { videoId: completed, status: 'completed' };
+        if (completed) result = { videoId: completed.videoId, status: 'completed', publishedAt: completed.publishedAt };
       }
       cache = { value: result, at: Date.now() }; // cache only successful lookups
     } catch (err) {
