@@ -45,9 +45,34 @@ describe('Admin User Controller', () => {
     it('creates with valid privileges', async () => {
       lib.userRoles = ['web-jam-llm'];
       lib.model.create = vi.fn(() => Promise.resolve({ _id: 'id', name: 'Bot', privileges: ['tour:create'] })) as any;
-      await controller.create({ body: { name: 'Bot', email: 'a@b.com', userType: 'web-jam-llm', privileges: ['tour:create'] } } as any, resStub);
+      await controller.create({
+        userType: 'Developer',
+        body: {
+          name: 'Bot', email: 'a@b.com', userType: 'web-jam-llm', privileges: ['tour:create'],
+        },
+      } as any, resStub);
       expect(status).toBe(201);
       expect(testObj._id).toBe('id');
+    });
+
+    it('forbids a JaM-admin from granting clc-admin (403)', async () => {
+      lib.userRoles = ['JaM-admin', 'clc-admin'];
+      await controller.create({
+        userType: 'JaM-admin',
+        body: { name: 'Kyle', email: 'k@b.com', userType: 'clc-admin' },
+      } as any, resStub);
+      expect(status).toBe(403);
+      expect(testObj.message).toContain('clc-admin');
+    });
+
+    it('lets a Developer grant clc-admin', async () => {
+      lib.userRoles = ['JaM-admin', 'clc-admin'];
+      lib.model.create = vi.fn(() => Promise.resolve({ _id: 'id2', name: 'Kyle' })) as any;
+      await controller.create({
+        userType: 'Developer',
+        body: { name: 'Kyle', email: 'k@b.com', userType: 'clc-admin' },
+      } as any, resStub);
+      expect(status).toBe(201);
     });
 
     it('creates with no privileges field set', async () => {
@@ -79,6 +104,7 @@ describe('Admin User Controller', () => {
 
     it('rejects invalid userType in update', async () => {
       lib.userRoles = ['JaM-admin'];
+      lib.model.findById = vi.fn(() => Promise.resolve({})) as any;
       const id = new mongoose.Types.ObjectId().toString();
       await controller.findByIdAndUpdate({ params: { id }, body: { userType: 'fake' } } as any, resStub);
       expect(status).toBe(400);
@@ -91,6 +117,42 @@ describe('Admin User Controller', () => {
       const id = new mongoose.Types.ObjectId().toString();
       await controller.findByIdAndUpdate({ params: { id }, body: { privileges: ['tour:create'] } } as any, resStub);
       expect(status).toBe(200);
+    });
+
+    it('forbids a JaM-admin from removing someone\'s clc-admin role (403)', async () => {
+      lib.userRoles = ['JaM-admin', 'clc-admin'];
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'clc-admin' })) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({ params: { id }, userType: 'JaM-admin', body: { userType: '' } } as any, resStub);
+      expect(status).toBe(403);
+      expect(testObj.message).toContain('removing');
+    });
+
+    it('lets a clc-admin remove a clc-admin role', async () => {
+      lib.userRoles = ['JaM-admin', 'clc-admin'];
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'clc-admin' })) as any;
+      lib.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({ _id: 'id' })) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({ params: { id }, userType: 'clc-admin', body: { userType: '' } } as any, resStub);
+      expect(status).toBe(200);
+    });
+
+    it('treats an unchanged role as a no-op (privilege-only edit not blocked)', async () => {
+      // clc-admin not even in userRoles here, yet resending the same role must
+      // not 400 — only an actual change is validated/authorized.
+      lib.userRoles = ['JaM-admin'];
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'clc-admin' })) as any;
+      lib.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({ _id: 'id', privileges: [] })) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({ params: { id }, body: { userType: 'clc-admin', privileges: [] } } as any, resStub);
+      expect(status).toBe(200);
+    });
+
+    it('returns 500 when looking up the current role fails', async () => {
+      lib.model.findById = vi.fn(() => Promise.reject(new Error('db down'))) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({ params: { id }, userType: 'Developer', body: { userType: 'web-jam-llm' } } as any, resStub);
+      expect(status).toBe(500);
     });
   });
 
