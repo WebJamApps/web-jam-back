@@ -4,7 +4,7 @@ describe('capabilities registry', () => {
   it('exposes the canonical list', () => {
     expect(CAPABILITIES.length).toBeGreaterThan(0);
     expect(CAPABILITIES).toContain('tour:create');
-    expect(CAPABILITIES).toContain('song:read');
+    expect(CAPABILITIES).toContain('song:create');
     expect(CAPABILITIES).toContain('book:delete');
   });
 
@@ -14,9 +14,17 @@ describe('capabilities registry', () => {
     }
   });
 
+  // tour/song/book reads are public & unauthenticated, so a read privilege
+  // gates nothing — the registry omits all :read caps.
+  it('does NOT include any :read capabilities', () => {
+    for (const cap of CAPABILITIES) {
+      expect(cap.endsWith(':read')).toBe(false);
+    }
+  });
+
   it('isValidCapability returns true for known capabilities', () => {
     expect(isValidCapability('tour:create')).toBe(true);
-    expect(isValidCapability('book:read')).toBe(true);
+    expect(isValidCapability('book:create')).toBe(true);
   });
 
   it('isValidCapability returns false for unknown values', () => {
@@ -26,9 +34,9 @@ describe('capabilities registry', () => {
   });
 
   it('validatePrivileges accepts a valid array', () => {
-    const result = validatePrivileges(['tour:create', 'song:read']);
+    const result = validatePrivileges(['tour:create', 'song:create']);
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.privileges).toEqual(['tour:create', 'song:read']);
+    if (result.ok) expect(result.privileges).toEqual(['tour:create', 'song:create']);
   });
 
   it('validatePrivileges accepts an empty array', () => {
