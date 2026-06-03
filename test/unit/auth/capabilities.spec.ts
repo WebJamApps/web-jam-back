@@ -3,9 +3,15 @@ import capabilities, { CAPABILITIES, isValidCapability, validatePrivileges } fro
 describe('capabilities registry', () => {
   it('exposes the canonical list', () => {
     expect(CAPABILITIES.length).toBeGreaterThan(0);
-    expect(CAPABILITIES).toContain('tour:create');
+    expect(CAPABILITIES).toContain('gig:create');
     expect(CAPABILITIES).toContain('song:create');
     expect(CAPABILITIES).toContain('book:delete');
+  });
+
+  it('includes the new gig:* caps and keeps legacy tour:* valid during migration', () => {
+    for (const cap of ['gig:create', 'gig:edit', 'gig:delete', 'tour:create', 'tour:edit', 'tour:delete']) {
+      expect(isValidCapability(cap)).toBe(true);
+    }
   });
 
   it('does NOT include user:* capabilities (admin role only, not granted per user)', () => {
