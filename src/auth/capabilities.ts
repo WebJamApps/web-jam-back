@@ -1,4 +1,9 @@
 export const CAPABILITIES = [
+  // `gig:*` is the new naming; `tour:*` stays valid during the tour->gig rename
+  // migration and is removed in the Phase-4 cleanup.
+  'gig:create',
+  'gig:edit',
+  'gig:delete',
   'tour:create',
   'tour:edit',
   'tour:delete',
