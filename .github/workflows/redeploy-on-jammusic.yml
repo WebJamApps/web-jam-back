@@ -1,0 +1,23 @@
+name: Redeploy on JaMmusic main update
+
+# Fired by a repository_dispatch from JaMmusic when it merges to main, so the
+# embedded JaMmusic build (via postinstallJaM) is refreshed. Also runnable by
+# hand from the Actions tab (workflow_dispatch).
+on:
+  repository_dispatch:
+    types: [jammusic-main-deploy]
+  workflow_dispatch: {}
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Heroku build of current main
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          curl -fsS -X POST https://api.heroku.com/apps/webjamsalem/builds \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/vnd.heroku+json; version=3" \
+            -H "Authorization: Bearer $HEROKU_API_KEY" \
+            -d '{"source_blob":{"url":"https://github.com/WebJamApps/web-jam-back/tarball/main","version":"main"}}'
