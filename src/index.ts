@@ -60,7 +60,7 @@ app.use(helmet.contentSecurityPolicy({
     'script-src-attr': ["'none'"],
     'style-src': ["'self'", 'https:', "'unsafe-inline'"],
     'upgrade-insecure-requests': [],
-    'connect-src': ["'self'", 'ws:', 'wss:', 'https://cdn.plyr.io'],
+    'connect-src': ["'self'", 'ws:', 'wss:', 'https://cdn.plyr.io', 'https://noembed.com'],
   },
 }));
 app.use(express.urlencoded({ extended: true }));
