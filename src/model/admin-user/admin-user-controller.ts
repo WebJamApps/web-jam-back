@@ -9,6 +9,10 @@ import { canGrantRole } from '../../auth/roleGrants.js';
 // ensureAuthenticated populates req.userType with the acting admin's role.
 type ActingRequest = Request & { userType?: string };
 
+const USER_STATUS_OPTIONS = ['human', 'ai-agent'];
+// Only the AI-agent bot role may be marked ai-agent.
+const AI_AGENT_ROLE = 'web-jam-llm';
+
 class AdminUserController extends Controller {
   constructor(uModel: typeof userModel) {
     super(uModel);
@@ -47,6 +51,24 @@ class AdminUserController extends Controller {
     return null;
   }
 
+  // Validate a userStatus (Type) value and enforce that 'ai-agent' is only
+  // allowed when the resulting role is the AI-agent bot role. resultingRole is
+  // the userType the record will have after this update. Returns an error to
+  // send back, or null when allowed.
+  userStatusError( // eslint-disable-line class-methods-use-this
+    newStatus: string | undefined,
+    resultingRole: string | undefined,
+  ): { status: number; message: string } | null {
+    if (newStatus === undefined || newStatus === '') return null;
+    if (USER_STATUS_OPTIONS.indexOf(newStatus) === -1) {
+      return { status: 400, message: 'userStatus not valid' };
+    }
+    if (newStatus === 'ai-agent' && resultingRole !== AI_AGENT_ROLE) {
+      return { status: 400, message: `userStatus 'ai-agent' requires the '${AI_AGENT_ROLE}' role` };
+    }
+    return null;
+  }
+
   async create(req: Request, res: Response): Promise<unknown> {
     const { body } = req;
     delete body._id;
@@ -57,6 +79,8 @@ class AdminUserController extends Controller {
     }
     const roleErr = this.roleTransitionError((req as ActingRequest).userType, undefined, body.userType);
     if (roleErr) return res.status(roleErr.status).json({ message: roleErr.message });
+    const statusErr = this.userStatusError(body.userStatus, body.userType);
+    if (statusErr) return res.status(statusErr.status).json({ message: statusErr.message });
     if (!body.name) return res.status(400).json({ message: 'Name is required' });
     if (!body.email) return res.status(400).json({ message: 'Email is required' });
     let doc;
@@ -73,12 +97,19 @@ class AdminUserController extends Controller {
       if (!result.ok) return res.status(400).json({ message: result.message });
       req.body.privileges = result.privileges;
     }
-    if ('userType' in req.body) {
-      let existing;
+    let existing;
+    if ('userType' in req.body || 'userStatus' in req.body) {
       try { existing = await this.model.findById(req.params.id); } catch (e) { return this.resErr(res, e as Error); }
-      const existingRole = (existing as { userType?: string } | null)?.userType;
+    }
+    const existingRole = (existing as { userType?: string } | null)?.userType;
+    if ('userType' in req.body) {
       const roleErr = this.roleTransitionError((req as ActingRequest).userType, existingRole, req.body.userType);
       if (roleErr) return res.status(roleErr.status).json({ message: roleErr.message });
+    }
+    if ('userStatus' in req.body) {
+      const resultingRole = 'userType' in req.body ? req.body.userType : existingRole;
+      const statusErr = this.userStatusError(req.body.userStatus, resultingRole);
+      if (statusErr) return res.status(statusErr.status).json({ message: statusErr.message });
     }
     return this.contFBIandU(req, res);
   }

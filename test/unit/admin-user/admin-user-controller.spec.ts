@@ -86,6 +86,31 @@ describe('Admin User Controller', () => {
       await controller.create({ body: { name: 'Bot', email: 'a@b.com' } } as any, resStub);
       expect(status).toBe(500);
     });
+
+    it('rejects an invalid userStatus', async () => {
+      await controller.create({ body: { name: 'Bot', email: 'a@b.com', userStatus: 'enabled' } } as any, resStub);
+      expect(status).toBe(400);
+      expect(testObj.message).toContain('userStatus not valid');
+    });
+
+    it('rejects ai-agent without the web-jam-llm role', async () => {
+      lib.userRoles = ['JaM-admin', 'web-jam-llm'];
+      await controller.create({ body: { name: 'Bot', email: 'a@b.com', userStatus: 'ai-agent' } } as any, resStub);
+      expect(status).toBe(400);
+      expect(testObj.message).toContain('web-jam-llm');
+    });
+
+    it('allows ai-agent with the web-jam-llm role', async () => {
+      lib.userRoles = ['web-jam-llm'];
+      lib.model.create = vi.fn(() => Promise.resolve({ _id: 'bot', name: 'Bot' })) as any;
+      await controller.create({
+        userType: 'Developer',
+        body: {
+          name: 'Bot', email: 'a@b.com', userType: 'web-jam-llm', userStatus: 'ai-agent',
+        },
+      } as any, resStub);
+      expect(status).toBe(201);
+    });
   });
 
   describe('findByIdAndUpdate', () => {
@@ -153,6 +178,41 @@ describe('Admin User Controller', () => {
       const id = new mongoose.Types.ObjectId().toString();
       await controller.findByIdAndUpdate({ params: { id }, userType: 'Developer', body: { userType: 'web-jam-llm' } } as any, resStub);
       expect(status).toBe(500);
+    });
+
+    it('rejects an invalid userStatus in update', async () => {
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'JaM-admin' })) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({ params: { id }, body: { userStatus: 'enabled' } } as any, resStub);
+      expect(status).toBe(400);
+      expect(testObj.message).toContain('userStatus not valid');
+    });
+
+    it('rejects setting ai-agent on a non web-jam-llm user', async () => {
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'JaM-admin' })) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({ params: { id }, body: { userStatus: 'ai-agent' } } as any, resStub);
+      expect(status).toBe(400);
+      expect(testObj.message).toContain('web-jam-llm');
+    });
+
+    it('corrects a legacy userStatus to human', async () => {
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'JaM-admin' })) as any;
+      lib.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({ _id: 'id', userStatus: 'human' })) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({ params: { id }, body: { userStatus: 'human' } } as any, resStub);
+      expect(status).toBe(200);
+    });
+
+    it('allows ai-agent when the same update assigns the web-jam-llm role', async () => {
+      lib.userRoles = ['JaM-admin', 'web-jam-llm'];
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: '' })) as any;
+      lib.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({ _id: 'id' })) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({
+        params: { id }, userType: 'Developer', body: { userType: 'web-jam-llm', userStatus: 'ai-agent' },
+      } as any, resStub);
+      expect(status).toBe(200);
     });
   });
 
