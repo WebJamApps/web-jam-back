@@ -13,6 +13,9 @@ export const CAPABILITIES = [
   'book:create',
   'book:edit',
   'book:delete',
+  // Gig-promotion channels (Task 5). Assignable to the web-jam-llm bot so
+  // Claude/gemma can trigger sends; humans pass via admin role fallback.
+  'promo:email',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
