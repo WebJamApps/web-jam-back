@@ -7,6 +7,7 @@ import livestream from './model/livestream/index.js';
 import song from './model/song/song-router.js';
 import subscriber from './model/subscriber/subscriber-router.js';
 import adminSubscriber from './model/subscriber/admin-subscriber-router.js';
+import promo from './model/promo/promo-router.js';
 
 const router = express.Router();
 
@@ -20,4 +21,5 @@ export default function route(app: Express): void {
   router.use('/livestream', livestream);
   router.use('/subscriber', subscriber);
   router.use('/admin/subscriber', adminSubscriber);
+  router.use('/promo', promo);
 }
