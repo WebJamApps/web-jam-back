@@ -116,6 +116,26 @@ heroku config:get YOUTUBE_CHANNEL_ID -a webjamsalem   # verify (do NOT echo the 
 
 Setting a config var triggers a dyno restart automatically; the change is live within ~30 seconds.
 
+## Facebook feed (`/facebook/*` routes)
+
+Powers the CollegeLutheran homepage Facebook feed (CollegeLutheran#740 / web-jam-back#797), replacing the unreliable Page Plugin iframe.
+
+- **`GET /facebook/feed`** — public, no auth. Returns `{ posts, lastUpdated }` from an in-memory cache that is refreshed on startup and then hourly. Empty (`{ "posts": [], "lastUpdated": null }`) until a page token has been set, so it is safe to deploy before configuring anything; the UI falls back to a plain Facebook link.
+- **`PUT /facebook/token`** — admin only (guarded by `AUTH_ROLES.facebook`). Body `{ "userToken": "<short-lived FB user token>" }` from the admin page's "Reconnect Facebook" button. The server exchanges it for a long-lived user token, reads the page token from `/me/accounts`, stores it in MongoDB (`FacebookToken` singleton), and refreshes the cache. The app secret never leaves the server, which is why the exchange can't happen in the browser.
+
+When the page token dies (Graph OAuth `code 190` — e.g. Josh changed his Facebook password, logged out of all sessions, or hit a security checkpoint), the server emails `GMAIL_USER` **once per process** telling him to click Reconnect Facebook. The flag re-arms on the next healthy refresh; Heroku's ~daily dyno restart also resets it, so a dead token re-nags about once a day until fixed (intentional). The last good cache keeps serving throughout, so the feed just stops updating rather than breaking.
+
+**Graph API version:** pinned in one constant (`FB_GRAPH_VERSION` in `FacebookController.ts`). Meta supports each version for at least 2 years; expired versions don't hard-fail (calls auto-forward to the oldest still-supported version), and the four fields used (`message`, `full_picture`, `permalink_url`, `created_time`) are stable core fields. Bump the constant when convenient — no scheduled maintenance needed.
+
+Env vars (set on the deployed environment and in your local `.env` for end-to-end testing):
+
+- `FB_APP_ID` / `FB_APP_SECRET` — the "Web Jam LLC" Meta app (Josh is app admin; the app stays in development mode, so no Meta app review is needed). **`FB_APP_SECRET` is secret — server-side only.**
+- `FB_PAGE_ID` — the CollegeLutheran page id: `202368653220334`.
+- `AUTH_ROLES` — add a `"facebook": ["Developer", "clc-admin"]` entry (same audience that can view the CLC admin page). Without it, any authenticated user could update the token.
+- `GMAIL_USER` / `GMAIL_APP_PASSWORD` — already used by the `/inquiry` route; reused for the token-death alert. In `NODE_ENV=test` no email is sent and no Graph calls are made.
+
+Set these the same way as the Livestream vars above (Heroku dashboard Config Vars or `heroku config:set ... -a webjamsalem`).
+
 ## Test
 
 **`npm test`** runs the tests and generates a coverage report.
