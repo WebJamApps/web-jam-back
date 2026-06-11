@@ -25,58 +25,109 @@ export interface FbPost {
 interface FeedCache { posts: FbPost[]; lastUpdated: string | null }
 interface GraphError { code?: number; message?: string }
 
-// Module-level state. `alertSent` keeps the token-death email to one per process
-// per outage; it resets on the next healthy refresh. Heroku's ~daily dyno
-// restart resets it too, so a dead token re-nags about once a day until fixed
-// (intentional).
-let cache: FeedCache = { posts: [], lastUpdated: null };
-let alertSent = false;
+const EMPTY: FeedCache = { posts: [], lastUpdated: null };
+
+// The registered pages, as a pageId -> display-name map from FB_PAGES (one Meta
+// app, many pages: CollegeLutheran + WebJamLLC). During the env rollout, if
+// FB_PAGES is unset we fall back to the legacy single FB_PAGE_ID so the service
+// keeps serving CollegeLutheran until FB_PAGES is deployed.
+function getPages(): Record<string, string> {
+  let pages: Record<string, string> = {};
+  try {
+    const parsed = JSON.parse(process.env.FB_PAGES || '{}') as Record<string, string>;
+    if (parsed && typeof parsed === 'object') pages = parsed;
+  } catch { /* malformed FB_PAGES — fall through to the FB_PAGE_ID fallback */ }
+  if (Object.keys(pages).length === 0 && process.env.FB_PAGE_ID) {
+    pages[process.env.FB_PAGE_ID] = 'CollegeLutheran';
+  }
+  return pages;
+}
+
+// Back-compat default for callers that omit pageId (the already-deployed CLC
+// frontend): the CollegeLutheran page id in FB_PAGE_ID, else the first
+// registered page.
+function defaultPageId(): string {
+  return process.env.FB_PAGE_ID || Object.keys(getPages())[0] || '';
+}
+
+// Module-level state, keyed by pageId. `alertSent` keeps the token-death email
+// to one per page per outage; it resets on that page's next healthy refresh.
+// Heroku's ~daily dyno restart resets it too, so a dead token re-nags about
+// once a day until fixed (intentional).
+const caches = new Map<string, FeedCache>();
+const alertSent = new Map<string, boolean>();
 let timer: ReturnType<typeof setInterval> | null = null;
 
-// test-only hooks
+// test-only hooks. __getState defaults to the back-compat (CLC) page.
 export const __reset = (): void => {
-  cache = { posts: [], lastUpdated: null };
-  alertSent = false;
+  caches.clear();
+  alertSent.clear();
   /* istanbul ignore if */
   if (timer) { clearInterval(timer); timer = null; }
 };
-export const __getState = (): { cache: FeedCache; alertSent: boolean } => ({ cache, alertSent });
+export const __getState = (pageId = defaultPageId()): { cache: FeedCache; alertSent: boolean } => ({
+  cache: caches.get(pageId) || EMPTY,
+  alertSent: alertSent.get(pageId) || false,
+});
 
-async function readToken(): Promise<string> {
-  const doc = await FacebookToken.findOne({ key: 'pageToken' }).lean().exec() as { value?: string } | null;
+async function readToken(pageId: string): Promise<string> {
+  const doc = await FacebookToken.findOne({ pageId }).lean().exec() as { value?: string } | null;
   return doc?.value || '';
 }
 
-async function writeToken(value: string): Promise<void> {
+async function writeToken(pageId: string, value: string): Promise<void> {
   await FacebookToken.findOneAndUpdate(
-    { key: 'pageToken' },
-    { value, updatedAt: new Date() },
+    { pageId },
+    { pageId, value, updatedAt: new Date() },
     { upsert: true },
   ).exec();
 }
 
-// Email Josh once per outage when the page token is dead (Graph OAuth code 190).
-async function handleDeadToken(): Promise<void> {
-  debug('facebook page token is dead (code 190)');
-  if (alertSent) return;
-  alertSent = true;
+// One-time migration of the single-page era doc (keyed `key: 'pageToken'`,
+// web-jam-back#797) to the new pageId keying, so CollegeLutheran survives the
+// multi-page deploy without a manual reconnect. Also drops the stale unique
+// `key_1` index, which would otherwise reject a second page's doc (both null
+// `key`). Idempotent.
+export async function migrateLegacyToken(): Promise<void> {
+  const coll = FacebookToken.collection;
+  /* istanbul ignore next */
+  try { await coll.dropIndex('key_1'); } catch { /* already dropped */ }
+  const legacy = await coll.findOne({ key: 'pageToken' }) as { value?: string } | null;
+  if (!legacy?.value) return;
+  const pageId = defaultPageId();
+  await coll.updateOne(
+    { pageId },
+    { $set: { pageId, value: legacy.value, updatedAt: new Date() } },
+    { upsert: true },
+  );
+  await coll.deleteOne({ key: 'pageToken' });
+  debug('migrated legacy pageToken doc to pageId %s', pageId);
+}
+
+// Email Josh once per outage when a page token is dead (Graph OAuth code 190).
+// The alert names the page so he knows which one to reconnect.
+async function handleDeadToken(pageId: string): Promise<void> {
+  debug('facebook page token is dead (code 190) for %s', pageId);
+  if (alertSent.get(pageId)) return;
+  alertSent.set(pageId, true);
+  const name = getPages()[pageId] || pageId;
   try {
     await sendMail({
       to: process.env.GMAIL_USER || /* istanbul ignore next */ '',
-      subject: 'CollegeLutheran: Facebook feed token is dead',
-      html: 'The CollegeLutheran Facebook feed page token has expired or been invalidated. '
-        + 'Log into the CollegeLutheran admin page and click <b>Reconnect Facebook</b> to restore it.',
+      subject: `${name}: Facebook feed token is dead`,
+      html: `The ${name} Facebook feed page token has expired or been invalidated. `
+        + `Log into the ${name} admin page and click <b>Reconnect Facebook</b> to restore it.`,
     });
   } catch (err) /* istanbul ignore next */ {
     debug('alert email failed: %s', (err as Error).message);
   }
 }
 
-// Refresh the in-memory feed cache from the page's published posts. On any
+// Refresh one page's in-memory feed cache from its published posts. On any
 // failure the last good cache keeps serving; a 190 also triggers the alert.
-export async function updateFacebookCache(): Promise<void> {
-  const token = await readToken();
-  if (!token) { debug('no page token stored yet; skipping refresh'); return; }
+async function refreshPage(pageId: string): Promise<void> {
+  const token = await readToken(pageId);
+  if (!token) { debug('no page token stored for %s; skipping refresh', pageId); return; }
   const params = new URLSearchParams({
     fields: PAGE_FIELDS,
     limit: '5',
@@ -84,23 +135,29 @@ export async function updateFacebookCache(): Promise<void> {
   });
   try {
     // `/posts` (not `/feed`) → page-published posts only, no visitor-post perms.
-    const res = await fetch(`${GRAPH}/${process.env.FB_PAGE_ID || ''}/posts?${params.toString()}`);
+    const res = await fetch(`${GRAPH}/${pageId}/posts?${params.toString()}`);
     const body = await res.json() as { data?: FbPost[]; error?: GraphError };
     if (body.error) {
-      if (body.error.code === 190) await handleDeadToken();
-      else debug('graph error: %o', body.error);
+      if (body.error.code === 190) await handleDeadToken(pageId);
+      else debug('graph error for %s: %o', pageId, body.error);
       return; // keep last good cache
     }
-    cache = { posts: body.data || [], lastUpdated: new Date().toISOString() };
-    alertSent = false; // healthy again — re-arm the alert
+    caches.set(pageId, { posts: body.data || [], lastUpdated: new Date().toISOString() });
+    alertSent.set(pageId, false); // healthy again — re-arm the alert
   } catch (err) {
-    debug('facebook refresh failed: %s', (err as Error).message);
+    debug('facebook refresh failed for %s: %s', pageId, (err as Error).message);
   }
 }
 
-// short-lived user token -> long-lived user token -> never-expiring page token.
-// The app secret stays server-side, which is why this can't happen in-browser.
-async function exchangeForPageToken(userToken: string): Promise<string> {
+// Refresh every registered page. Called on startup and hourly.
+export async function updateFacebookCache(): Promise<void> {
+  await Promise.all(Object.keys(getPages()).map((pageId) => refreshPage(pageId)));
+}
+
+// short-lived user token -> long-lived user token -> never-expiring page token,
+// for the given page. The app secret stays server-side, which is why this can't
+// happen in-browser.
+async function exchangeForPageToken(userToken: string, pageId: string): Promise<string> {
   const llParams = new URLSearchParams({
     grant_type: 'fb_exchange_token',
     client_id: process.env.FB_APP_ID || '',
@@ -114,39 +171,46 @@ async function exchangeForPageToken(userToken: string): Promise<string> {
   const accRes = await fetch(`${GRAPH}/me/accounts?access_token=${encodeURIComponent(llBody.access_token)}`);
   const accBody = await accRes.json() as { data?: Array<{ id: string; access_token: string }>; error?: GraphError };
   if (accBody.error) throw new Error(accBody.error.message || 'failed to list pages');
-  const page = (accBody.data || []).find((p) => p.id === process.env.FB_PAGE_ID);
-  if (!page) throw new Error('CollegeLutheran page not found in /me/accounts');
+  const page = (accBody.data || []).find((p) => p.id === pageId);
+  if (!page) throw new Error(`${getPages()[pageId] || pageId} page not found in /me/accounts`);
   return page.access_token;
 }
 
-// Kick off the startup refresh + hourly interval. No-ops under test so unit
-// tests never hit the network or leave a timer running.
+// Kick off the legacy-token migration, startup refresh, and hourly interval.
+// No-ops under test so unit tests never hit the network or leave a timer running.
 export function startFacebookRefresh(): void {
   /* istanbul ignore if */
   if (process.env.NODE_ENV === 'test') return;
   /* istanbul ignore next */
-  void updateFacebookCache();
+  migrateLegacyToken()
+    .then(() => { void updateFacebookCache(); })
+    .catch(() => { /* startup migration failed; the hourly refresh still runs */ });
   /* istanbul ignore next */
   timer = setInterval(() => { void updateFacebookCache(); }, REFRESH_INTERVAL_MS);
 }
 
 class FacebookController {
-  // Public, no auth. Serves the cached posts; empty until a token is set.
-  async getFeed(_req: Request, res: Response): Promise<void> {
-    res.json(cache);
+  // Public, no auth. Serves the cached posts for ?pageId (default: CollegeLutheran
+  // for back-compat); empty until that page's token is set.
+  async getFeed(req: Request, res: Response): Promise<void> {
+    const pageId = (req.query.pageId as string) || defaultPageId();
+    res.json(caches.get(pageId) || EMPTY);
   }
 
   // Admin-only (guarded by routeUtils.makeAction + AUTH_ROLES.facebook). Takes a
-  // short-lived FB user token from the admin page, derives + stores the page
-  // token, and refreshes the cache immediately.
+  // short-lived FB user token + pageId from the admin page, derives + stores that
+  // page's token, and refreshes its cache immediately. pageId defaults to the CLC
+  // page so the existing CLC reconnect flow keeps working before it sends one.
   async updateToken(req: Request, res: Response): Promise<void> {
-    const userToken = (req.body as { userToken?: string } | undefined)?.userToken;
+    const body = req.body as { userToken?: string; pageId?: string } | undefined;
+    const userToken = body?.userToken;
     if (!userToken) { res.status(400).json({ message: 'userToken is required' }); return; }
+    const pageId = body?.pageId || defaultPageId();
     try {
-      const pageToken = await exchangeForPageToken(userToken);
-      await writeToken(pageToken);
-      await updateFacebookCache();
-      res.json({ lastUpdated: cache.lastUpdated });
+      const pageToken = await exchangeForPageToken(userToken, pageId);
+      await writeToken(pageId, pageToken);
+      await refreshPage(pageId);
+      res.json({ pageId, lastUpdated: caches.get(pageId)?.lastUpdated ?? null });
     } catch (err) {
       res.status(400).json({ message: (err as Error).message });
     }
