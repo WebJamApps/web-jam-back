@@ -15,12 +15,9 @@ export interface GoogleAuthenticateResponse {
 }
 
 async function authenticate(req: { body: { redirectUri: string; code: string; clientId: string; }; }): Promise<GoogleAuthenticateResponse> {
-  let reUri = req.body.redirectUri;
+  const reUri = req.body.redirectUri;
   let tokenBody: GoogleTokenResponse;
   let profileBody: GoogleAuthenticateResponse;
-  if (reUri && reUri.includes('localhost')) {
-    reUri = reUri.replace('https', 'http');
-  }
   const params = new URLSearchParams({
     code: req.body.code,
     client_id: req.body.clientId,
