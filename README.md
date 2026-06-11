@@ -139,6 +139,28 @@ Env vars (set on the deployed environment and in your local `.env` for end-to-en
 
 Set these the same way as the Livestream vars above (Heroku dashboard Config Vars or `heroku config:set ... -a webjamsalem`).
 
+### Which Facebook var lives where (across all repos)
+
+There are really only four things; most "vars" just point at them. **Page access tokens are never env vars** — the backend derives them on reconnect and stores them in MongoDB, one per `pageId`.
+
+| Var | Repo(s) | Public / secret | Purpose |
+|-----|---------|-----------------|---------|
+| `FB_APP_ID` (`2207148322688942`, "Web Jam LLC" app) | web-jam-back **and** each frontend (JaMmusic, CollegeLutheran) at **build** time | **Public** — safe in the browser bundle | Identifies the Meta app; opens the FB login popup (frontends) and authorizes the token exchange (backend) |
+| `FB_APP_SECRET` | web-jam-back **only** | **Secret** | Server-side token exchange; must never reach a frontend |
+| `FB_PAGE_ID` | web-jam-back only | Public id | Default page when `GET /facebook/feed` omits `?pageId` (CollegeLutheran) |
+| `FB_PAGES` | web-jam-back only | Public ids | `pageId`→name map of every page served; drives the refresh loop + alert email name |
+| `AUTH_ROLES.facebook` | web-jam-back only | — | Roles allowed to `PUT /facebook/token` |
+
+Frontends need only two things: `FB_APP_ID` (build-injected) and the **page id** they show (JaMmusic hardcodes WebJamLLC's `365007513885497`; CollegeLutheran uses the backend default). Locally each repo sets its own `.env`; in production the backend vars live on the web-jam-back Heroku app(s), and `FB_APP_ID` must also be present at the frontend's **build** step (the web-jam-back app that compiles the frontend injects it).
+
+### Reconnecting a feed — check BOTH pages
+
+The Reconnect flow logs the page admin into Facebook, where the consent dialog lists the pages you manage. **That selection is a replace, not an add:** if you uncheck a page you previously granted, Facebook *revokes* the app's access to it and its stored token dies. So whenever you log in to reconnect *either* feed, **leave both the CollegeLutheran and WebJamLLC pages checked.** (Forgetting to check the page you're actually reconnecting just fails harmlessly with "page not found".)
+
+### Finding / verifying a page id
+
+The id stored in `FB_PAGES` must be the one Facebook returns from `/me/accounts` (that's what the token exchange matches against). To find or confirm it: in the [Graph API Explorer](https://developers.facebook.com/tools/explorer) generate a user token (scope `pages_show_list`, the page checked), then `GET /v20.0/me/accounts` and read the `id` next to the page name. A quick sanity check: `https://www.facebook.com/<page-id>` should land on that page. The page's HTML `delegatePageID` is **not** reliable — it can differ from the Graph id under the New Pages Experience.
+
 ## Test
 
 **`npm test`** runs the tests and generates a coverage report.
