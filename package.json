@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.0.16",
+  "version": "2.0.17",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -69,7 +69,7 @@
     "@eslint/js": "^10.0.1",
     "@vitest/coverage-v8": "^4.1.5",
     "@vitest/eslint-plugin": "^1.6.16",
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.3",
     "eslint": "^10.2.1",
     "eslint-plugin-import-x": "^4.16.2",
     "eslint-plugin-json": "^4.0.1",
