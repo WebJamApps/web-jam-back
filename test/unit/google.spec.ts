@@ -22,7 +22,7 @@ describe('google.ts', () => {
     const req = { body: { code: 'whatever', clientId: '123', redirectUri: 'http://whatever.com' } };
     await expect(google.authenticate(req)).rejects.toThrow('Failed to retrieve a proper user profile from Google');
   });
-  it('uses http to when localhost auth', async () => {
+  it('authenticates using the redirectUri scheme as sent (no localhost rewrite)', async () => {
     vi.stubGlobal('fetch', vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'booya' }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ emailAddresses: [{ value: 'me@me.com' }], names: [] }) }));
