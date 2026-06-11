@@ -168,12 +168,17 @@ async function exchangeForPageToken(userToken: string, pageId: string): Promise<
   const llBody = await llRes.json() as { access_token?: string; error?: GraphError };
   if (llBody.error || !llBody.access_token) throw new Error(llBody.error?.message || 'long-lived token exchange failed');
 
-  const accRes = await fetch(`${GRAPH}/me/accounts?access_token=${encodeURIComponent(llBody.access_token)}`);
-  const accBody = await accRes.json() as { data?: Array<{ id: string; access_token: string }>; error?: GraphError };
-  if (accBody.error) throw new Error(accBody.error.message || 'failed to list pages');
-  const page = (accBody.data || []).find((p) => p.id === pageId);
-  if (!page) throw new Error(`${getPages()[pageId] || pageId} page not found in /me/accounts`);
-  return page.access_token;
+  // Read the page token straight from the page node. We deliberately do NOT use
+  // /me/accounts: "New Pages Experience" pages (e.g. WebJamLLC) don't appear
+  // there even when the user is an admin, which 400'd the reconnect. The page
+  // node works for both classic and new pages and returns the same page token.
+  const name = getPages()[pageId] || pageId;
+  const pageRes = await fetch(`${GRAPH}/${pageId}?fields=access_token&access_token=${encodeURIComponent(llBody.access_token)}`);
+  const pageBody = await pageRes.json() as { access_token?: string; error?: GraphError };
+  if (pageBody.error || !pageBody.access_token) {
+    throw new Error(pageBody.error?.message || `${name} page token not available — are you an admin of this page?`);
+  }
+  return pageBody.access_token;
 }
 
 // Kick off the legacy-token migration, startup refresh, and hourly interval.
