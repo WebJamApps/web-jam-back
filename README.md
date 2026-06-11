@@ -118,20 +118,23 @@ Setting a config var triggers a dyno restart automatically; the change is live w
 
 ## Facebook feed (`/facebook/*` routes)
 
-Powers the CollegeLutheran homepage Facebook feed (CollegeLutheran#740 / web-jam-back#797), replacing the unreliable Page Plugin iframe.
+Powers the CollegeLutheran and WebJamLLC homepage Facebook feeds (CollegeLutheran#740 / web-jam-back#797, multi-page web-jam-back#799), replacing the unreliable Page Plugin iframe. Multiple pages share one Meta app; each page has its own stored token and its own in-memory cache, keyed by `pageId`.
 
-- **`GET /facebook/feed`** — public, no auth. Returns `{ posts, lastUpdated }` from an in-memory cache that is refreshed on startup and then hourly. Empty (`{ "posts": [], "lastUpdated": null }`) until a page token has been set, so it is safe to deploy before configuring anything; the UI falls back to a plain Facebook link.
-- **`PUT /facebook/token`** — admin only (guarded by `AUTH_ROLES.facebook`). Body `{ "userToken": "<short-lived FB user token>" }` from the admin page's "Reconnect Facebook" button. The server exchanges it for a long-lived user token, reads the page token from `/me/accounts`, stores it in MongoDB (`FacebookToken` singleton), and refreshes the cache. The app secret never leaves the server, which is why the exchange can't happen in the browser.
+- **`GET /facebook/feed?pageId=<id>`** — public, no auth. Returns `{ posts, lastUpdated }` from that page's in-memory cache, refreshed on startup and then hourly. With no `pageId` it defaults to the CollegeLutheran page (`FB_PAGE_ID`) so the already-deployed CLC frontend keeps working until it passes the param. Empty (`{ "posts": [], "lastUpdated": null }`) until that page's token has been set, so it is safe to deploy before configuring anything; the UI falls back to a plain Facebook link.
+- **`PUT /facebook/token`** — admin only (guarded by `AUTH_ROLES.facebook`). Body `{ "userToken": "<short-lived FB user token>", "pageId": "<id>" }` from the admin page's "Reconnect Facebook" button. `pageId` selects which page is being reconnected (defaults to the CLC page for back-compat). The server exchanges the user token for a long-lived one, reads that page's token from `/me/accounts`, stores it in MongoDB (one `FacebookToken` doc per `pageId`), and refreshes that page's cache. The app secret never leaves the server, which is why the exchange can't happen in the browser.
 
-When the page token dies (Graph OAuth `code 190` — e.g. Josh changed his Facebook password, logged out of all sessions, or hit a security checkpoint), the server emails `GMAIL_USER` **once per process** telling him to click Reconnect Facebook. The flag re-arms on the next healthy refresh; Heroku's ~daily dyno restart also resets it, so a dead token re-nags about once a day until fixed (intentional). The last good cache keeps serving throughout, so the feed just stops updating rather than breaking.
+When a page token dies (Graph OAuth `code 190` — e.g. Josh changed his Facebook password, logged out of all sessions, or hit a security checkpoint), the server emails `GMAIL_USER` **once per page per outage**, naming the page that died, telling him to click Reconnect Facebook. The flag re-arms on that page's next healthy refresh; Heroku's ~daily dyno restart also resets it, so a dead token re-nags about once a day until fixed (intentional). The last good cache keeps serving throughout, so the feed just stops updating rather than breaking.
+
+The single-page era stored one token doc keyed `key: 'pageToken'`. On startup the service migrates that doc to the CLC `pageId` (and drops the stale `key_1` unique index) so CollegeLutheran survives the multi-page deploy without a manual reconnect.
 
 **Graph API version:** pinned in one constant (`FB_GRAPH_VERSION` in `FacebookController.ts`). Meta supports each version for at least 2 years; expired versions don't hard-fail (calls auto-forward to the oldest still-supported version), and the four fields used (`message`, `full_picture`, `permalink_url`, `created_time`) are stable core fields. Bump the constant when convenient — no scheduled maintenance needed.
 
 Env vars (set on the deployed environment and in your local `.env` for end-to-end testing):
 
 - `FB_APP_ID` / `FB_APP_SECRET` — the "Web Jam LLC" Meta app (Josh is app admin; the app stays in development mode, so no Meta app review is needed). **`FB_APP_SECRET` is secret — server-side only.**
-- `FB_PAGE_ID` — the CollegeLutheran page id: `202368653220334`.
-- `AUTH_ROLES` — add a `"facebook": ["Developer", "clc-admin"]` entry (same audience that can view the CLC admin page). Without it, any authenticated user could update the token.
+- `FB_PAGE_ID` — the back-compat default page id served when `?pageId` is omitted: the CollegeLutheran page `202368653220334`.
+- `FB_PAGES` — a JSON `pageId` → display-name map of every page served, e.g. `{"202368653220334":"CollegeLutheran","365007513885497":"WebJamLLC"}`. Drives the hourly refresh loop and the page name used in the dead-token alert email. If unset, the service falls back to the single `FB_PAGE_ID` (CollegeLutheran only).
+- `AUTH_ROLES` — add a `"facebook": ["Developer", "clc-admin", "JaM-admin"]` entry (the CLC and JaM admins, plus Developer). Any of these can reconnect any page. Without the entry, any authenticated user could update a token.
 - `GMAIL_USER` / `GMAIL_APP_PASSWORD` — already used by the `/inquiry` route; reused for the token-death alert. In `NODE_ENV=test` no email is sent and no Graph calls are made.
 
 Set these the same way as the Livestream vars above (Heroku dashboard Config Vars or `heroku config:set ... -a webjamsalem`).
