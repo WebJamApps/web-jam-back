@@ -6,7 +6,8 @@ import routeUtils, { Icontroller } from '../../lib/routeUtils.js';
 const router = express.Router();
 const controller = new FacebookController() as unknown as Icontroller;
 
-// Public cached feed for the CollegeLutheran homepage.
+// Public cached feed, selected by ?pageId (defaults to CollegeLutheran for
+// back-compat). Serves CollegeLutheran and WebJamLLC homepages.
 router.route('/feed')
   .get((req, res) => { (async () => { await controller.getFeed(req, res); })(); });
 
