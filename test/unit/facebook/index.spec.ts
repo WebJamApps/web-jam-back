@@ -80,7 +80,7 @@ describe('Facebook feed API', () => {
   it('PUT /facebook/token exchanges the token, stores it, and primes the cache', async () => {
     const fb = stubGraph(
       jsonRes({ access_token: 'long-lived-user-token' }), // fb_exchange_token
-      jsonRes({ data: [{ id: '202368653220334', access_token: 'PAGE-TOKEN' }] }), // /me/accounts
+      jsonRes({ access_token: 'PAGE-TOKEN' }), // GET /{pageId}?fields=access_token
       jsonRes({ data: [{ id: 'p1', message: 'Hello', permalink_url: 'https://fb/p1', created_time: '2026-06-01T00:00:00Z' }] }), // /posts
     );
     const r = await request(app)
@@ -100,10 +100,10 @@ describe('Facebook feed API', () => {
     expect(feed.body.posts[0].message).toBe('Hello');
   });
 
-  it('PUT /facebook/token returns 400 when the page is not in /me/accounts', async () => {
+  it('PUT /facebook/token returns 400 when the page token is not available', async () => {
     stubGraph(
       jsonRes({ access_token: 'long-lived-user-token' }),
-      jsonRes({ data: [{ id: 'some-other-page', access_token: 'nope' }] }),
+      jsonRes({ error: { code: 100, message: 'Unsupported get request' } }),
     );
     const r = await request(app)
       .put('/facebook/token')
@@ -111,7 +111,7 @@ describe('Facebook feed API', () => {
       .set('Authorization', `Bearer ${authUtils.createJWT({ _id: user._id })}`)
       .send({ userToken: 'short-lived' });
     expect(r.status).toBe(400);
-    expect(r.body.message).toMatch(/page not found/i);
+    expect(r.body.message).toMatch(/Unsupported get request/i);
   });
 
   it('PUT /facebook/token returns 400 on a failed token exchange', async () => {
@@ -184,7 +184,7 @@ describe('Facebook feed API', () => {
   it('serves a second page independently via ?pageId and stores its own token', async () => {
     const fb = stubGraph(
       jsonRes({ access_token: 'long-lived-user-token' }),
-      jsonRes({ data: [{ id: WJ, access_token: 'WJ-PAGE-TOKEN' }] }),
+      jsonRes({ access_token: 'WJ-PAGE-TOKEN' }),
       jsonRes({ data: [{ id: 'w1', message: 'WebJam post' }] }),
     );
     const r = await request(app)
