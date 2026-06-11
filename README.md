@@ -161,6 +161,25 @@ The Reconnect flow logs the page admin into Facebook, where the consent dialog l
 
 The id stored in `FB_PAGES` must be the one Facebook returns from `/me/accounts` (that's what the token exchange matches against). To find or confirm it: in the [Graph API Explorer](https://developers.facebook.com/tools/explorer) generate a user token (scope `pages_show_list`, the page checked), then `GET /v20.0/me/accounts` and read the `id` next to the page name. A quick sanity check: `https://www.facebook.com/<page-id>` should land on that page. The page's HTML `delegatePageID` is **not** reliable — it can differ from the Graph id under the New Pages Experience.
 
+### One-time Meta app dashboard setup
+
+These live in the **Web Jam LLC** Meta app (developers.facebook.com), not in code or env. The app stays in **Development mode** (no app review needed), which has consequences below.
+
+- **Allowed Domains for the JavaScript SDK** (Facebook Login → Settings) — every host that runs the SDK's `FB.login` must be listed, or the browser throws *"JSSDK Unknown Host domain"*. Add the same list under **Settings → Basic → App Domains**, and set **"Login with the JavaScript SDK" = Yes**. The full list across both apps and all environments:
+
+  ```
+  localhost                      # local dev for both apps (host only — ports ignored)
+  web-jam.com                    # production host both apps actually serve under (APP_NAME)
+  www.web-jam.com
+  joshandmariamusic.com          # JaMmusic vanity domain
+  www.joshandmariamusic.com
+  collegelutheran.org            # CollegeLutheran vanity domain
+  www.collegelutheran.org
+  ```
+
+- **Who can use "Reconnect Facebook":** because the app is in Development mode, only users with a **role on the app** (Admin / Developer / Tester) can complete `FB.login`. To let someone reconnect their own page (e.g. the CLC admin), add them under **App Roles → Roles → Testers**; they must also be an admin of that Facebook page.
+- **Consent dialog reuse:** `FB.login` is called with `auth_type: 'rerequest'` so the page picker shows every time. Without it Facebook offers *"continue with previous settings"* and silently reuses the last grant — which is how reconnecting one page can leave the other ungranted and 400 the next exchange (`page not found in /me/accounts`). Still **keep both pages checked** each time (see "Reconnecting a feed" above).
+
 ## Test
 
 **`npm test`** runs the tests and generates a coverage report.
