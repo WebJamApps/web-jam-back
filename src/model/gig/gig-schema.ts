@@ -23,4 +23,12 @@ const gigSchema = new Schema({
   more: { type: String, required: false },
 }, options);
 
-export default mongoose.models.Gig || mongoose.model('Gig', gigSchema, 'gigs');
+// Gigs live in WebJamSocketCluster's Mongo, a DIFFERENT database than
+// web-jam-back's default connection. In production GIGS_MONGO_DB_URI is set to
+// that DB's URI, so bind the Gig model to a dedicated connection. In tests/CI
+// the var is unset, so fall back to the default mongoose connection (the test
+// DB) — keeps the existing test harness working. (web-jam-back#814)
+const gigsUri = process.env.GIGS_MONGO_DB_URI;
+const conn = gigsUri ? mongoose.createConnection(gigsUri) : mongoose;
+
+export default conn.models.Gig || conn.model('Gig', gigSchema, 'gigs');
