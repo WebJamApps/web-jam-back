@@ -5,6 +5,7 @@ import book from './model/book/book-router.js';
 import inquiry from './model/inquiry/index.js';
 import livestream from './model/livestream/index.js';
 import song from './model/song/song-router.js';
+import gig from './model/gig/gig-router.js';
 import subscriber from './model/subscriber/subscriber-router.js';
 import adminSubscriber from './model/subscriber/admin-subscriber-router.js';
 import promo from './model/promo/promo-router.js';
@@ -18,6 +19,7 @@ export default function route(app: Express): void {
   router.use('/admin/user', adminUser);
   router.use('/book', book);
   router.use('/song', song);
+  router.use('/gig', gig);
   router.use('/inquiry', inquiry);
   router.use('/livestream', livestream);
   router.use('/subscriber', subscriber);
