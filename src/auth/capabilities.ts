@@ -16,6 +16,14 @@ export const CAPABILITIES = [
   // Gig-promotion channels (Task 5). Assignable to the web-jam-llm bot so
   // Claude/gemma can trigger sends; humans pass via admin role fallback.
   'promo:email',
+  // Booking-outreach venue management (web-jam-back#819). Granted to the shared
+  // web-jam-llm AI-agent identity so agents (and the JaMmusic admin UI) can CRUD
+  // the venue collection; humans pass via the admin role fallback. No `venue:read`
+  // — per this repo's convention there are no `:read` capabilities; venue reads
+  // are gated by holding any venue write capability (or the admin role).
+  'venue:create',
+  'venue:edit',
+  'venue:delete',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
