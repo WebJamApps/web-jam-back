@@ -47,12 +47,18 @@ const findUserById = async (req: AuthRequest): Promise<void> => {
   }
 };
 
+// Interactive browser logins expire after 24h (web-jam-back#829) — short enough
+// to limit a leaked/forgotten token, long enough to cover a working day. The 14-
+// day window was too long. AI-agent service tokens (createServiceJWT, no exp)
+// are a separate path and unaffected.
+const LOGIN_TOKEN_TTL_SECONDS = 24 * 60 * 60;
+
 const createJWT = (user: { _id: string }): string => {
   const nowSeconds = Math.floor(Date.now() / 1000);
   const payload: JwtPayload = {
     sub: user._id,
     iat: nowSeconds,
-    exp: nowSeconds + 14 * 24 * 60 * 60,
+    exp: nowSeconds + LOGIN_TOKEN_TTL_SECONDS,
   };
   return jwt.encode(payload, process.env.HashString || /* istanbul ignore next */'');
 };

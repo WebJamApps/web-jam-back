@@ -19,6 +19,8 @@ describe('the authUtils', () => {
     expect(payload).toBeDefined();
     const decoded = jwt.decode(payload, config.hashString || '');
     expect(decoded.sub).toBe(user._id);
+    // Browser login expires 24h after issue (web-jam-back#829).
+    expect(decoded.exp - decoded.iat).toBe(24 * 60 * 60);
   });
   it('creates a service token without an exp claim', () => {
     const user = { _id: 'svc-id' };
