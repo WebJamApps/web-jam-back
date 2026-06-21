@@ -1,8 +1,8 @@
 import jwt from 'jwt-simple';
 import mongoose from 'mongoose';
-import AuthUtils, { type AuthRequest } from '../../src/auth/authUtils.js';
-import config from '../../src/config.js';
-import userModel from '../../src/model/user/user-schema.js';
+import AuthUtils, { type AuthRequest } from '#src/auth/authUtils.js';
+import config from '#src/config.js';
+import userModel from '#src/model/user/user-schema.js';
 
 describe('the authUtils', () => {
   const reqStub = { user: '', userType: '', baseUrl: '' } as unknown as AuthRequest;

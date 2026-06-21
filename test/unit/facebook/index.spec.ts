@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import app from '#src/index.js';
 import request from '../../helpers/api.js';
-import authUtils from '../../../src/auth/authUtils.js';
-import userModel from '../../../src/model/user/user-facade.js';
-import FacebookToken from '../../../src/model/facebook/facebook-schema.js';
-import * as mailer from '../../../src/lib/mailer.js';
+import authUtils from '#src/auth/authUtils.js';
+import userModel from '#src/model/user/user-facade.js';
+import FacebookToken from '#src/model/facebook/facebook-schema.js';
+import * as mailer from '#src/lib/mailer.js';
 import {
   updateFacebookCache, migrateLegacyToken, __reset, __getState, FB_GRAPH_VERSION,
-} from '../../../src/model/facebook/FacebookController.js';
+} from '#src/model/facebook/FacebookController.js';
 
 // Intercept only Graph API calls; pass the test client's own HTTP through.
 const realFetch = globalThis.fetch.bind(globalThis);

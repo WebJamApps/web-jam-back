@@ -1,4 +1,4 @@
-import routeUtils from '../../../src/lib/routeUtils.js';
+import routeUtils from '#src/lib/routeUtils.js';
 
 describe('routeUtils', () => {
   it('makeAction catches error', async () => {

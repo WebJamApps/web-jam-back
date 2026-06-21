@@ -1,4 +1,4 @@
-import Facade from '../../../src/lib/facade.js';
+import Facade from '#src/lib/facade.js';
 
 describe('lib facade', () => {
   let facade;

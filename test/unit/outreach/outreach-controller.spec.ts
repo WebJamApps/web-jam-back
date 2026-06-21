@@ -7,10 +7,10 @@ vi.mock('#src/lib/mailer.js', () => ({
   default: { sendMail },
 }));
 
-const { default: controller } = await import('../../../src/model/outreach/outreach-controller.js');
-const { default: userModel } = await import('../../../src/model/user/user-facade.js');
-const { default: venueModel } = await import('../../../src/model/venue/venue-facade.js');
-const { default: templateModel } = await import('../../../src/model/template/template-facade.js');
+const { default: controller } = await import('#src/model/outreach/outreach-controller.js');
+const { default: userModel } = await import('#src/model/user/user-facade.js');
+const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
+const { default: templateModel } = await import('#src/model/template/template-facade.js');
 
 const c = controller as any;
 

@@ -1,7 +1,7 @@
 import app from '#src/index.js';
-import BookModel from '../../src/model/book/book-facade.js';
-import userModel from '../../src/model/user/user-facade.js';
-import authUtils from '../../src/auth/authUtils.js';
+import BookModel from '#src/model/book/book-facade.js';
+import userModel from '#src/model/user/user-facade.js';
+import authUtils from '#src/auth/authUtils.js';
 import request, { type ApiResponse } from '../helpers/api.js';
 
 describe('The Book API', () => {
