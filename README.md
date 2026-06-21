@@ -1,6 +1,7 @@
 # web-jam-back
 
 [![CircleCI](https://circleci.com/gh/WebJamApps/web-jam-back.svg?style=svg)](https://circleci.com/gh/WebJamApps/web-jam-back)
+[![coverage](https://img.shields.io/badge/coverage-91%25-brightgreen)](https://app.circleci.com/pipelines/github/WebJamApps/web-jam-back)
 [![Known Vulnerabilities](https://snyk.io/test/github/webjamapps/web-jam-back/badge.svg)](https://snyk.io/test/github/webjamapps/web-jam-back)
 
 This repository is used for the following apps:
@@ -183,6 +184,8 @@ These live in the **Web Jam LLC** Meta app (developers.facebook.com), not in cod
 ## Test
 
 **`npm test`** runs the tests and generates a coverage report.
+
+Coverage is **gated**: the run fails (and so does CI) if total statements or lines drop below **90%**, or branches/functions below **80%** (see `coverage.thresholds` in `vitest.config.ts`). The coverage badge above is a static value — bump the percentage in the README when it moves meaningfully.
 
 if some tests fail it is probably due to the TEST database instance of MongoDb Atlas needs to be resumed.
 
