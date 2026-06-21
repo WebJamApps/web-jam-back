@@ -190,5 +190,30 @@ describe('Venue Controller', () => {
       const f = (controller as any).constructor.buildListFilter({ status: 'archived', venueType: 'Originals' });
       expect(f).toEqual({ status: 'archived', venueType: 'Originals' });
     });
+
+    it('filters by outreachEligible (#843) — only vetted venues', () => {
+      const f = (controller as any).constructor.buildListFilter({ outreachEligible: 'true' });
+      expect(f).toMatchObject({ outreachEligible: true });
+      const g = (controller as any).constructor.buildListFilter({ outreachEligible: 'false' });
+      expect(g).toMatchObject({ outreachEligible: false });
+    });
+  });
+
+  describe('outreachEligible tagging (#843)', () => {
+    it('persists outreachEligible on create (passes through ...body)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const create = vi.fn(() => Promise.resolve({ _id: 'v9' }));
+      c.model.create = create;
+      await c.createVenue({ user: 'a', body: { name: 'The Spot', venueType: 'Originals', outreachEligible: true } }, resStub);
+      expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({ outreachEligible: true, venueType: 'Originals' });
+    });
+
+    it('lets a venue be tagged eligible via update', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({ user: 'a', params: { id }, body: { outreachEligible: true } }, resStub);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ outreachEligible: true }));
+    });
   });
 });

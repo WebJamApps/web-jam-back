@@ -38,6 +38,7 @@ interface VenueBody {
   phone?: string;
   website?: string;
   status?: string;
+  outreachEligible?: boolean;
   notes?: string;
   lastContacted?: string;
   actor?: string;
@@ -111,6 +112,10 @@ class VenueController extends Controller {
     if (typeof query.status === 'string') filter.status = query.status;
     else filter.status = { $ne: 'archived' };
     if (typeof query.venueType === 'string') filter.venueType = query.venueType;
+    // Outreach targeting (#843): ?outreachEligible=true returns only vetted
+    // venues — the pool #844's approval flow proposes from.
+    if (query.outreachEligible === 'true') filter.outreachEligible = true;
+    else if (query.outreachEligible === 'false') filter.outreachEligible = false;
     return filter;
   }
 
