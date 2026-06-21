@@ -10,6 +10,7 @@ import outreachModel from './outreach-facade.js';
 import venueModel from '../venue/venue-facade.js';
 import templateModel from '../template/template-facade.js';
 import userModel from '../user/user-facade.js';
+import { MAX_STEP, nextTouchDueAfter } from './cadence.js';
 
 // Every gig pitch CCs Josh + Maria so they see each send land (mirrors the
 // InquiryController CC precedent). Maria's address is the same one inquiries CC.
@@ -43,6 +44,10 @@ interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 
 interface VenueDoc { _id?: unknown; name?: string; email?: string; contactName?: string; venueType?: string; status?: string }
 interface TemplateDoc { type?: string; subject?: string; bodyHtml?: string; footerPhotoRef?: string }
+interface FollowUp { sentAt?: Date; messageId?: string; step?: number }
+interface OutreachDoc {
+  _id?: unknown; venueId?: unknown; sentAt?: Date; step?: number; targetDates?: string; followUps?: FollowUp[];
+}
 
 const OUTREACH_STATUSES = ['sent', 'replied', 'declined', 'booked', 'no-response'];
 
@@ -108,6 +113,38 @@ function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody)
   let html = personalize(template.bodyHtml || '', venue, body);
   const attachments = [];
   const assetPath = template.footerPhotoRef ? resolveFooterAsset(template.footerPhotoRef) : null;
+  /* istanbul ignore else */
+  if (assetPath) {
+    html += footerHtml();
+    attachments.push({ filename: 'josh-maria.jpg', path: assetPath, cid: 'footerphoto' });
+  }
+  return { subject, html, attachments };
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function fmtDate(d: Date): string { return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`; }
+
+// Build a cadence follow-up email (#824) for an outreach record: a short,
+// personalized nudge referencing the original pitch date + target window, with
+// the same inline-CID footer photo as the pitch.
+function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
+  subject: string; html: string; attachments: { filename: string; path: string; cid: string }[];
+} {
+  const contact = venue.contactName || 'there';
+  const venueName = venue.name || 'your venue';
+  const dates = outreach.targetDates || 'an upcoming date';
+  const orig = outreach.sentAt ? fmtDate(new Date(outreach.sentAt)) : 'earlier this season';
+  const subject = `Following up — Josh & Maria at ${venueName}`;
+  let html = [
+    `<p>Hi ${contact},</p>`,
+    `<p>Just following up on my note from ${orig} about Josh &amp; Maria — my wife and I are a husband-wife `
+      + `acoustic duo here in Salem, VA. We'd still love to be considered for a slot at ${venueName} around ${dates}.</p>`,
+    "<p>Completely understand if the calendar's full; even a later window would be great. "
+      + 'Happy to send more live samples or work around your schedule.</p>',
+    '<p>Best,<br>Josh &amp; Maria<br>540-494-8035<br><a href="https://www.joshandmariamusic.com">joshandmariamusic.com</a></p>',
+  ].join('\n');
+  const attachments = [];
+  const assetPath = resolveFooterAsset('footer-josh-maria');
   /* istanbul ignore else */
   if (assetPath) {
     html += footerHtml();
@@ -238,17 +275,21 @@ class OutreachController extends Controller {
       });
     } catch (e) { return res.status(502).json({ message: `email send failed: ${(e as Error).message}` }); }
 
+    const sentAt = new Date();
     let record;
     try {
       record = await this.model.create({
         venueId: body.venueId,
         templateUsed: type,
         targetDates: body.targetDates,
-        sentAt: new Date(),
+        sentAt,
         status: 'sent',
         messageId: sent.messageId,
         sentBy: actor,
         lastModifiedBy: actor,
+        // Cadence (#824): the pitch is touch 1; schedule the first follow-up.
+        step: 1,
+        nextTouchDue: nextTouchDueAfter(1, sentAt),
       });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
 
@@ -259,6 +300,58 @@ class OutreachController extends Controller {
     } catch { /* best-effort: lastContacted is non-critical */ }
 
     return res.status(201).json(record);
+  }
+
+  // Send one due email follow-up for an outreach record and reschedule it, or
+  // park it as no-response once the sequence is exhausted. Returns the per-record
+  // outcome ('sent' | 'parked' | 'skipped'). Helper for advanceCadence.
+  async processDue(o: OutreachDoc): Promise<'sent' | 'parked' | 'skipped'> {
+    if ((o.step || 1) >= MAX_STEP) {
+      try {
+        await this.model.findByIdAndUpdate(String(o._id), { status: 'no-response', nextTouchDue: null, lastModifiedBy: 'cadence-engine' });
+        return 'parked';
+      } catch { return 'skipped'; }
+    }
+    let venue: VenueDoc | null;
+    try { venue = await venueModel.findById(String(o.venueId)) as unknown as VenueDoc | null; } catch { return 'skipped'; }
+    if (!venue || venue.status === 'archived' || !venue.email) return 'skipped';
+
+    const touchNum = (o.step || 1) + 1;
+    const { subject, html, attachments } = buildFollowUpEmail(venue, o);
+    let sent: { messageId: string };
+    try { sent = await sendMail({ to: venue.email, cc: PITCH_CC, subject, html, attachments }); } catch { return 'skipped'; }
+
+    const followUps = [...(o.followUps || []), { sentAt: new Date(), messageId: sent.messageId, step: touchNum }];
+    try {
+      await this.model.findByIdAndUpdate(String(o._id), {
+        step: touchNum,
+        nextTouchDue: nextTouchDueAfter(touchNum, new Date(o.sentAt || Date.now())),
+        followUps,
+        lastModifiedBy: 'cadence-engine',
+      });
+      return 'sent';
+    } catch { return 'skipped'; }
+  }
+
+  // POST /outreach/advance — cadence tick. Sends every email follow-up that's due
+  // (status 'sent', nextTouchDue <= now), reschedules it, and parks exhausted
+  // sequences as no-response. Meant to be hit on a schedule (Deno Cron, #100).
+  // Reply-detection + call touches arrive with the Google integration (#825); for
+  // now a venue reply is marked by hand via PUT /outreach/:id, which halts it.
+  async advanceCadence(req: AuthRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, ['outreach:edit']);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    const now = new Date();
+    let due: OutreachDoc[];
+    try { due = await this.model.find({ status: 'sent', nextTouchDue: { $ne: null, $lte: now } }) as unknown as OutreachDoc[]; } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    const result = { processed: due.length, sent: 0, parked: 0, skipped: 0 };
+    for (const o of due) {
+      const outcome = await this.processDue(o); // eslint-disable-line no-await-in-loop
+      result[outcome] += 1;
+    }
+    return res.status(200).json(result);
   }
 }
 

@@ -277,4 +277,80 @@ describe('Outreach Controller', () => {
       expect(payload).toHaveLength(1);
     });
   });
+
+  describe('sendPitch schedules the first follow-up', () => {
+    it('stamps step 1 + a nextTouchDue on the new record', async () => {
+      await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16' } }, resStub);
+      expect(status).toBe(201);
+      const rec = (c.model.create as any).mock.calls[0][0];
+      expect(rec.step).toBe(1);
+      expect(rec.nextTouchDue).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('advanceCadence (#824)', () => {
+    const dueRecord = (over = {}) => ({
+      _id: 'o1', venueId: validVenue()._id, sentAt: new Date('2026-06-01T12:00:00Z'), step: 1, targetDates: 'Aug 14-16', followUps: [], ...over,
+    });
+
+    beforeEach(() => {
+      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({}));
+    });
+
+    it('403s without the outreach:edit capability', async () => {
+      asAgent(['outreach:create']);
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(status).toBe(403);
+    });
+
+    it('sends a due follow-up and reschedules the record', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(status).toBe(200);
+      expect(payload).toMatchObject({ processed: 1, sent: 1, parked: 0, skipped: 0 });
+      expect(sendMail).toHaveBeenCalledTimes(1);
+      const upd = (c.model.findByIdAndUpdate as any).mock.calls[0][1];
+      expect(upd.step).toBe(2);
+      expect(upd.nextTouchDue).toBeInstanceOf(Date);
+      expect(upd.followUps).toHaveLength(1);
+      expect(upd.followUps[0].step).toBe(2);
+    });
+
+    it('parks an exhausted sequence as no-response (no send)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 3 })]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, parked: 1 });
+      expect(sendMail).not.toHaveBeenCalled();
+      const upd = (c.model.findByIdAndUpdate as any).mock.calls[0][1];
+      expect(upd.status).toBe('no-response');
+      expect(upd.nextTouchDue).toBeNull();
+    });
+
+    it('skips a record whose venue is archived or has no email', async () => {
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ status: 'archived' })));
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, skipped: 1, sent: 0 });
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('skips a record when its follow-up send fails', async () => {
+      sendMail.mockRejectedValueOnce(new Error('smtp down'));
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, skipped: 1 });
+    });
+
+    it('500s when the due query throws', async () => {
+      c.model.find = vi.fn(() => Promise.reject(new Error('db down')));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(status).toBe(500);
+    });
+
+    it('reports an empty tick when nothing is due', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 0, sent: 0, parked: 0, skipped: 0 });
+    });
+  });
 });
