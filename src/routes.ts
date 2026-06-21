@@ -10,6 +10,7 @@ import subscriber from './model/subscriber/subscriber-router.js';
 import adminSubscriber from './model/subscriber/admin-subscriber-router.js';
 import promo from './model/promo/promo-router.js';
 import venue from './model/venue/venue-router.js';
+import template from './model/template/template-router.js';
 import facebook from './model/facebook/index.js';
 
 const router = express.Router();
@@ -27,5 +28,6 @@ export default function route(app: Express): void {
   router.use('/admin/subscriber', adminSubscriber);
   router.use('/promo', promo);
   router.use('/venue', venue);
+  router.use('/template', template);
   router.use('/facebook', facebook);
 }

@@ -24,6 +24,14 @@ export const CAPABILITIES = [
   'venue:create',
   'venue:edit',
   'venue:delete',
+  // Pitch-email template management (web-jam-back#822). Granted to the shared
+  // web-jam-llm AI-agent identity so agents (and the JaMmusic admin UI) can CRUD
+  // the template collection; humans pass via the admin role fallback. No
+  // `template:read` — same convention as venue: reads are gated by holding any
+  // template write capability (or the admin role).
+  'template:create',
+  'template:edit',
+  'template:delete',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
