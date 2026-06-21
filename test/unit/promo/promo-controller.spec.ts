@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import controller from '../../../src/model/promo/promo-controller.js';
-import userModel from '../../../src/model/user/user-facade.js';
-import subscriberModel from '../../../src/model/subscriber/subscriber-facade.js';
+import controller from '#src/model/promo/promo-controller.js';
+import userModel from '#src/model/user/user-facade.js';
+import subscriberModel from '#src/model/subscriber/subscriber-facade.js';
 
 vi.mock('#src/lib/mailer.js', () => ({
   sendMail: vi.fn(() => Promise.resolve()),

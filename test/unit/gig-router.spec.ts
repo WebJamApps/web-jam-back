@@ -1,7 +1,7 @@
 import app from '#src/index.js';
-import GigModel from '../../src/model/gig/gig-facade.js';
-import userModel from '../../src/model/user/user-facade.js';
-import authUtils from '../../src/auth/authUtils.js';
+import GigModel from '#src/model/gig/gig-facade.js';
+import userModel from '#src/model/user/user-facade.js';
+import authUtils from '#src/auth/authUtils.js';
 import request, { type ApiResponse } from '../helpers/api.js';
 
 describe('The Gig API', () => {

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'fs';
 import path from 'path';
-import capabilities, { CAPABILITIES, isValidCapability, validatePrivileges } from '../../../src/auth/capabilities.js';
+import capabilities, { CAPABILITIES, isValidCapability, validatePrivileges } from '#src/auth/capabilities.js';
 
 // Recursively collect every *-controller.ts under src/.
 function controllerFiles(dir: string): string[] {

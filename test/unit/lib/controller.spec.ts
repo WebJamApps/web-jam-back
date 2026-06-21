@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
-import Controller from '../../../src/lib/controller.js';
+import Controller from '#src/lib/controller.js';
 
 describe('lib controller', () => {
   const goodId = new mongoose.Types.ObjectId();

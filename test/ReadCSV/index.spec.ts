@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import ReadCSV from '../../src/ReadCSV/index.js';
+import ReadCSV from '#src/ReadCSV/index.js';
 
 describe('ReadCSV', () => {
   it('runs', async () => {

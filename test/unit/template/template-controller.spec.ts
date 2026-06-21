@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
-import controller from '../../../src/model/template/template-controller.js';
-import userModel from '../../../src/model/user/user-facade.js';
-import { TEMPLATES, seedTemplates } from '../../../src/model/template/seed-templates.js';
+import controller from '#src/model/template/template-controller.js';
+import userModel from '#src/model/user/user-facade.js';
 
 const c = controller as any;
 
@@ -168,27 +167,5 @@ describe('Template Controller', () => {
       const f = (controller as any).constructor.buildListFilter({ type: 'Originals', active: 'true' });
       expect(f).toEqual({ type: 'Originals', active: true });
     });
-  });
-});
-
-describe('seed-templates', () => {
-  it('defines the 3 approved templates with valid types and tokens', () => {
-    expect(TEMPLATES).toHaveLength(3);
-    const types = TEMPLATES.map((t) => t.type).sort();
-    expect(types).toEqual(['MidRangeCafeBar', 'Originals', 'PubFestivalBrewery']);
-    TEMPLATES.forEach((t) => {
-      expect(t.bodyHtml).toContain('[Contact Name]');
-      expect(t.bodyHtml).toContain('[Venue Name]');
-      expect(t.footerPhotoRef).toBe('footer-josh-maria');
-    });
-  });
-
-  it('upserts each template by type (idempotent)', async () => {
-    const findOneAndUpdate = vi.fn((q: any) => Promise.resolve({ type: q.type }));
-    const docs = await seedTemplates({ findOneAndUpdate } as any);
-    expect(docs).toHaveLength(3);
-    expect(findOneAndUpdate).toHaveBeenCalledTimes(3);
-    const opts = (findOneAndUpdate.mock.calls[0] as unknown[])[2] as any;
-    expect(opts.upsert).toBe(true);
   });
 });

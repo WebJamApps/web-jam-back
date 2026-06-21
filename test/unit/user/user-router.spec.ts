@@ -1,5 +1,5 @@
-import authUtils from '../../../src/auth/authUtils.js';
-import app from '../../../src/index.js';
+import authUtils from '#src/auth/authUtils.js';
+import app from '#src/index.js';
 import request from '../../helpers/api.js';
 
 describe('user-router', () => {

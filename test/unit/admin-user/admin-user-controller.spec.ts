@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
-import controller from '../../../src/model/admin-user/admin-user-controller.js';
-import LibController from '../../../src/lib/controller.js';
+import controller from '#src/model/admin-user/admin-user-controller.js';
+import LibController from '#src/lib/controller.js';
 
 describe('Admin User Controller', () => {
   let status = 0;
