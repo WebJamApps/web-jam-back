@@ -34,6 +34,12 @@ const venueSchema = new Schema({
   status: {
     type: String, required: false, enum: ['active', 'archived'], default: 'active',
   },
+  // Outreach targeting gate (#843/#844). A venue is only ever selected as an
+  // outreach target when it has been VETTED: `outreachEligible` true AND a
+  // `venueType` set. Defaults to FALSE so no venue can be auto-pitched until a
+  // human has explicitly tagged + enabled it ("approval required by default" at
+  // the venue level — never auto-select an unvetted venue).
+  outreachEligible: { type: Boolean, required: false, default: false },
   notes: { type: String, required: false },
   lastContacted: { type: Date, required: false },
   // The AI agent or human that last wrote this record (#818 `actor` field — one
