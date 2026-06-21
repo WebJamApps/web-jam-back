@@ -20,6 +20,7 @@ const options = {
 const followUpSchema = new Schema({
   sentAt: { type: Date, required: false },
   messageId: { type: String, required: false },
+  step: { type: Number, required: false },
 }, { _id: false });
 
 const outreachSchema = new Schema({
@@ -38,6 +39,13 @@ const outreachSchema = new Schema({
   // Which AI agent or human sent this pitch (#818 `actor` field).
   sentBy: { type: String, required: false, trim: true },
   followUps: { type: [followUpSchema], required: false, default: [] },
+  // Cadence engine (#824). `step` is the touch number already sent (1 = the
+  // pitch). `nextTouchDue` is when the next email follow-up should go out; the
+  // advance endpoint sends everything due and bumps these. Null nextTouchDue =
+  // no more touches scheduled (sequence finished or halted). Call touches
+  // (days 7/18) are added with the Google Calendar work (#825).
+  step: { type: Number, required: false, default: 1 },
+  nextTouchDue: { type: Date, required: false, default: null },
   lastModifiedBy: { type: String, required: false },
 }, options);
 
