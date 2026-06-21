@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.0.24",
+  "version": "2.0.26",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -17,12 +17,13 @@
   },
   "scripts": {
     "rmrf": "rimraf build && rimraf JaMmusic && rimraf coverage",
-    "dev": "rimraf build && tsc && concurrently --raw \"npm:ts-start\" \"npm:ts-watch\"",
+    "dev": "rimraf build && tsc && npm run copy:assets && concurrently --raw \"npm:ts-start\" \"npm:ts-watch\"",
+    "copy:assets": "node scripts/copy-assets.mjs",
     "ts-watch": "tsc -w",
     "ts-start": "DEBUG=web-jam-back:* node --watch --trace-deprecation build/src/index.js",
     "installglobals": "npm install -g npm@latest && npm install -g snyk",
     "build:front": "./postinstallJaM.sh && rimraf ./JaMmusic/src && rimraf ./JaMmusic/test",
-    "postinstall": "npm run rmrf && tsc -p tsconfig.prod.json && npm run build:front",
+    "postinstall": "npm run rmrf && tsc -p tsconfig.prod.json && npm run copy:assets && npm run build:front",
     "start": "node build/src/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.prod.json",
     "cleanup": "rimraf yarn.lock && rimraf package-lock.json && rimraf node_modules && rimraf JaMmusic && rimraf build && rimraf coverage",
@@ -32,7 +33,7 @@
     "test": "eslint ./src && rimraf coverage && npm run test:unit",
     "test:lint": "eslint ./src --fix",
     "test:local": "npm run test:lint && rimraf coverage && npm run test:unit",
-    "test:unit": "vitest run",
+    "test:unit": "vitest run --coverage",
     "test:all": "npm run test:local"
   },
   "repository": {

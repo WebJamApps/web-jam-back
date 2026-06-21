@@ -32,6 +32,14 @@ export const CAPABILITIES = [
   'template:create',
   'template:edit',
   'template:delete',
+  // Booking-outreach send + log management (web-jam-back#823). Granted to the
+  // shared web-jam-llm AI-agent identity so agents (and the JaMmusic admin UI)
+  // can run POST /outreach/send and CRUD the outreach log; humans pass via the
+  // admin role fallback. No `outreach:read` — same convention as venue/template:
+  // reads are gated by holding any outreach write capability (or the admin role).
+  'outreach:create',
+  'outreach:edit',
+  'outreach:delete',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
