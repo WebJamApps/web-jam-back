@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
-import controller from '../../../src/model/subscriber/subscriber-controller.js';
-import LibController from '../../../src/lib/controller.js';
+import controller from '#src/model/subscriber/subscriber-controller.js';
+import LibController from '#src/lib/controller.js';
 
 vi.mock('#src/lib/mailer.js', () => ({
   sendMail: vi.fn(() => Promise.resolve()),

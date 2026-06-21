@@ -1,4 +1,4 @@
-import roleGrants, { ROLE_GRANTERS, canGrantRole } from '../../../src/auth/roleGrants.js';
+import roleGrants, { ROLE_GRANTERS, canGrantRole } from '#src/auth/roleGrants.js';
 
 describe('roleGrants — who may grant which role', () => {
   it('Developer (superadmin) can grant any role, including unknown ones', () => {

@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import userFacade from '../../../src/model/user/user-facade.js';
+import userFacade from '#src/model/user/user-facade.js';
 
 describe('user-facade', () => {
   let r;

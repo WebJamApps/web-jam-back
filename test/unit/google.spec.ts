@@ -1,4 +1,4 @@
-import google, { type GoogleAuthenticateResponse } from '../../src/auth/google.js';
+import google, { type GoogleAuthenticateResponse } from '#src/auth/google.js';
 
 describe('google.ts', () => {
   afterEach(() => { vi.unstubAllGlobals(); });

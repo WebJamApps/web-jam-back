@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import utils from '../../../src/lib/utils.js';
+import utils from '#src/lib/utils.js';
 
 describe('utils', () => {
   it('mongoConnect catches error', async () => {

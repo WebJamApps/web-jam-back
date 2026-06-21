@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
-import controller from '../../../src/model/venue/venue-controller.js';
-import userModel from '../../../src/model/user/user-facade.js';
-import gigModel from '../../../src/model/gig/gig-facade.js';
+import controller from '#src/model/venue/venue-controller.js';
+import userModel from '#src/model/user/user-facade.js';
+import gigModel from '#src/model/gig/gig-facade.js';
 
 const c = controller as any;
 
