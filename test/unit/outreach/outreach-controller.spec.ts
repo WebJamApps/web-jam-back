@@ -183,6 +183,47 @@ describe('Outreach Controller', () => {
       expect(status).toBe(502);
       expect(c.model.create).not.toHaveBeenCalled();
     });
+
+    it('succeeds even when the lastContacted stamp fails (best-effort)', async () => {
+      (venueModel as any).findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('write conflict')));
+      await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16' } }, resStub);
+      expect(status).toBe(201);
+    });
+  });
+
+  describe('sendPitch error handling', () => {
+    const send = () => c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16' } }, resStub);
+
+    it('500s when the venue lookup throws', async () => {
+      (venueModel as any).findById = vi.fn(() => Promise.reject(new Error('db down')));
+      await send();
+      expect(status).toBe(500);
+      expect(payload.message).toContain('db down');
+    });
+
+    it('500s when the template lookup throws', async () => {
+      (templateModel as any).findOne = vi.fn(() => Promise.reject(new Error('tpl down')));
+      await send();
+      expect(status).toBe(500);
+    });
+
+    it('500s when the dedup lookup throws', async () => {
+      c.model.findOne = vi.fn(() => Promise.reject(new Error('dedup down')));
+      await send();
+      expect(status).toBe(500);
+    });
+
+    it('500s when the record write throws', async () => {
+      c.model.create = vi.fn(() => Promise.reject(new Error('insert down')));
+      await send();
+      expect(status).toBe(500);
+    });
+
+    it('500s when authorize itself throws', async () => {
+      (userModel as any).findById = vi.fn(() => Promise.reject(new Error('auth down')));
+      await send();
+      expect(status).toBe(500);
+    });
   });
 
   describe('updateOutreach', () => {

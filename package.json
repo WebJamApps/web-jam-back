@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.0.24",
+  "version": "2.0.25",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -33,7 +33,7 @@
     "test": "eslint ./src && rimraf coverage && npm run test:unit",
     "test:lint": "eslint ./src --fix",
     "test:local": "npm run test:lint && rimraf coverage && npm run test:unit",
-    "test:unit": "vitest run",
+    "test:unit": "vitest run --coverage",
     "test:all": "npm run test:local"
   },
   "repository": {
