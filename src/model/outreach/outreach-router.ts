@@ -73,6 +73,10 @@ router.route('/:id')
   .put((req, res) => {
     const action = routeUtils.makeAction(req, res, 'updateOutreach', controller, authUtils);
     void action();
+  })
+  .delete((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'deleteOutreach', controller, authUtils);
+    void action();
   });
 
 export default router;
