@@ -62,6 +62,18 @@ describe('Venue Controller', () => {
       expect(payload.message).toContain('venueType');
     });
 
+    it('rejects an invalid relationshipStage (#848)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', relationshipStage: 'lukewarm' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('relationshipStage');
+    });
+
+    it('rejects an invalid templateOverride (#848)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', templateOverride: 'Bogus' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('templateOverride');
+    });
+
     it('rejects an invalid email', async () => {
       await c.createVenue({ user: 'a', body: { name: 'X', email: 'nope' } }, resStub);
       expect(status).toBe(400);

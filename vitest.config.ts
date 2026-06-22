@@ -14,6 +14,11 @@ export default defineConfig({
     include: ['test/**/*.spec.ts'],
     bail: 1,
     mockReset: true,
+    // Integration specs share one Mongo test DB and some wipe whole collections
+    // (e.g. userModel.deleteMany({})). Run test files strictly sequentially so one
+    // file's cleanup can't wipe another file's auth user mid-request — the cause
+    // of the intermittent 401 in book-router's "should update one book".
+    fileParallelism: false,
     pool: 'forks',
     forks: { singleFork: true },
     coverage: {

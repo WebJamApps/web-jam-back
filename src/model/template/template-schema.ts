@@ -17,8 +17,17 @@ const templateSchema = new Schema({
   type: {
     type: String,
     required: true,
-    unique: true,
     enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar', 'OnlineForm'],
+  },
+  // Relationship stage (#848): `cold` = first contact, `returning` = "we've
+  // played here, would love to come back". A template is now keyed by type +
+  // stage, so each venue type can have a different cold vs. returning pitch.
+  // Existing single-per-type templates default to `cold`.
+  stage: {
+    type: String,
+    required: false,
+    enum: ['cold', 'returning'],
+    default: 'cold',
   },
   subject: { type: String, required: false, trim: true },
   bodyHtml: { type: String, required: false },
@@ -27,5 +36,8 @@ const templateSchema = new Schema({
   // The AI agent or human that last wrote this record (#818 `actor` field).
   lastModifiedBy: { type: String, required: false },
 }, options);
+
+// One template per (type, stage) — replaces the old `type`-unique constraint (#848).
+templateSchema.index({ type: 1, stage: 1 }, { unique: true });
 
 export default mongoose.models.Template || mongoose.model('Template', templateSchema);

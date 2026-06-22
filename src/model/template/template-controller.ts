@@ -6,6 +6,7 @@ import templateModel from './template-facade.js';
 import userModel from '../user/user-facade.js';
 
 const TEMPLATE_TYPES = ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar', 'OnlineForm'];
+const TEMPLATE_STAGES = ['cold', 'returning'];
 
 // Role fallback for human admins who authorize by role (no privileges array).
 // AI agents pass via the template:* capabilities on the shared web-jam-llm
@@ -25,6 +26,7 @@ type AuthzResult = AuthzError | null;
 interface TemplateBody {
   _id?: string;
   type?: string;
+  stage?: string;
   subject?: string;
   bodyHtml?: string;
   footerPhotoRef?: string;
@@ -46,6 +48,7 @@ function validateBody(body: TemplateBody, partial: boolean): string {
     if (!body.type || !body.type.trim()) return 'type is required';
   }
   if (body.type !== undefined && TEMPLATE_TYPES.indexOf(body.type) === -1) return 'type not valid';
+  if (body.stage !== undefined && TEMPLATE_STAGES.indexOf(body.stage) === -1) return 'stage not valid';
   return '';
 }
 
@@ -80,6 +83,7 @@ class TemplateController extends Controller {
   static buildListFilter(query: Record<string, unknown>): Record<string, unknown> {
     const filter: Record<string, unknown> = {};
     if (typeof query.type === 'string') filter.type = query.type;
+    if (typeof query.stage === 'string') filter.stage = query.stage;
     if (query.active === 'true') filter.active = true;
     if (query.active === 'false') filter.active = false;
     return filter;
@@ -108,10 +112,11 @@ class TemplateController extends Controller {
     return res.status(200).json(doc);
   }
 
-  // One template per type — dedupe on `type` so re-creating a known type updates
-  // it instead of duplicating.
+  // One template per (type, stage) — dedupe on both so re-creating a known
+  // type+stage updates it instead of duplicating (#848). A body without a stage
+  // defaults to `cold`, matching the schema default.
   async findDuplicate(body: TemplateBody): Promise<Record<string, unknown> | null> {
-    return this.model.findOne({ type: body.type });
+    return this.model.findOne({ type: body.type, stage: body.stage || 'cold' });
   }
 
   // POST /template — create a template, or upsert onto the existing one for that
