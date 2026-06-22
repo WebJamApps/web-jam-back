@@ -499,6 +499,41 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
+  describe('deleteOutreach (#857)', () => {
+    it('403s without the outreach:delete capability', async () => {
+      asAgent(['outreach:edit']);
+      await c.deleteOutreach({ user: 'a', params: { id: oid() } }, resStub);
+      expect(status).toBe(403);
+    });
+
+    it('400s on an invalid id', async () => {
+      await c.deleteOutreach({ user: 'a', params: { id: 'bad' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('deletes a found record', async () => {
+      const id = oid();
+      const del = vi.fn(() => Promise.resolve({ _id: id, status: 'sent' }));
+      c.model.findByIdAndDelete = del;
+      await c.deleteOutreach({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(200);
+      expect(del).toHaveBeenCalledWith(id);
+      expect(payload._id).toBe(id);
+    });
+
+    it('400s when the record is not found', async () => {
+      c.model.findByIdAndDelete = vi.fn(() => Promise.resolve(null));
+      await c.deleteOutreach({ user: 'a', params: { id: oid() } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('500s when the delete throws', async () => {
+      c.model.findByIdAndDelete = vi.fn(() => Promise.reject(new Error('db down')));
+      await c.deleteOutreach({ user: 'a', params: { id: oid() } }, resStub);
+      expect(status).toBe(500);
+    });
+  });
+
   describe('getOutreach / listOutreach', () => {
     it('getOutreach rejects an invalid id', async () => {
       await c.getOutreach({ user: 'a', params: { id: 'bad' } }, resStub);
