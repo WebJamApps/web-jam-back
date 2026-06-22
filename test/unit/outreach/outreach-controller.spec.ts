@@ -130,64 +130,194 @@ describe('Outreach Controller', () => {
     });
   });
 
-  describe('sendPitch dedup guard', () => {
-    it('409s when an active outreach already exists for the venue + window', async () => {
-      c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'existing', status: 'sent' }));
+  describe('sendPitch — draft-first (#844)', () => {
+    it('creates a DRAFT and sends NOTHING by default', async () => {
+      await c.sendPitch({
+        user: 'opus', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16', bookingPeriod: 'late-summer', actor: 'opus' },
+      }, resStub);
+      expect(status).toBe(201);
+      expect(sendMail).not.toHaveBeenCalled();
+      const rec = (c.model.create as any).mock.calls[0][0];
+      expect(rec.status).toBe('draft');
+      expect(rec.templateUsed).toBe('Originals');
+      expect(rec.messageId).toBeUndefined();
+      expect(payload.message).toMatch(/approval/i);
+    });
+
+    it('dedup-guards against an existing draft/live pitch (409), incl. drafts', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'existing', status: 'draft' }));
       await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16' } }, resStub);
       expect(status).toBe(409);
       expect(sendMail).not.toHaveBeenCalled();
-      const filter = (c.model.findOne as any).mock.calls[0][0];
-      expect(filter.status).toEqual({ $in: ['sent', 'replied'] });
-    });
-  });
-
-  describe('sendPitch success', () => {
-    it('personalizes, CCs Josh + Maria, attaches the footer, and writes the record', async () => {
-      const venueId = validVenue()._id;
-      await c.sendPitch({
-        user: 'opus', body: { venueId, targetDates: 'Fri Aug 14 – Sun Aug 16', bookingPeriod: 'late-summer', actor: 'opus' },
-      }, resStub);
-
-      expect(status).toBe(201);
-      const mail = sendMail.mock.calls[0][0] as any;
-      expect(mail.to).toBe('booking@spotonkirk.com');
-      expect(mail.cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
-      expect(mail.subject).toBe('Performance Inquiry for The Spot on Kirk');
-      expect(mail.html).toContain('Hi Pat,');
-      expect(mail.html).toContain('late-summer');
-      expect(mail.html).toContain('Fri Aug 14 – Sun Aug 16');
-      expect(mail.html).not.toContain('[');
-      expect(mail.html).toContain('cid:footerphoto');
-      expect(mail.attachments[0].cid).toBe('footerphoto');
-
-      const rec = (c.model.create as any).mock.calls[0][0];
-      expect(rec.venueId).toBe(venueId);
-      expect(rec.templateUsed).toBe('Originals');
-      expect(rec.status).toBe('sent');
-      expect(rec.messageId).toBe('mid-123');
-      expect(rec.sentBy).toBe('opus');
-      expect((venueModel as any).findByIdAndUpdate).toHaveBeenCalled();
+      expect((c.model.findOne as any).mock.calls[0][0].status).toEqual({ $in: ['draft', 'sent', 'replied'] });
     });
 
-    it('honors an explicit templateType over the venue type', async () => {
+    it('honors an explicit templateType (still a draft)', async () => {
       const findOne = vi.fn(() => Promise.resolve(validTemplate({ type: 'MidRangeCafeBar' })));
       (templateModel as any).findOne = findOne;
       await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16', templateType: 'MidRangeCafeBar' } }, resStub);
       expect(status).toBe(201);
       expect(findOne).toHaveBeenCalledWith({ type: 'MidRangeCafeBar', active: true });
+      expect(sendMail).not.toHaveBeenCalled();
     });
 
-    it('502s and writes no record when the send fails', async () => {
-      sendMail.mockRejectedValueOnce(new Error('smtp down'));
-      await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16' } }, resStub);
-      expect(status).toBe(502);
-      expect(c.model.create).not.toHaveBeenCalled();
+    it('refuses override without outreach:approve (403, no send)', async () => {
+      await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16', override: true } }, resStub);
+      expect(status).toBe(403);
+      expect(sendMail).not.toHaveBeenCalled();
     });
 
-    it('succeeds even when the lastContacted stamp fails (best-effort)', async () => {
-      (venueModel as any).findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('write conflict')));
-      await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16' } }, resStub);
+    it('override + outreach:approve sends immediately as a sent record', async () => {
+      asAgent(['outreach:create', 'outreach:approve']);
+      await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16', override: true } }, resStub);
       expect(status).toBe(201);
+      expect(sendMail).toHaveBeenCalledTimes(1);
+      const rec = (c.model.create as any).mock.calls[0][0];
+      expect(rec.status).toBe('sent');
+      expect(rec.step).toBe(1);
+    });
+  });
+
+  describe('approveOutreach (#844) — the only normal send path', () => {
+    const draft = (over = {}) => ({
+      _id: 'd1', venueId: validVenue()._id, templateUsed: 'Originals', targetDates: 'Aug 14-16', bookingPeriod: 'late-summer', status: 'draft', ...over,
+    });
+    beforeEach(() => { c.model.findByIdAndUpdate = vi.fn((id: string, f: any) => Promise.resolve({ _id: id, ...f })); });
+
+    it('403s without outreach:approve — the agent cannot approve', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.approveOutreach({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(403);
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('renders + sends + flips draft to sent + schedules cadence', async () => {
+      asAgent(['outreach:approve']);
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve(draft()));
+      await c.approveOutreach({ user: 'josh', params: { id } }, resStub);
+      expect(status).toBe(200);
+      expect(sendMail).toHaveBeenCalledTimes(1);
+      expect((sendMail.mock.calls[0][0] as any).cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
+      const upd = (c.model.findByIdAndUpdate as any).mock.calls[0][1];
+      expect(upd.status).toBe('sent');
+      expect(upd.messageId).toBe('mid-123');
+      expect(upd.step).toBe(1);
+      expect(upd.nextTouchDue).toBeInstanceOf(Date);
+    });
+
+    it('400s when the record is not a draft', async () => {
+      asAgent(['outreach:approve']);
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve(draft({ status: 'sent' })));
+      await c.approveOutreach({ user: 'josh', params: { id } }, resStub);
+      expect(status).toBe(400);
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('400s when the draft is not found', async () => {
+      asAgent(['outreach:approve']);
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve(null));
+      await c.approveOutreach({ user: 'josh', params: { id } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('502s when the approved send fails', async () => {
+      asAgent(['outreach:approve']);
+      sendMail.mockRejectedValueOnce(new Error('smtp'));
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve(draft()));
+      await c.approveOutreach({ user: 'josh', params: { id } }, resStub);
+      expect(status).toBe(502);
+    });
+
+    it('400s on an invalid id', async () => {
+      asAgent(['outreach:approve']);
+      await c.approveOutreach({ user: 'josh', params: { id: 'bad' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('500s when the lookup throws', async () => {
+      asAgent(['outreach:approve']);
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.reject(new Error('db down')));
+      await c.approveOutreach({ user: 'josh', params: { id } }, resStub);
+      expect(status).toBe(500);
+    });
+
+    it('relays a resolve error if the venue went archived since drafting', async () => {
+      asAgent(['outreach:approve']);
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve(draft()));
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ status: 'archived' })));
+      await c.approveOutreach({ user: 'josh', params: { id } }, resStub);
+      expect(status).toBe(400);
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('override create-record path still stamps cadence (finalizeSend create branch)', async () => {
+      asAgent(['outreach:create', 'outreach:approve']);
+      await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16', override: true } }, resStub);
+      const rec = (c.model.create as any).mock.calls[0][0];
+      expect(rec.nextTouchDue).toBeInstanceOf(Date);
+    });
+  });
+
+  describe('rejectOutreach + previewOutreach (#844)', () => {
+    it('reject 403s without outreach:approve', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.rejectOutreach({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(403);
+    });
+
+    it('reject marks a draft rejected', async () => {
+      asAgent(['outreach:approve']);
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id, status: 'rejected' }));
+      c.model.findByIdAndUpdate = upd;
+      await c.rejectOutreach({ user: 'josh', params: { id } }, resStub);
+      expect(status).toBe(200);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ status: 'rejected' }));
+    });
+
+    it('preview renders the exact email without sending', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({
+        _id: id, venueId: validVenue()._id, templateUsed: 'Originals', targetDates: 'Aug 14-16', bookingPeriod: 'late-summer', status: 'draft',
+      }));
+      await c.previewOutreach({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(200);
+      expect(sendMail).not.toHaveBeenCalled();
+      expect(payload.subject).toContain('The Spot on Kirk');
+      expect(payload.html).toContain('Hi Pat,');
+      expect(payload.cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
+    });
+
+    it('reject 400s on an invalid id', async () => {
+      asAgent(['outreach:approve']);
+      await c.rejectOutreach({ user: 'josh', params: { id: 'bad' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('reject 400s when not found', async () => {
+      asAgent(['outreach:approve']);
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve(null));
+      await c.rejectOutreach({ user: 'josh', params: { id } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('preview 400s on an invalid id', async () => {
+      await c.previewOutreach({ user: 'a', params: { id: 'bad' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('preview 400s when the draft is not found', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve(null));
+      await c.previewOutreach({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(400);
     });
   });
 
@@ -278,15 +408,8 @@ describe('Outreach Controller', () => {
     });
   });
 
-  describe('sendPitch schedules the first follow-up', () => {
-    it('stamps step 1 + a nextTouchDue on the new record', async () => {
-      await c.sendPitch({ user: 'a', body: { venueId: validVenue()._id, targetDates: 'Aug 14-16' } }, resStub);
-      expect(status).toBe(201);
-      const rec = (c.model.create as any).mock.calls[0][0];
-      expect(rec.step).toBe(1);
-      expect(rec.nextTouchDue).toBeInstanceOf(Date);
-    });
-  });
+  // (Cadence touch 1 / nextTouchDue is stamped at APPROVAL now, not at draft —
+  // asserted in the approveOutreach block above.)
 
   describe('advanceCadence (#824)', () => {
     const dueRecord = (over = {}) => ({

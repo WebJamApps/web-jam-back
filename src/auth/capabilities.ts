@@ -40,6 +40,11 @@ export const CAPABILITIES = [
   'outreach:create',
   'outreach:edit',
   'outreach:delete',
+  // Approval gate (#844). `outreach:approve` is the ONLY capability that can
+  // actually send a pitch (approve a draft, or override the draft step). It is
+  // deliberately NOT granted to the web-jam-llm AI agent — agents may DRAFT but
+  // never send; only a human admin approves. Post-incident: no unapproved sends.
+  'outreach:approve',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
