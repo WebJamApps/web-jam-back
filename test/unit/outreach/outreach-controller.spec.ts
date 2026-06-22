@@ -469,6 +469,23 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ status: 'booked', gmailThreadId: 't1', lastModifiedBy: 'agent' }));
     });
 
+    it('nulls nextTouchDue when halting to a terminal status (#850)', async () => {
+      const id = oid();
+      const upd = vi.fn(() => Promise.resolve({ _id: id, status: 'no-response' }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateOutreach({ user: 'josh', params: { id }, body: { status: 'no-response' } }, resStub);
+      expect(status).toBe(200);
+      expect(upd.mock.calls[0][1].nextTouchDue).toBeNull();
+    });
+
+    it('leaves nextTouchDue untouched when no terminal status is set', async () => {
+      const id = oid();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateOutreach({ user: 'josh', params: { id }, body: { gmailThreadId: 't9' } }, resStub);
+      expect(upd.mock.calls[0][1]).not.toHaveProperty('nextTouchDue');
+    });
+
     it('500s when the update throws', async () => {
       c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db down')));
       await c.updateOutreach({ user: 'a', params: { id: oid() }, body: { status: 'booked' } }, resStub);
