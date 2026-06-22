@@ -40,6 +40,25 @@ const venueSchema = new Schema({
   // human has explicitly tagged + enabled it ("approval required by default" at
   // the venue level — never auto-select an unvetted venue).
   outreachEligible: { type: Boolean, required: false, default: false },
+  // Vetting/disqualification tags (#843) — the data a human uses to decide
+  // outreachEligible, and that the selection logic (#844) checks. Derived from
+  // the criteria review of the 5 mis-sent venues:
+  // - inScope: is this a gig-booking venue at all? false = anthem/other (Salem
+  //   Red Sox, ODAC Tournament) — never a target.
+  // - bookingStatus: `booking` = open to booking; `not-booking` = closed / new
+  //   management that stopped (Radford); `booked` = currently full (Olde Salem).
+  // - interested: false = not worth pursuing (pay too low / declined — Harrisonburg).
+  // - payTier: free-text pay note. lastVerified: when the info was last checked
+  //   (stale venues get re-verified). contactVerified: is the contact confirmed
+  //   correct (Olde Salem went to the wrong person).
+  inScope: { type: Boolean, required: false, default: true },
+  bookingStatus: {
+    type: String, required: false, enum: ['booking', 'not-booking', 'booked'], default: 'booking',
+  },
+  interested: { type: Boolean, required: false, default: true },
+  payTier: { type: String, required: false, trim: true },
+  lastVerified: { type: Date, required: false },
+  contactVerified: { type: Boolean, required: false, default: false },
   notes: { type: String, required: false },
   lastContacted: { type: Date, required: false },
   // The AI agent or human that last wrote this record (#818 `actor` field — one
