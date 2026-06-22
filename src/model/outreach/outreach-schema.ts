@@ -27,18 +27,19 @@ const outreachSchema = new Schema({
   venueId: { type: Schema.Types.ObjectId, ref: 'Venue', required: true },
   templateUsed: { type: String, required: false, trim: true },
   targetDates: { type: String, required: false, trim: true },
-  // Stored so an approved draft re-renders the EXACT copy that was reviewed
-  // (#844) — same template + venue + targetDates + bookingPeriod => same email.
+  // The booking window pitched (e.g. "August"); stored on the sent record so the
+  // copy and any cadence follow-ups stay consistent with what went out.
   bookingPeriod: { type: String, required: false, trim: true },
   sentAt: { type: Date, required: false, default: Date.now },
-  // `draft` = proposed, awaiting human approval — NOTHING has been emailed yet
-  // (#844). `rejected` = a human declined the draft. Only an approval moves a
-  // draft to `sent` (the point at which the email actually goes out).
+  // Campaign lifecycle. #844 reworked outreach to BATCH target-list approval —
+  // the approval gate is the venue selection, not a per-email draft — so the
+  // `draft`/`rejected` states are gone. A record exists only once an email has
+  // actually gone out (`sent`), then advances via replies/cadence.
   status: {
     type: String,
     required: false,
-    enum: ['draft', 'rejected', 'sent', 'replied', 'declined', 'booked', 'no-response'],
-    default: 'draft',
+    enum: ['sent', 'replied', 'declined', 'booked', 'no-response'],
+    default: 'sent',
   },
   messageId: { type: String, required: false, trim: true },
   gmailThreadId: { type: String, required: false, trim: true },
