@@ -30,7 +30,8 @@
     "cleaninstall": "npm install -g npm@latest && npm install -g rimraf && npm run cleanup && npm cache clean --force && npm install",
     "smoketest": "npm run cleanup && npm install --omit=dev",
     "node:debug": "node --inspect-brk index.js",
-    "test": "eslint ./src && rimraf coverage && npm run test:unit",
+    "jscpd": "jscpd src",
+    "test": "eslint ./src && npm run jscpd && rimraf coverage && npm run test:unit",
     "test:lint": "eslint ./src --fix",
     "test:local": "npm run test:lint && rimraf coverage && npm run test:unit",
     "test:unit": "vitest run --coverage",
@@ -78,6 +79,7 @@
     "eslint-plugin-security": "^4.0.0",
     "eslint-plugin-sonarjs": "^4.0.3",
     "globals": "^17.5.0",
+    "jscpd": "^5.0.11",
     "typescript-eslint": "^8.59.1",
     "vitest": "^4.1.5"
   },
