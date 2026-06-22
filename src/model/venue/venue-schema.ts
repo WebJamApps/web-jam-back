@@ -60,6 +60,13 @@ const venueSchema = new Schema({
   lastVerified: { type: Date, required: false },
   contactVerified: { type: Boolean, required: false, default: false },
   notes: { type: String, required: false },
+  // Template-selection inputs (#848). `relationshipStage` overrides the
+  // auto-derived cold/returning stage when set; left unset = auto-derive
+  // (booked / prior replied-or-booked outreach => returning, else cold).
+  // `templateOverride` forces a specific template type for special cases,
+  // beating the venue's own venueType.
+  relationshipStage: { type: String, required: false, enum: ['cold', 'returning'] },
+  templateOverride: { type: String, required: false, enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'] },
   lastContacted: { type: Date, required: false },
   // The AI agent or human that last wrote this record (#818 `actor` field — one
   // shared agent identity authenticates, but each write records who acted).

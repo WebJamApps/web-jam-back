@@ -84,12 +84,26 @@ describe('Template Controller', () => {
       expect(upd).toHaveBeenCalledWith('dup1', expect.objectContaining({ active: true }));
     });
 
-    it('dedupes by type', async () => {
+    it('dedupes by type + stage (defaults stage to cold)', async () => {
       const findOne = vi.fn(() => Promise.resolve(null));
       c.model.findOne = findOne;
       c.model.create = vi.fn(() => Promise.resolve({ _id: 'n' }));
       await c.createTemplate({ user: 'a', body: { type: 'MidRangeCafeBar' } }, resStub);
-      expect(findOne).toHaveBeenCalledWith({ type: 'MidRangeCafeBar' });
+      expect(findOne).toHaveBeenCalledWith({ type: 'MidRangeCafeBar', stage: 'cold' });
+    });
+
+    it('dedupes returning templates separately from cold', async () => {
+      const findOne = vi.fn(() => Promise.resolve(null));
+      c.model.findOne = findOne;
+      c.model.create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      await c.createTemplate({ user: 'a', body: { type: 'Originals', stage: 'returning' } }, resStub);
+      expect(findOne).toHaveBeenCalledWith({ type: 'Originals', stage: 'returning' });
+    });
+
+    it('rejects an invalid stage', async () => {
+      await c.createTemplate({ user: 'a', body: { type: 'Originals', stage: 'lukewarm' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('stage not valid');
     });
   });
 

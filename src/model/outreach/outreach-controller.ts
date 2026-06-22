@@ -67,6 +67,7 @@ interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 interface VenueDoc {
   _id?: unknown; name?: string; email?: string; contactName?: string;
   venueType?: string; status?: string; outreachEligible?: boolean;
+  bookingStatus?: string; relationshipStage?: string; templateOverride?: string;
 }
 interface TemplateDoc { type?: string; subject?: string; bodyHtml?: string; footerPhotoRef?: string }
 interface FollowUp { sentAt?: Date; messageId?: string; step?: number }
@@ -286,6 +287,29 @@ class OutreachController extends Controller {
     return res.status(200).json(doc);
   }
 
+  // Resolve a venue's relationship stage (#848). An explicit venue.relationshipStage
+  // wins; otherwise auto-derive: a currently-booked venue, or one with a prior
+  // outreach that got a reply or a booking, is `returning`; everything else is `cold`.
+  async resolveStage(venue: VenueDoc): Promise<'cold' | 'returning'> {
+    if (venue.relationshipStage === 'cold' || venue.relationshipStage === 'returning') return venue.relationshipStage;
+    if (venue.bookingStatus === 'booked') return 'returning';
+    const prior = await this.model.findOne({ venueId: String(venue._id), status: { $in: ['replied', 'booked'] } });
+    return prior ? 'returning' : 'cold';
+  }
+
+  // Pick the active template for a type + stage (#848). Cold also matches legacy
+  // templates with no stage set. A `returning` request with no returning variant
+  // yet falls back to the cold template, so sends never break before the
+  // returning copy is authored.
+  async findTemplate(type: string, stage: 'cold' | 'returning'): Promise<TemplateDoc | null> { // eslint-disable-line class-methods-use-this
+    const coldMatch = { type, active: true, $or: [{ stage: 'cold' }, { stage: { $exists: false } }, { stage: null }] };
+    if (stage === 'returning') {
+      const returning = await templateModel.findOne({ type, active: true, stage: 'returning' }) as unknown as TemplateDoc | null;
+      if (returning) return returning;
+    }
+    return await templateModel.findOne(coldMatch) as unknown as TemplateDoc | null;
+  }
+
   // Load + validate the venue and template for a send and run the dedup guard.
   // Returns a ready context, or an error envelope for the caller to relay.
   // requireEligible (default true): the venue must be VETTED (outreachEligible) —
@@ -304,15 +328,7 @@ class OutreachController extends Controller {
     }
     if (!venue.email) return { error: { status: 400, message: 'venue has no email to pitch' } };
 
-    const type = (body.templateType || venue.venueType || '').trim();
-    if (!type) return { error: { status: 400, message: 'no templateType and venue has no venueType' } };
-
-    let template: TemplateDoc | null;
-    try { template = await templateModel.findOne({ type, active: true }) as unknown as TemplateDoc | null; } catch (e) {
-      return { error: { status: 500, message: (e as Error).message } };
-    }
-    if (!template) return { error: { status: 400, message: `no active template for type ${type}` } };
-
+    // Dedup guard first — refuse a duplicate before doing template work.
     if (!skipDedup) {
       let dupe;
       try {
@@ -322,6 +338,20 @@ class OutreachController extends Controller {
         return { error: { status: 409, message: 'an active outreach already exists for this venue and target dates', outreach: dupe } };
       }
     }
+
+    // Template type: explicit caller value > per-venue override > venue's type (#848).
+    const type = (body.templateType || venue.templateOverride || venue.venueType || '').trim();
+    if (!type) return { error: { status: 400, message: 'no templateType and venue has no venueType' } };
+
+    let template: TemplateDoc | null;
+    try {
+      const stage = await this.resolveStage(venue);
+      template = await this.findTemplate(type, stage);
+    } catch (e) {
+      return { error: { status: 500, message: (e as Error).message } };
+    }
+    if (!template) return { error: { status: 400, message: `no active template for type ${type}` } };
+
     return { venue, template, type };
   }
 

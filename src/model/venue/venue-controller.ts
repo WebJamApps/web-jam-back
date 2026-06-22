@@ -47,6 +47,8 @@ interface VenueBody {
   lastVerified?: string;
   contactVerified?: boolean;
   notes?: string;
+  relationshipStage?: string;
+  templateOverride?: string;
   lastContacted?: string;
   actor?: string;
 }
@@ -79,6 +81,10 @@ function validateBody(body: VenueBody, partial: boolean): string {
   if (body.venueType !== undefined && VENUE_TYPES.indexOf(body.venueType) === -1) return 'venueType not valid';
   if (body.status !== undefined && STATUS_OPTIONS.indexOf(body.status) === -1) return 'status not valid';
   if (body.bookingStatus !== undefined && BOOKING_STATUSES.indexOf(body.bookingStatus) === -1) return 'bookingStatus not valid';
+  if (body.relationshipStage !== undefined && body.relationshipStage !== ''
+    && ['cold', 'returning'].indexOf(body.relationshipStage) === -1) return 'relationshipStage not valid';
+  if (body.templateOverride !== undefined && body.templateOverride !== ''
+    && VENUE_TYPES.indexOf(body.templateOverride) === -1) return 'templateOverride not valid';
   if (body.email !== undefined && body.email !== '' && !EMAIL_RE.test(String(body.email).trim().toLowerCase())) {
     return 'A valid email is required';
   }
