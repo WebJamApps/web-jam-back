@@ -205,7 +205,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       (templateModel as any).findOne = findOne;
       await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', templateType: 'MidRangeCafeBar' } }, resStub);
       expect(status).toBe(201);
-      expect(findOne).toHaveBeenCalledWith({ type: 'MidRangeCafeBar', active: true });
+      expect(findOne).toHaveBeenCalledWith(expect.objectContaining({ type: 'MidRangeCafeBar', active: true }));
     });
   });
 
@@ -252,6 +252,53 @@ describe('Outreach Controller (#844 batch model)', () => {
       sendMail.mockRejectedValueOnce(new Error('smtp'));
       await send();
       expect(status).toBe(502);
+    });
+  });
+
+  describe('template by stage (#848)', () => {
+    it('resolveStage: an explicit relationshipStage wins over auto-derive', async () => {
+      expect(await c.resolveStage(validVenue({ relationshipStage: 'returning' }))).toBe('returning');
+      expect(await c.resolveStage(validVenue({ relationshipStage: 'cold', bookingStatus: 'booked' }))).toBe('cold');
+    });
+
+    it('resolveStage: a booked venue auto-derives returning', async () => {
+      expect(await c.resolveStage(validVenue({ bookingStatus: 'booked' }))).toBe('returning');
+    });
+
+    it('resolveStage: a prior replied/booked outreach makes it returning', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'o', status: 'replied' }));
+      expect(await c.resolveStage(validVenue())).toBe('returning');
+    });
+
+    it('resolveStage: otherwise cold', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      expect(await c.resolveStage(validVenue())).toBe('cold');
+    });
+
+    it('findTemplate: uses the returning variant when present', async () => {
+      const findOne = vi.fn(() => Promise.resolve(validTemplate({ stage: 'returning' })));
+      (templateModel as any).findOne = findOne;
+      const t = await c.findTemplate('Originals', 'returning');
+      expect((t as any).stage).toBe('returning');
+      expect(findOne).toHaveBeenCalledWith({ type: 'Originals', active: true, stage: 'returning' });
+    });
+
+    it('findTemplate: returning falls back to cold when no returning variant exists', async () => {
+      const findOne = vi.fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(validTemplate());
+      (templateModel as any).findOne = findOne;
+      const t = await c.findTemplate('Originals', 'returning');
+      expect(t).toBeTruthy();
+      expect(findOne).toHaveBeenCalledTimes(2);
+    });
+
+    it('send uses the per-venue templateOverride as the type', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ venueType: 'Originals', templateOverride: 'MidRangeCafeBar' })));
+      await c.sendPitch({ user: 'josh', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      expect(status).toBe(201);
+      expect((c.model.create as any).mock.calls[0][0].templateUsed).toBe('MidRangeCafeBar');
     });
   });
 
