@@ -9,6 +9,7 @@ import gigModel from '../gig/gig-facade.js';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s.@]+$/;
 const VENUE_TYPES = ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'];
 const STATUS_OPTIONS = ['active', 'archived'];
+const BOOKING_STATUSES = ['booking', 'not-booking', 'booked'];
 
 // Role fallback for human admins who authorize by role (no privileges array).
 // AI agents pass via the venue:* capabilities on the shared web-jam-llm identity.
@@ -39,6 +40,12 @@ interface VenueBody {
   website?: string;
   status?: string;
   outreachEligible?: boolean;
+  inScope?: boolean;
+  bookingStatus?: string;
+  interested?: boolean;
+  payTier?: string;
+  lastVerified?: string;
+  contactVerified?: boolean;
   notes?: string;
   lastContacted?: string;
   actor?: string;
@@ -71,6 +78,7 @@ function validateBody(body: VenueBody, partial: boolean): string {
   }
   if (body.venueType !== undefined && VENUE_TYPES.indexOf(body.venueType) === -1) return 'venueType not valid';
   if (body.status !== undefined && STATUS_OPTIONS.indexOf(body.status) === -1) return 'status not valid';
+  if (body.bookingStatus !== undefined && BOOKING_STATUSES.indexOf(body.bookingStatus) === -1) return 'bookingStatus not valid';
   if (body.email !== undefined && body.email !== '' && !EMAIL_RE.test(String(body.email).trim().toLowerCase())) {
     return 'A valid email is required';
   }
@@ -113,9 +121,15 @@ class VenueController extends Controller {
     else filter.status = { $ne: 'archived' };
     if (typeof query.venueType === 'string') filter.venueType = query.venueType;
     // Outreach targeting (#843): ?outreachEligible=true returns only vetted
-    // venues — the pool #844's approval flow proposes from.
+    // venues — the pool #844's approval flow proposes from. The vetting tags
+    // below filter the candidate set further (in-scope, still booking, interested).
     if (query.outreachEligible === 'true') filter.outreachEligible = true;
     else if (query.outreachEligible === 'false') filter.outreachEligible = false;
+    if (query.inScope === 'true') filter.inScope = true;
+    else if (query.inScope === 'false') filter.inScope = false;
+    if (typeof query.bookingStatus === 'string') filter.bookingStatus = query.bookingStatus;
+    if (query.interested === 'true') filter.interested = true;
+    else if (query.interested === 'false') filter.interested = false;
     return filter;
   }
 

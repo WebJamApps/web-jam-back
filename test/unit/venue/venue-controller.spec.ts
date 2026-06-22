@@ -197,6 +197,44 @@ describe('Venue Controller', () => {
       const g = (controller as any).constructor.buildListFilter({ outreachEligible: 'false' });
       expect(g).toMatchObject({ outreachEligible: false });
     });
+
+    it('filters by the vetting tags inScope / bookingStatus / interested (#843)', () => {
+      const f = (controller as any).constructor.buildListFilter({ inScope: 'true', bookingStatus: 'booking', interested: 'true' });
+      expect(f).toMatchObject({ inScope: true, bookingStatus: 'booking', interested: true });
+      const g = (controller as any).constructor.buildListFilter({ inScope: 'false', interested: 'false' });
+      expect(g).toMatchObject({ inScope: false, interested: false });
+    });
+  });
+
+  describe('vetting tags (#843)', () => {
+    it('rejects an invalid bookingStatus', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', bookingStatus: 'bogus' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('bookingStatus');
+    });
+
+    it('persists the vetting tags on create', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const create = vi.fn(() => Promise.resolve({ _id: 'v10' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'Olde Salem', inScope: true, bookingStatus: 'booked', interested: false, payTier: 'low', contactVerified: true,
+        },
+      }, resStub);
+      expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({
+        inScope: true, bookingStatus: 'booked', interested: false, payTier: 'low', contactVerified: true,
+      });
+    });
+
+    it('lets the tags be set via update', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({ user: 'a', params: { id }, body: { inScope: false, interested: false } }, resStub);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ inScope: false, interested: false }));
+    });
   });
 
   describe('outreachEligible tagging (#843)', () => {
