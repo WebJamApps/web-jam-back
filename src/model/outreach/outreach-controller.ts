@@ -255,6 +255,11 @@ class OutreachController extends Controller {
     }
     const update: Record<string, unknown> = { lastModifiedBy: resolveActor(req, body) };
     if (body.status !== undefined) update.status = body.status;
+    // Halting a campaign must clear any pending cadence touch so a halted record
+    // can NEVER fire a follow-up (#850). The cadence engine only advances `sent`
+    // records, so moving to any other status (replied/declined/booked/no-response)
+    // means there is no next touch — null it out rather than leave a stale date.
+    if (body.status !== undefined && body.status !== 'sent') update.nextTouchDue = null;
     if (body.gmailThreadId !== undefined) update.gmailThreadId = body.gmailThreadId;
     let doc;
     try { doc = await this.model.findByIdAndUpdate(req.params.id, update); } catch (e) {
