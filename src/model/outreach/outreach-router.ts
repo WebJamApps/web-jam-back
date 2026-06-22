@@ -31,6 +31,27 @@ router.route('/')
     void action();
   });
 
+// Approval gate (#844): approve = the only normal path that sends; reject =
+// decline a draft; preview = render the exact copy without sending (for the
+// approval UI). Above /:id so the action segments aren't parsed as ids.
+router.route('/:id/approve')
+  .post((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'approveOutreach', controller, authUtils);
+    void action();
+  });
+
+router.route('/:id/reject')
+  .post((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'rejectOutreach', controller, authUtils);
+    void action();
+  });
+
+router.route('/:id/preview')
+  .get((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'previewOutreach', controller, authUtils);
+    void action();
+  });
+
 router.route('/:id')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'getOutreach', controller, authUtils);

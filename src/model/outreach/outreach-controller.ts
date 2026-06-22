@@ -16,10 +16,11 @@ import { MAX_STEP, nextTouchDueAfter } from './cadence.js';
 // InquiryController CC precedent). Maria's address is the same one inquiries CC.
 const PITCH_CC = ['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com'];
 
-// An active campaign — a pitch already out for this venue + window — must not be
-// re-sent (no double-pitching). Declined / no-response / booked are terminal, so
-// only these two block a new send.
-const ACTIVE_STATUSES = ['sent', 'replied'];
+// An active campaign blocks a new pitch for the same venue + window (no
+// double-pitching). A pending `draft` counts too — you can't queue two drafts
+// for the same venue + dates. Declined / rejected / no-response / booked are
+// terminal and don't block.
+const ACTIVE_STATUSES = ['draft', 'sent', 'replied'];
 
 const ALLOWED_ROLES = ['JaM-admin', 'Developer'];
 const OUTREACH_WRITE_CAPS = ['outreach:create', 'outreach:edit', 'outreach:delete'];
@@ -38,6 +39,9 @@ interface SendBody {
   bookingPeriod?: string;
   actor?: string;
   cc?: string | string[];
+  // #844: a caller holding outreach:approve may set this to send immediately,
+  // skipping the draft step (the only sanctioned bypass).
+  override?: boolean;
 }
 
 interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
@@ -47,9 +51,10 @@ interface TemplateDoc { type?: string; subject?: string; bodyHtml?: string; foot
 interface FollowUp { sentAt?: Date; messageId?: string; step?: number }
 interface OutreachDoc {
   _id?: unknown; venueId?: unknown; sentAt?: Date; step?: number; targetDates?: string; followUps?: FollowUp[];
+  status?: string; templateUsed?: string; bookingPeriod?: string;
 }
 
-const OUTREACH_STATUSES = ['sent', 'replied', 'declined', 'booked', 'no-response'];
+const OUTREACH_STATUSES = ['draft', 'rejected', 'sent', 'replied', 'declined', 'booked', 'no-response'];
 
 // An explicit `actor` (stamped by the MCP server / agent) wins; otherwise fall
 // back to the authenticated token subject.
@@ -220,7 +225,10 @@ class OutreachController extends Controller {
   // Load + validate the venue and template for a send and run the dedup guard.
   // Returns a ready context, or an error envelope for sendPitch to relay. Pulls
   // the bulk of the branching out of sendPitch.
-  async resolvePitch(body: SendBody): Promise<PitchContext> {
+  // `skipDedup` is set when re-resolving an EXISTING draft (approve/preview) —
+  // there the draft itself is the "active" outreach, so the dedup check would
+  // wrongly match it. Only a brand-new draft runs the dedup guard.
+  async resolvePitch(body: SendBody, skipDedup = false): Promise<PitchContext> {
     let venue: VenueDoc | null;
     try { venue = await venueModel.findById(body.venueId || '') as unknown as VenueDoc | null; } catch (e) {
       return { error: { status: 500, message: (e as Error).message } };
@@ -238,19 +246,57 @@ class OutreachController extends Controller {
     }
     if (!template) return { error: { status: 400, message: `no active template for type ${type}` } };
 
-    // Dedup guard — refuse if a pitch is already live for this venue + window.
-    let dupe;
-    try {
-      dupe = await this.model.findOne({ venueId: body.venueId, targetDates: body.targetDates, status: { $in: ACTIVE_STATUSES } });
-    } catch (e) { return { error: { status: 500, message: (e as Error).message } }; }
-    if (dupe) {
-      return { error: { status: 409, message: 'an active outreach already exists for this venue and target dates', outreach: dupe } };
+    if (!skipDedup) {
+      // Dedup guard — refuse if a draft/live pitch already exists for this venue + window.
+      let dupe;
+      try {
+        dupe = await this.model.findOne({ venueId: body.venueId, targetDates: body.targetDates, status: { $in: ACTIVE_STATUSES } });
+      } catch (e) { return { error: { status: 500, message: (e as Error).message } }; }
+      if (dupe) {
+        return { error: { status: 409, message: 'an active outreach already exists for this venue and target dates', outreach: dupe } };
+      }
     }
     return { venue, template, type };
   }
 
-  // POST /outreach/send — render a template for a venue, email the pitch
-  // (CC Josh + Maria, footer photo inline), and write the outreach record.
+  // The single place an email actually leaves: render + send + write/update the
+  // outreach record as `sent` with cadence touch 1. Used ONLY by the approval
+  // path and the explicit override path (#844). `existingId` set => update that
+  // draft; null => create a fresh sent record (override). Returns the Express res.
+  async finalizeSend(
+    res: Response, venue: VenueDoc, template: TemplateDoc, type: string, body: SendBody, actor: string, existingId: string | null,
+  ): Promise<unknown> {
+    const { subject, html, attachments } = buildPitchEmail(venue, template, body);
+    let sent: { messageId: string };
+    try {
+      sent = await sendMail({ to: venue.email || '', cc: body.cc || PITCH_CC, subject, html, attachments });
+    } catch (e) { return res.status(502).json({ message: `email send failed: ${(e as Error).message}` }); }
+
+    const sentAt = new Date();
+    const fields = {
+      templateUsed: type, targetDates: body.targetDates, bookingPeriod: body.bookingPeriod,
+      sentAt, status: 'sent', messageId: sent.messageId, sentBy: actor, lastModifiedBy: actor,
+      step: 1, nextTouchDue: nextTouchDueAfter(1, sentAt),
+    };
+    let record;
+    try {
+      record = existingId
+        ? await this.model.findByIdAndUpdate(existingId, fields)
+        : await this.model.create({ venueId: String(venue._id), ...fields });
+    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+
+    // Best-effort: stamp the venue's lastContacted (non-critical, swallow errors).
+    try {
+      await venueModel.findByIdAndUpdate(String(venue._id), { lastContacted: new Date(), lastModifiedBy: actor });
+    } catch { /* best-effort */ }
+    return res.status(existingId ? 200 : 201).json(record);
+  }
+
+  // POST /outreach/send — DRAFT-FIRST (#844, post-incident). By default this does
+  // NOT email anyone: it resolves the venue/template and writes a `draft` outreach
+  // record awaiting human approval. An email only goes out later via
+  // /outreach/:id/approve. The one bypass: a caller holding `outreach:approve`
+  // may pass `override: true` to send immediately (the explicit-override case).
   async sendPitch(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['outreach:create']);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -265,41 +311,75 @@ class OutreachController extends Controller {
     const ctx = await this.resolvePitch(body);
     if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message, outreach: ctx.error.outreach });
     const { venue, template, type } = ctx as Required<PitchContext>;
-
-    const { subject, html, attachments } = buildPitchEmail(venue, template, body);
     const actor = resolveActor(req, body);
-    let sent: { messageId: string };
-    try {
-      sent = await sendMail({
-        to: venue.email || '', cc: body.cc || PITCH_CC, subject, html, attachments,
-      });
-    } catch (e) { return res.status(502).json({ message: `email send failed: ${(e as Error).message}` }); }
 
-    const sentAt = new Date();
-    let record;
+    if (body.override === true) {
+      const approveErr = await this.authorize(req, ['outreach:approve']);
+      if (approveErr) return res.status(403).json({ message: 'override requires the outreach:approve capability' });
+      return this.finalizeSend(res, venue, template, type, body, actor, null);
+    }
+
+    let draft;
     try {
-      record = await this.model.create({
-        venueId: body.venueId,
-        templateUsed: type,
-        targetDates: body.targetDates,
-        sentAt,
-        status: 'sent',
-        messageId: sent.messageId,
-        sentBy: actor,
-        lastModifiedBy: actor,
-        // Cadence (#824): the pitch is touch 1; schedule the first follow-up.
-        step: 1,
-        nextTouchDue: nextTouchDueAfter(1, sentAt),
+      draft = await this.model.create({
+        venueId: body.venueId, templateUsed: type, targetDates: body.targetDates,
+        bookingPeriod: body.bookingPeriod, status: 'draft', sentBy: actor, lastModifiedBy: actor,
       });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    return res.status(201).json({ message: 'draft created — requires approval before it sends', outreach: draft });
+  }
 
-    // Best-effort: stamp the venue's lastContacted so the UI/cadence can sort by
-    // it. A failure here must not undo a successful send, so it is swallowed.
-    try {
-      await venueModel.findByIdAndUpdate(String(body.venueId), { lastContacted: new Date(), lastModifiedBy: actor });
-    } catch { /* best-effort: lastContacted is non-critical */ }
+  // POST /outreach/:id/approve — the ONLY normal path that sends. Requires
+  // `outreach:approve` (a human admin; the AI agent does NOT hold it). Renders +
+  // sends the reviewed draft's email and flips it to `sent`.
+  async approveOutreach(req: AuthIdRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, ['outreach:approve']);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Approve id is invalid' });
+    let rec: OutreachDoc | null;
+    try { rec = await this.model.findById(req.params.id) as unknown as OutreachDoc | null; } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    if (!rec) return res.status(400).json({ message: 'outreach not found' });
+    if (rec.status !== 'draft') return res.status(400).json({ message: `only a draft can be approved (status is ${rec.status})` });
 
-    return res.status(201).json(record);
+    const ctx = await this.resolvePitch({ venueId: String(rec.venueId), templateType: rec.templateUsed, targetDates: rec.targetDates }, true);
+    if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message });
+    const { venue, template, type } = ctx as Required<PitchContext>;
+    const body = { targetDates: rec.targetDates, bookingPeriod: rec.bookingPeriod } as SendBody;
+    return this.finalizeSend(res, venue, template, type, body, resolveActor(req, (req.body || {}) as SendBody), req.params.id);
+  }
+
+  // POST /outreach/:id/reject — a human declines a draft (requires outreach:approve).
+  async rejectOutreach(req: AuthIdRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, ['outreach:approve']);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Reject id is invalid' });
+    const update = { status: 'rejected', lastModifiedBy: resolveActor(req, (req.body || {}) as SendBody) };
+    let doc;
+    try { doc = await this.model.findByIdAndUpdate(req.params.id, update); } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    if (!doc) return res.status(400).json({ message: 'outreach not found' });
+    return res.status(200).json(doc);
+  }
+
+  // GET /outreach/:id/preview — render the exact email a draft would send, WITHOUT
+  // sending. Lets the approval UI (#1133) show Josh the real copy before he approves.
+  async previewOutreach(req: AuthIdRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, OUTREACH_WRITE_CAPS);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Preview id is invalid' });
+    let rec: OutreachDoc | null;
+    try { rec = await this.model.findById(req.params.id) as unknown as OutreachDoc | null; } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    if (!rec) return res.status(400).json({ message: 'outreach not found' });
+    const ctx = await this.resolvePitch({ venueId: String(rec.venueId), templateType: rec.templateUsed, targetDates: rec.targetDates }, true);
+    if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message });
+    const { venue, template } = ctx as Required<PitchContext>;
+    const { subject, html } = buildPitchEmail(venue, template, { targetDates: rec.targetDates, bookingPeriod: rec.bookingPeriod } as SendBody);
+    return res.status(200).json({ to: venue.email, cc: PITCH_CC, subject, html });
   }
 
   // Send one due email follow-up for an outreach record and reschedule it, or
