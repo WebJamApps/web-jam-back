@@ -17,9 +17,14 @@ const options = {
 // the Gmail thread, backfilled later by the reply-detection job (#825/#100) —
 // nodemailer's SMTP send returns the Message-ID, not the thread id. `followUps`
 // records each later touch in this same campaign (cadence engine, #824).
+// One later touch in the campaign. `type` distinguishes an email follow-up from
+// a CALL touch (#825); a call has no messageId — `eventId` holds the Google
+// Calendar event created for the call task instead.
 const followUpSchema = new Schema({
   sentAt: { type: Date, required: false },
+  type: { type: String, required: false, enum: ['email', 'call'], default: 'email' },
   messageId: { type: String, required: false },
+  eventId: { type: String, required: false },
   step: { type: Number, required: false },
 }, { _id: false });
 
@@ -46,11 +51,10 @@ const outreachSchema = new Schema({
   // Which AI agent or human sent this pitch (#818 `actor` field).
   sentBy: { type: String, required: false, trim: true },
   followUps: { type: [followUpSchema], required: false, default: [] },
-  // Cadence engine (#824). `step` is the touch number already sent (1 = the
-  // pitch). `nextTouchDue` is when the next email follow-up should go out; the
-  // advance endpoint sends everything due and bumps these. Null nextTouchDue =
-  // no more touches scheduled (sequence finished or halted). Call touches
-  // (days 7/18) are added with the Google Calendar work (#825).
+  // Cadence engine (#824/#825). `step` is the touch number already completed
+  // (1 = the pitch). `nextTouchDue` is when the next touch (email or call) is
+  // due; the advance endpoint actions everything due and bumps these. Null
+  // nextTouchDue = no more touches scheduled (sequence finished or halted).
   step: { type: Number, required: false, default: 1 },
   nextTouchDue: { type: Date, required: false, default: null },
   lastModifiedBy: { type: String, required: false },
