@@ -7,6 +7,12 @@ vi.mock('#src/lib/mailer.js', () => ({
   default: { sendMail },
 }));
 
+const createCallTaskEvent = vi.fn(() => Promise.resolve({ id: 'evt-1' }));
+vi.mock('#src/lib/calendar.js', () => ({
+  createCallTaskEvent,
+  default: { createCallTaskEvent },
+}));
+
 const { default: controller } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -56,6 +62,8 @@ describe('Outreach Controller (#844 batch model)', () => {
     payload = undefined;
     sendMail.mockClear();
     sendMail.mockResolvedValue({ messageId: 'mid-123' });
+    createCallTaskEvent.mockClear();
+    createCallTaskEvent.mockResolvedValue({ id: 'evt-1' });
     asAgent();
     (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue()));
     (venueModel as any).find = vi.fn(() => Promise.resolve([]));
@@ -633,31 +641,63 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(status).toBe(403);
     });
 
-    it('sends a due follow-up and reschedules the record', async () => {
+    it('sends a due EMAIL follow-up (step 1 -> day-3 touch) and reschedules', async () => {
       c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
       await c.advanceCadence({ user: 'a' }, resStub);
       expect(status).toBe(200);
-      expect(payload).toMatchObject({ processed: 1, sent: 1, parked: 0, skipped: 0 });
+      expect(payload).toMatchObject({ processed: 1, sent: 1, called: 0, parked: 0, skipped: 0 });
       expect(sendMail).toHaveBeenCalledTimes(1);
+      expect(createCallTaskEvent).not.toHaveBeenCalled();
       const upd = (c.model.findByIdAndUpdate as any).mock.calls[0][1];
       expect(upd.step).toBe(2);
       expect(upd.nextTouchDue).toBeInstanceOf(Date);
       expect(upd.followUps).toHaveLength(1);
-      expect(upd.followUps[0].step).toBe(2);
+      expect(upd.followUps[0]).toMatchObject({ step: 2, type: 'email', messageId: 'mid-123' });
     });
 
-    it('parks an exhausted sequence as no-response (no send)', async () => {
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 3 })]));
+    it('creates a CALL task (step 2 -> day-7 touch) instead of an email', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 2 })]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, called: 1, sent: 0, skipped: 0 });
+      expect(createCallTaskEvent).toHaveBeenCalledTimes(1);
+      expect(sendMail).not.toHaveBeenCalled();
+      const arg = (createCallTaskEvent.mock.calls[0] as any)[0];
+      expect(arg.title).toContain('The Spot on Kirk');
+      expect(arg.scriptBody).toContain('Salem, VA');
+      expect(arg.date).toBeInstanceOf(Date);
+      const upd = (c.model.findByIdAndUpdate as any).mock.calls[0][1];
+      expect(upd.step).toBe(3);
+      expect(upd.followUps[0]).toMatchObject({ step: 3, type: 'call', eventId: 'evt-1' });
+    });
+
+    it('skips a CALL touch when the calendar insert fails (no crash)', async () => {
+      createCallTaskEvent.mockRejectedValueOnce(new Error('google down'));
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 2 })]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, skipped: 1, called: 0 });
+    });
+
+    it('parks an exhausted sequence as no-response (no touch)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 5 })]));
       await c.advanceCadence({ user: 'a' }, resStub);
       expect(payload).toMatchObject({ processed: 1, parked: 1 });
       expect(sendMail).not.toHaveBeenCalled();
+      expect(createCallTaskEvent).not.toHaveBeenCalled();
       const upd = (c.model.findByIdAndUpdate as any).mock.calls[0][1];
       expect(upd.status).toBe('no-response');
       expect(upd.nextTouchDue).toBeNull();
     });
 
-    it('skips a record whose venue is archived or has no email', async () => {
+    it('skips a record whose venue is archived', async () => {
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ status: 'archived' })));
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, skipped: 1, sent: 0 });
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('skips an EMAIL touch when its venue has no email', async () => {
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ email: '' })));
       c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
       await c.advanceCadence({ user: 'a' }, resStub);
       expect(payload).toMatchObject({ processed: 1, skipped: 1, sent: 0 });
@@ -666,6 +706,27 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('skips a record when its follow-up send fails', async () => {
       sendMail.mockRejectedValueOnce(new Error('smtp down'));
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, skipped: 1 });
+    });
+
+    it('skips when the reschedule write fails after a send', async () => {
+      c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db write')));
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, skipped: 1 });
+    });
+
+    it('skips when parking write fails', async () => {
+      c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db write')));
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 5 })]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, skipped: 1, parked: 0 });
+    });
+
+    it('skips when the venue lookup throws', async () => {
+      (venueModel as any).findById = vi.fn(() => Promise.reject(new Error('db')));
       c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
       await c.advanceCadence({ user: 'a' }, resStub);
       expect(payload).toMatchObject({ processed: 1, skipped: 1 });
