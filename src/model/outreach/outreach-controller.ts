@@ -6,12 +6,13 @@ import { fileURLToPath } from 'url';
 import Controller from '#src/lib/controller.js';
 import { Icontroller } from '#src/lib/routeUtils.js';
 import { sendMail } from '#src/lib/mailer.js';
+import { createCallTaskEvent } from '#src/lib/calendar.js';
 import outreachModel from './outreach-facade.js';
 import outreachConfigModel from './outreach-config-facade.js';
 import venueModel from '../venue/venue-facade.js';
 import templateModel from '../template/template-facade.js';
 import userModel from '../user/user-facade.js';
-import { MAX_STEP, nextTouchDueAfter } from './cadence.js';
+import { MAX_STEP, nextTouchDueAfter, touchAt } from './cadence.js';
 
 // Every gig pitch CCs Josh + Maria so they see each send land (mirrors the
 // InquiryController CC precedent). Maria's address is the same one inquiries CC.
@@ -65,12 +66,12 @@ interface ConfigBody { autoApprove?: boolean; actor?: string }
 interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 
 interface VenueDoc {
-  _id?: unknown; name?: string; email?: string; contactName?: string;
+  _id?: unknown; name?: string; email?: string; contactName?: string; phone?: string;
   venueType?: string; status?: string; outreachEligible?: boolean;
   bookingStatus?: string; relationshipStage?: string; templateOverride?: string;
 }
 interface TemplateDoc { type?: string; subject?: string; bodyHtml?: string; footerPhotoRef?: string }
-interface FollowUp { sentAt?: Date; messageId?: string; step?: number }
+interface FollowUp { sentAt?: Date; type?: string; messageId?: string; eventId?: string; step?: number }
 interface OutreachDoc {
   _id?: unknown; venueId?: unknown; sentAt?: Date; step?: number; targetDates?: string; followUps?: FollowUp[];
   status?: string; templateUsed?: string; bookingPeriod?: string;
@@ -178,6 +179,37 @@ function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
     attachments.push({ filename: 'josh-maria.jpg', path: assetPath, cid: 'footerphoto' });
   }
   return { subject, html, attachments };
+}
+
+// Title + phone-script body for a CALL touch (#825), used as the Google Calendar
+// event's summary + description. A call can't be auto-dialed, so the cadence
+// lands a dated task carrying a ready-to-read script. Plain text (a calendar
+// description, not HTML); the venue phone is included when known.
+function buildCallTitle(venue: VenueDoc, outreach: OutreachDoc): string {
+  const dates = outreach.targetDates || 'upcoming dates';
+  return `Call ${venue.name || 'venue'} re: ${dates}`;
+}
+
+function buildCallScript(venue: VenueDoc, outreach: OutreachDoc): string {
+  const contact = venue.contactName || 'whoever books music';
+  const venueName = venue.name || 'the venue';
+  const dates = outreach.targetDates || 'an upcoming date';
+  const phone = venue.phone ? `Phone: ${venue.phone}` : 'Phone: (not on file — look up before calling)';
+  return [
+    `Follow-up call to ${venueName} — ask for ${contact}.`,
+    phone,
+    '',
+    'Script:',
+    `"Hi, this is Josh from Josh & Maria — my wife and I are a husband-wife acoustic duo here in `
+      + `Salem, VA. I emailed about playing a slot at ${venueName} around ${dates} and wanted to follow `
+      + `up to see if that's something you book."`,
+    '',
+    '- If interested: offer to send live samples + work around their calendar.',
+    '- If full: ask about a later window or being kept on file.',
+    '- If voicemail: leave the above + 540-494-8035 and joshandmariamusic.com.',
+    '',
+    'After the call, mark the outreach replied/declined/booked in the admin (PUT /outreach/:id).',
+  ].join('\n');
 }
 
 class OutreachController extends Controller {
@@ -512,26 +544,11 @@ class OutreachController extends Controller {
     return res.status(200).json({ autoApprove: !!(cfg && cfg.autoApprove) });
   }
 
-  // Send one due email follow-up for an outreach record and reschedule it, or
-  // park it as no-response once the sequence is exhausted. Returns the per-record
-  // outcome ('sent' | 'parked' | 'skipped'). Helper for advanceCadence.
-  async processDue(o: OutreachDoc): Promise<'sent' | 'parked' | 'skipped'> {
-    if ((o.step || 1) >= MAX_STEP) {
-      try {
-        await this.model.findByIdAndUpdate(String(o._id), { status: 'no-response', nextTouchDue: null, lastModifiedBy: 'cadence-engine' });
-        return 'parked';
-      } catch { return 'skipped'; }
-    }
-    let venue: VenueDoc | null;
-    try { venue = await venueModel.findById(String(o.venueId)) as unknown as VenueDoc | null; } catch { return 'skipped'; }
-    if (!venue || venue.status === 'archived' || !venue.email) return 'skipped';
-
-    const touchNum = (o.step || 1) + 1;
-    const { subject, html, attachments } = buildFollowUpEmail(venue, o);
-    let sent: { messageId: string };
-    try { sent = await sendMail({ to: venue.email, cc: PITCH_CC, subject, html, attachments }); } catch { return 'skipped'; }
-
-    const followUps = [...(o.followUps || []), { sentAt: new Date(), messageId: sent.messageId, step: touchNum }];
+  // Append a completed touch and reschedule (or finish) the record. Returns
+  // false on a write failure so the caller can report 'skipped'. Shared by the
+  // email and call touch handlers.
+  async recordTouch(o: OutreachDoc, touchNum: number, followUp: FollowUp): Promise<boolean> {
+    const followUps = [...(o.followUps || []), followUp];
     try {
       await this.model.findByIdAndUpdate(String(o._id), {
         step: touchNum,
@@ -539,15 +556,68 @@ class OutreachController extends Controller {
         followUps,
         lastModifiedBy: 'cadence-engine',
       });
-      return 'sent';
-    } catch { return 'skipped'; }
+      return true;
+    } catch { return false; }
   }
 
-  // POST /outreach/advance — cadence tick. Sends every email follow-up that's due
-  // (status 'sent', nextTouchDue <= now), reschedules it, and parks exhausted
-  // sequences as no-response. Meant to be hit on a schedule (Deno Cron, #100).
-  // Reply-detection + call touches arrive with the Google integration (#825); for
-  // now a venue reply is marked by hand via PUT /outreach/:id, which halts it.
+  // EMAIL touch: send the follow-up nudge and record it. Skips a venue with no
+  // address (the pitch needs an inbox; a call touch does not).
+  async doEmailTouch(o: OutreachDoc, venue: VenueDoc, touchNum: number): Promise<'sent' | 'skipped'> {
+    if (!venue.email) return 'skipped';
+    const { subject, html, attachments } = buildFollowUpEmail(venue, o);
+    let sent: { messageId: string };
+    try { sent = await sendMail({ to: venue.email, cc: PITCH_CC, subject, html, attachments }); } catch { return 'skipped'; }
+    const ok = await this.recordTouch(o, touchNum, { sentAt: new Date(), type: 'email', messageId: sent.messageId, step: touchNum });
+    return ok ? 'sent' : 'skipped';
+  }
+
+  // CALL touch (#825): drop an all-day call-task event on Josh's calendar with
+  // the phone script, then record it. The event lands on the touch's scheduled
+  // day, or today if the cron is running it late (a call task in the past is no
+  // use). A missing/failed Google credential just skips the touch (caught here)
+  // rather than crashing the whole tick.
+  async doCallTouch(o: OutreachDoc, venue: VenueDoc, touchNum: number): Promise<'called' | 'skipped'> {
+    const step = o.step || 1;
+    const scheduled = nextTouchDueAfter(step, new Date(o.sentAt || Date.now())) || /* istanbul ignore next */ new Date();
+    const now = new Date();
+    const date = scheduled.getTime() > now.getTime() ? scheduled : now;
+    let event: { id: string };
+    try {
+      event = await createCallTaskEvent({ date, title: buildCallTitle(venue, o), scriptBody: buildCallScript(venue, o) });
+    } catch { return 'skipped'; }
+    const ok = await this.recordTouch(o, touchNum, { sentAt: new Date(), type: 'call', eventId: event.id, step: touchNum });
+    return ok ? 'called' : 'skipped';
+  }
+
+  // Action one due touch for an outreach record, or park it as no-response once
+  // the sequence is exhausted. Branches on the next touch type (#825): EMAIL
+  // sends a follow-up; CALL creates a Google Calendar call task. Returns the
+  // per-record outcome. Helper for advanceCadence.
+  async processDue(o: OutreachDoc): Promise<'sent' | 'called' | 'parked' | 'skipped'> {
+    const step = o.step || 1;
+    if (step >= MAX_STEP) {
+      try {
+        await this.model.findByIdAndUpdate(String(o._id), { status: 'no-response', nextTouchDue: null, lastModifiedBy: 'cadence-engine' });
+        return 'parked';
+      } catch { return 'skipped'; }
+    }
+    let venue: VenueDoc | null;
+    try { venue = await venueModel.findById(String(o.venueId)) as unknown as VenueDoc | null; } catch { return 'skipped'; }
+    if (!venue || venue.status === 'archived') return 'skipped';
+
+    const touch = touchAt(step); // the touch about to be actioned
+    const touchNum = step + 1;
+    if (touch && touch.type === 'call') return this.doCallTouch(o, venue, touchNum);
+    return this.doEmailTouch(o, venue, touchNum);
+  }
+
+  // POST /outreach/advance — cadence tick. Actions every touch that's due
+  // (status 'sent', nextTouchDue <= now): EMAIL touches send a follow-up, CALL
+  // touches create a Google Calendar call task (#825); each is rescheduled, and
+  // exhausted sequences are parked as no-response. Meant to be hit on a schedule
+  // (Deno Cron, #100). Reply-detection (the gmail half of #825) still arrives
+  // later; for now a venue reply is marked by hand via PUT /outreach/:id, which
+  // halts the campaign.
   async advanceCadence(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['outreach:edit']);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -556,7 +626,7 @@ class OutreachController extends Controller {
     try { due = await this.model.find({ status: 'sent', nextTouchDue: { $ne: null, $lte: now } }) as unknown as OutreachDoc[]; } catch (e) {
       return res.status(500).json({ message: (e as Error).message });
     }
-    const result = { processed: due.length, sent: 0, parked: 0, skipped: 0 };
+    const result = { processed: due.length, sent: 0, called: 0, parked: 0, skipped: 0 };
     for (const o of due) {
       const outcome = await this.processDue(o); // eslint-disable-line no-await-in-loop
       result[outcome] += 1;
