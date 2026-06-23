@@ -52,6 +52,23 @@ function validateBody(body: TemplateBody, partial: boolean): string {
   return '';
 }
 
+// The pre-#848 schema had a unique index on `type` alone; #848 moved uniqueness
+// to (type, stage). Mongoose never drops a replaced index, so the legacy
+// `type_1` would still reject a second template for the same type (e.g. a
+// `returning` variant). Drop it once, lazily, on the first create — idempotent,
+// connection-guarded so unit tests (no live DB) skip it. Mirrors
+// FacebookController's key_1 drop.
+interface IndexDroppable { Schema: { collection: { dropIndex(name: string): Promise<unknown> } } }
+let legacyTypeIndexDropped = false;
+async function dropLegacyTypeIndex(model: IndexDroppable): Promise<void> {
+  if (legacyTypeIndexDropped) return;
+  legacyTypeIndexDropped = true;
+  /* istanbul ignore next */
+  if (mongoose.connection.readyState !== 1) return;
+  /* istanbul ignore next */
+  try { await model.Schema.collection.dropIndex('type_1'); } catch { /* already dropped */ }
+}
+
 // Privilege-first, role-fallback gate (mirrors VenueController/PromoController).
 function checkAccess(user: AuthedUser, required: string[]): AuthzResult {
   const privileges = user.privileges || [];
@@ -124,6 +141,7 @@ class TemplateController extends Controller {
   async createTemplate(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['template:create']);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    await dropLegacyTypeIndex(this.model as unknown as IndexDroppable);
     const body = (req.body || {}) as TemplateBody;
     delete body._id;
     const invalid = validateBody(body, false);
