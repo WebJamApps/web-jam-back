@@ -133,7 +133,7 @@ describe('Facebook feed API', () => {
   });
 
   it('updateFacebookCache keeps the last good cache and emails once on a dead token (190)', async () => {
-    const mail = vi.spyOn(mailer, 'sendMail').mockResolvedValue(undefined);
+    const mail = vi.spyOn(mailer, 'sendMail').mockResolvedValue({ messageId: 'test' });
     await FacebookToken.create({ pageId: CLC, value: 'PAGE-TOKEN' });
 
     // First a healthy refresh to populate the cache.
@@ -152,7 +152,7 @@ describe('Facebook feed API', () => {
   });
 
   it('re-arms the alert after a successful refresh', async () => {
-    vi.spyOn(mailer, 'sendMail').mockResolvedValue(undefined);
+    vi.spyOn(mailer, 'sendMail').mockResolvedValue({ messageId: 'test' });
     await FacebookToken.create({ pageId: CLC, value: 'PAGE-TOKEN' });
     stubGraph(jsonRes({ error: { code: 190, message: 'expired' } }), jsonRes({ data: [{ id: 'p2' }] }));
     await updateFacebookCache();
@@ -162,7 +162,7 @@ describe('Facebook feed API', () => {
   });
 
   it('ignores non-190 Graph errors without emailing', async () => {
-    const mail = vi.spyOn(mailer, 'sendMail').mockResolvedValue(undefined);
+    const mail = vi.spyOn(mailer, 'sendMail').mockResolvedValue({ messageId: 'test' });
     await FacebookToken.create({ pageId: CLC, value: 'PAGE-TOKEN' });
     stubGraph(jsonRes({ error: { code: 4, message: 'rate limited' } }));
     await updateFacebookCache();
@@ -207,7 +207,7 @@ describe('Facebook feed API', () => {
   });
 
   it('names the specific page in the dead-token alert email', async () => {
-    const mail = vi.spyOn(mailer, 'sendMail').mockResolvedValue(undefined);
+    const mail = vi.spyOn(mailer, 'sendMail').mockResolvedValue({ messageId: 'test' });
     await FacebookToken.create({ pageId: WJ, value: 'WJ-TOKEN' });
     stubGraph(jsonRes({ error: { code: 190, message: 'expired' } }));
     await updateFacebookCache();
