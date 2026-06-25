@@ -67,6 +67,16 @@ const venueSchema = new Schema({
   // beating the venue's own venueType.
   relationshipStage: { type: String, required: false, enum: ['cold', 'returning'] },
   templateOverride: { type: String, required: false, enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'] },
+  // Prospect-ranking inputs (#867) — surfaced in the AdminVenues "Prospect
+  // Score" sort (JaMmusic#1139). All optional/soft; the score is computed
+  // client-side so its weights stay tunable without a deploy.
+  // - originalsFit: how much the venue welcomes ORIGINAL music (heaviest weight).
+  // - travelBand: coarse distance band from Salem, VA (no geocoding) — farther =
+  //   higher travel cost in the net-value calc.
+  // - priority: manual 0-5 boost/override. (payTier above feeds pay value $/$$/$$$.)
+  originalsFit: { type: String, required: false, enum: ['none', 'some', 'loves'] },
+  travelBand: { type: String, required: false, enum: ['local', 'regional', 'far'] },
+  priority: { type: Number, required: false, min: 0, max: 5 },
   lastContacted: { type: Date, required: false },
   // The AI agent or human that last wrote this record (#818 `actor` field — one
   // shared agent identity authenticates, but each write records who acted).

@@ -74,6 +74,47 @@ describe('Venue Controller', () => {
       expect(payload.message).toContain('templateOverride');
     });
 
+    it('rejects an invalid originalsFit (#867)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', originalsFit: 'meh' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('originalsFit');
+    });
+
+    it('rejects an invalid travelBand (#867)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', travelBand: 'moon' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('travelBand');
+    });
+
+    it('rejects an out-of-range priority (#867)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', priority: 9 } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('priority');
+    });
+
+    it('rejects a non-numeric priority (#867)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', priority: 'high' as unknown as number } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('priority');
+    });
+
+    it('accepts + passes through the ranking fields (#867)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'The Spot', originalsFit: 'loves', travelBand: 'local', priority: 4,
+        },
+      }, resStub);
+      expect(status).toBe(201);
+      const arg = (create.mock.calls[0] as unknown[])[0] as any;
+      expect(arg.originalsFit).toBe('loves');
+      expect(arg.travelBand).toBe('local');
+      expect(arg.priority).toBe(4);
+    });
+
     it('rejects an invalid email', async () => {
       await c.createVenue({ user: 'a', body: { name: 'X', email: 'nope' } }, resStub);
       expect(status).toBe(400);

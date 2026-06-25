@@ -10,6 +10,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s.@]+$/;
 const VENUE_TYPES = ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'];
 const STATUS_OPTIONS = ['active', 'archived'];
 const BOOKING_STATUSES = ['booking', 'not-booking', 'booked'];
+// Prospect-ranking enums (#867) — drive the AdminVenues "Prospect Score" sort.
+const ORIGINALS_FIT = ['none', 'some', 'loves'];
+const TRAVEL_BANDS = ['local', 'regional', 'far'];
 
 // Role fallback for human admins who authorize by role (no privileges array).
 // AI agents pass via the venue:* capabilities on the shared web-jam-llm identity.
@@ -49,6 +52,9 @@ interface VenueBody {
   notes?: string;
   relationshipStage?: string;
   templateOverride?: string;
+  originalsFit?: string;
+  travelBand?: string;
+  priority?: number;
   lastContacted?: string;
   actor?: string;
 }
@@ -74,17 +80,38 @@ function resolveActor(req: AuthRequest, body: VenueBody): string {
 
 // Reject a write body up front. Returns an error message, or '' when valid.
 // `partial` (PUT) only validates the fields that are present.
+// Enum-validated string fields ('' = unset, allowed). Data-driven so adding a
+// field doesn't grow validateBody's cognitive complexity (#867).
+type EnumKey = 'venueType' | 'status' | 'bookingStatus' | 'relationshipStage'
+  | 'templateOverride' | 'originalsFit' | 'travelBand';
+const ENUM_FIELDS: { key: EnumKey; allowed: string[] }[] = [
+  { key: 'venueType', allowed: VENUE_TYPES },
+  { key: 'status', allowed: STATUS_OPTIONS },
+  { key: 'bookingStatus', allowed: BOOKING_STATUSES },
+  { key: 'relationshipStage', allowed: ['cold', 'returning'] },
+  { key: 'templateOverride', allowed: VENUE_TYPES },
+  { key: 'originalsFit', allowed: ORIGINALS_FIT },
+  { key: 'travelBand', allowed: TRAVEL_BANDS },
+];
+
+function invalidEnum(body: VenueBody): string {
+  const bad = ENUM_FIELDS.find((f) => {
+    const v = body[f.key];
+    return v !== undefined && v !== '' && f.allowed.indexOf(v) === -1;
+  });
+  return bad ? `${bad.key} not valid` : '';
+}
+
+function invalidPriority(priority: number | undefined): boolean {
+  return priority !== undefined && priority !== null
+    && (typeof priority !== 'number' || priority < 0 || priority > 5);
+}
+
 function validateBody(body: VenueBody, partial: boolean): string {
-  if (!partial || body.name !== undefined) {
-    if (!body.name || !body.name.trim()) return 'Name is required';
-  }
-  if (body.venueType !== undefined && VENUE_TYPES.indexOf(body.venueType) === -1) return 'venueType not valid';
-  if (body.status !== undefined && STATUS_OPTIONS.indexOf(body.status) === -1) return 'status not valid';
-  if (body.bookingStatus !== undefined && BOOKING_STATUSES.indexOf(body.bookingStatus) === -1) return 'bookingStatus not valid';
-  if (body.relationshipStage !== undefined && body.relationshipStage !== ''
-    && ['cold', 'returning'].indexOf(body.relationshipStage) === -1) return 'relationshipStage not valid';
-  if (body.templateOverride !== undefined && body.templateOverride !== ''
-    && VENUE_TYPES.indexOf(body.templateOverride) === -1) return 'templateOverride not valid';
+  if ((!partial || body.name !== undefined) && (!body.name || !body.name.trim())) return 'Name is required';
+  const enumErr = invalidEnum(body);
+  if (enumErr) return enumErr;
+  if (invalidPriority(body.priority)) return 'priority must be a number 0-5';
   if (body.email !== undefined && body.email !== '' && !EMAIL_RE.test(String(body.email).trim().toLowerCase())) {
     return 'A valid email is required';
   }
