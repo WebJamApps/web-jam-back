@@ -1,11 +1,11 @@
 {
   "name": "web-jam-back",
-  "version": "2.0.36",
+  "version": "2.0.37",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
   "engines": {
-    "node": "24.17.0"
+    "node": "24.18.0"
   },
   "files": [
     "src/"
