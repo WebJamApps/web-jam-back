@@ -177,7 +177,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       await c.sendPitch({ user: 'josh', body: body() }, resStub);
       expect(status).toBe(201);
       expect(sendMail).toHaveBeenCalledTimes(1);
-      expect((sendMail.mock.calls[0][0] as any).cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
+      expect((sendMail as any).mock.calls[0][0].cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
       const rec = (c.model.create as any).mock.calls[0][0];
       expect(rec.status).toBe('sent');
       expect(rec.step).toBe(1);
@@ -530,7 +530,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       c.model.findByIdAndUpdate = upd;
       await c.updateOutreach({ user: 'josh', params: { id }, body: { status: 'no-response' } }, resStub);
       expect(status).toBe(200);
-      expect(upd.mock.calls[0][1].nextTouchDue).toBeNull();
+      expect((upd as any).mock.calls[0][1].nextTouchDue).toBeNull();
     });
 
     it('leaves nextTouchDue untouched when no terminal status is set', async () => {
@@ -538,7 +538,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       const upd = vi.fn(() => Promise.resolve({ _id: id }));
       c.model.findByIdAndUpdate = upd;
       await c.updateOutreach({ user: 'josh', params: { id }, body: { gmailThreadId: 't9' } }, resStub);
-      expect(upd.mock.calls[0][1]).not.toHaveProperty('nextTouchDue');
+      expect((upd as any).mock.calls[0][1]).not.toHaveProperty('nextTouchDue');
     });
 
     it('500s when the update throws', async () => {
