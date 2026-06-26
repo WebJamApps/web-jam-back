@@ -7,6 +7,8 @@ import Controller from '#src/lib/controller.js';
 import { Icontroller } from '#src/lib/routeUtils.js';
 import { sendMail } from '#src/lib/mailer.js';
 import { createCallTaskEvent } from '#src/lib/calendar.js';
+import { findReplies } from '#src/lib/imap-replies.js';
+import { classifyReply } from '#src/lib/classify-reply.js';
 import outreachModel from './outreach-facade.js';
 import outreachConfigModel from './outreach-config-facade.js';
 import venueModel from '../venue/venue-facade.js';
@@ -78,6 +80,9 @@ interface OutreachDoc {
 }
 
 const OUTREACH_STATUSES = ['sent', 'replied', 'declined', 'booked', 'no-response'];
+// Valid venue bookingStatus values (mirror the venue schema enum) — validated
+// when applySuggestion writes one onto a venue.
+const OUTREACH_BOOKING_STATUSES = ['booking', 'not-booking', 'booked'];
 
 // An explicit `actor` (stamped by the MCP server / agent) wins; otherwise fall
 // back to the authenticated token subject.
@@ -632,6 +637,123 @@ class OutreachController extends Controller {
       result[outcome] += 1;
     }
     return res.status(200).json(result);
+  }
+
+  // Action one matched reply: move the record to `replied` (which halts the
+  // cadence — advance only touches `sent`), store the snippet + thread id, and
+  // attach Claude Haiku's advisory suggestion. The suggestion is NOT applied to
+  // the venue here — that waits for Josh's approval (applySuggestion). Returns
+  // whether a suggestion was attached, so checkReplies can tally it.
+  async recordReply(o: OutreachDoc, match: { repliedAt: Date; snippet: string; gmailThreadId?: string }): Promise<boolean> {
+    let venue: VenueDoc | null = null;
+    try { venue = await venueModel.findById(String(o.venueId)) as unknown as VenueDoc | null; } catch { /* name is best-effort */ }
+    const suggestion = await classifyReply(match.snippet, venue?.name || '');
+    const update: Record<string, unknown> = {
+      status: 'replied', repliedAt: match.repliedAt, replySnippet: match.snippet,
+      nextTouchDue: null, lastModifiedBy: 'reply-detection',
+    };
+    if (match.gmailThreadId) update.gmailThreadId = match.gmailThreadId;
+    if (suggestion) update.suggestion = suggestion;
+    await this.model.findByIdAndUpdate(String(o._id), update);
+    return !!suggestion;
+  }
+
+  // POST /outreach/check-replies — reply-detection tick (#825 Half B). Scans Gmail
+  // over IMAP for replies to still-active (`sent`) pitches, matched precisely by
+  // the stored Message-ID; each match halts the cadence + gets an AI suggestion
+  // for review. Separate from /advance (no send IO) so the cron can run it more
+  // often. Dormant until GMAIL_IMAP_* (and ANTHROPIC_API_KEY for suggestions) are
+  // set — findReplies returns [] otherwise, so this is a safe no-op.
+  async checkReplies(req: AuthRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, ['outreach:edit']);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    let active: OutreachDoc[];
+    try {
+      active = await this.model.find({ status: 'sent', messageId: { $nin: [null, ''] } }) as unknown as OutreachDoc[];
+    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    const refs = active.map((o) => ({ outreachId: String(o._id), messageId: (o as { messageId?: string }).messageId || '' }));
+    const matches = await findReplies(refs);
+    const result = { checked: refs.length, matched: 0, classified: 0 };
+    for (const m of matches) {
+      const o = active.find((a) => String(a._id) === m.outreachId);
+      if (!o) continue;
+      try {
+        const classified = await this.recordReply(o, m); // eslint-disable-line no-await-in-loop
+        result.matched += 1;
+        if (classified) result.classified += 1;
+      } catch { /* one bad record shouldn't abort the whole scan */ }
+    }
+    return res.status(200).json(result);
+  }
+
+  // GET /outreach/replies/pending — the AdminVenues "replies to review" queue:
+  // replied records that carry an unreviewed AI suggestion.
+  async listPendingReplies(req: AuthRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    let records: Record<string, unknown>[];
+    try {
+      records = await this.model.find({ status: 'replied', suggestion: { $ne: null }, 'suggestion.reviewed': { $ne: true } });
+    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    return res.status(200).json(records);
+  }
+
+  // Write a reply suggestion's values (Josh's edited body values win, else the
+  // AI's proposed ones) onto the venue. Returns an error envelope to relay, or
+  // null on success. Split out of applySuggestion to keep its branching simple.
+  async writeSuggestedVenue(
+    o: OutreachDoc,
+    suggestion: { proposedBookingStatus?: string; proposedInterested?: boolean },
+    body: { bookingStatus?: string; interested?: boolean },
+    actor: string,
+  ): Promise<AuthzError | null> { // eslint-disable-line class-methods-use-this
+    const bookingStatus = body.bookingStatus !== undefined ? body.bookingStatus : suggestion.proposedBookingStatus;
+    const interested = body.interested !== undefined ? body.interested : suggestion.proposedInterested;
+    if (bookingStatus !== undefined && OUTREACH_BOOKING_STATUSES.indexOf(bookingStatus) === -1) {
+      return { status: 400, message: 'bookingStatus not valid' };
+    }
+    const venueUpdate: Record<string, unknown> = { lastModifiedBy: actor };
+    if (bookingStatus !== undefined && bookingStatus !== null) venueUpdate.bookingStatus = bookingStatus;
+    if (interested !== undefined && interested !== null) venueUpdate.interested = interested;
+    if (Object.keys(venueUpdate).length === 1) return null;
+    try { await venueModel.findByIdAndUpdate(String(o.venueId), venueUpdate); } catch (e) {
+      return { status: 500, message: (e as Error).message };
+    }
+    return null;
+  }
+
+  // POST /outreach/:id/apply-suggestion — Josh's approval of a reply suggestion.
+  // Writes the venue's bookingStatus/interested (from the edited body, else the
+  // suggestion's proposed values) and marks the suggestion reviewed so it leaves
+  // the queue. `dismiss: true` reviews it WITHOUT writing the venue. This is the
+  // ONLY path that turns an AI suggestion into a venue write — guarded by
+  // venue:edit, never automatic.
+  async applySuggestion(req: AuthIdRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, ['venue:edit']);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Update id is invalid' });
+    }
+    const body = (req.body || {}) as { bookingStatus?: string; interested?: boolean; dismiss?: boolean; actor?: string };
+    let o: OutreachDoc | null;
+    try { o = await this.model.findById(req.params.id) as unknown as OutreachDoc | null; } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    if (!o) return res.status(400).json({ message: 'Id Not Found' });
+    const suggestion = (o as { suggestion?: { proposedBookingStatus?: string; proposedInterested?: boolean } }).suggestion;
+    if (!suggestion) return res.status(400).json({ message: 'no suggestion to apply' });
+    const actor = resolveActor(req, body);
+
+    if (!body.dismiss) {
+      const writeErr = await this.writeSuggestedVenue(o, suggestion, body, actor);
+      if (writeErr) return res.status(writeErr.status).json({ message: writeErr.message });
+    }
+
+    let updated;
+    try {
+      updated = await this.model.findByIdAndUpdate(req.params.id, { 'suggestion.reviewed': true, lastModifiedBy: actor });
+    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    return res.status(200).json(updated);
   }
 }
 

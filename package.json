@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.0.38",
+  "version": "2.0.39",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -43,6 +43,7 @@
   },
   "author": "HandlersAndKickers <>",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.106.0",
     "@types/bcryptjs": "^2.4.2",
     "@types/cors": "^2.8.13",
     "@types/debug": "^4.1.7",
@@ -59,6 +60,7 @@
     "express": "^5.2.1",
     "express-sslify": "^1.2.0",
     "helmet": "^8.1.0",
+    "imapflow": "^1.4.3",
     "jwt-simple": "^0.5.6",
     "mongoose": "^9.6.1",
     "morgan": "^1.10.0",
