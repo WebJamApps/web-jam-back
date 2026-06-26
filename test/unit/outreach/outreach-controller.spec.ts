@@ -13,6 +13,18 @@ vi.mock('#src/lib/calendar.js', () => ({
   default: { createCallTaskEvent },
 }));
 
+const findReplies = vi.fn(() => Promise.resolve([] as any[]));
+vi.mock('#src/lib/imap-replies.js', () => ({
+  findReplies,
+  default: { findReplies },
+}));
+
+const classifyReply = vi.fn(() => Promise.resolve(null as any));
+vi.mock('#src/lib/classify-reply.js', () => ({
+  classifyReply,
+  default: { classifyReply },
+}));
+
 const { default: controller } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -64,6 +76,10 @@ describe('Outreach Controller (#844 batch model)', () => {
     sendMail.mockResolvedValue({ messageId: 'mid-123' });
     createCallTaskEvent.mockClear();
     createCallTaskEvent.mockResolvedValue({ id: 'evt-1' });
+    findReplies.mockClear();
+    findReplies.mockResolvedValue([]);
+    classifyReply.mockClear();
+    classifyReply.mockResolvedValue(null);
     asAgent();
     (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue()));
     (venueModel as any).find = vi.fn(() => Promise.resolve([]));
@@ -742,6 +758,177 @@ describe('Outreach Controller (#844 batch model)', () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
       await c.advanceCadence({ user: 'a' }, resStub);
       expect(payload).toMatchObject({ processed: 0, sent: 0, parked: 0, skipped: 0 });
+    });
+  });
+
+  describe('reply-detection (#825)', () => {
+    describe('checkReplies', () => {
+      it('403s without outreach:edit', async () => {
+        asAgent(['outreach:create']);
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(status).toBe(403);
+      });
+
+      it('500s when the active-outreach query throws', async () => {
+        c.model.find = vi.fn(() => Promise.reject(new Error('db down')));
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(status).toBe(500);
+      });
+
+      it('reports nothing matched when there are no replies', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
+        findReplies.mockResolvedValue([]);
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0 });
+      });
+
+      it('marks a matched reply replied, stores the snippet + suggestion, and halts cadence', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
+        findReplies.mockResolvedValue([{
+          outreachId: 'o1', fromAddress: 'pat@v.com', repliedAt: new Date('2026-06-26'), snippet: 'We would love to!', gmailThreadId: 't9',
+        }]);
+        classifyReply.mockResolvedValue({ sentiment: 'positive', proposedBookingStatus: 'booking', model: 'claude-haiku-4-5' });
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(payload).toEqual({ checked: 1, matched: 1, classified: 1 });
+        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith('o1', expect.objectContaining({
+          status: 'replied', replySnippet: 'We would love to!', gmailThreadId: 't9', nextTouchDue: null,
+          suggestion: expect.objectContaining({ sentiment: 'positive' }),
+        }));
+      });
+
+      it('counts a match without an AI suggestion as matched-not-classified', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
+        findReplies.mockResolvedValue([{ outreachId: 'o1', repliedAt: new Date(), snippet: 'hi' }]);
+        classifyReply.mockResolvedValue(null);
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(payload).toEqual({ checked: 1, matched: 1, classified: 0 });
+      });
+
+      it('skips a match that does not correspond to a scanned record', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
+        findReplies.mockResolvedValue([{ outreachId: 'ghost', repliedAt: new Date(), snippet: 'hi' }]);
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0 });
+      });
+
+      it('swallows a per-record update failure without aborting the scan', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
+        findReplies.mockResolvedValue([{ outreachId: 'o1', repliedAt: new Date(), snippet: 'hi' }]);
+        c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('write fail')));
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0 });
+      });
+    });
+
+    describe('listPendingReplies', () => {
+      it('403s without any outreach capability', async () => {
+        asAgent(['nope']);
+        await c.listPendingReplies({ user: 'a' }, resStub);
+        expect(status).toBe(403);
+      });
+
+      it('returns replied records with an unreviewed suggestion', async () => {
+        const recs = [{ _id: 'o1', suggestion: { sentiment: 'positive', reviewed: false } }];
+        c.model.find = vi.fn(() => Promise.resolve(recs));
+        await c.listPendingReplies({ user: 'a' }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toEqual(recs);
+        expect(c.model.find).toHaveBeenCalledWith(expect.objectContaining({ status: 'replied' }));
+      });
+
+      it('500s when the query throws', async () => {
+        c.model.find = vi.fn(() => Promise.reject(new Error('db')));
+        await c.listPendingReplies({ user: 'a' }, resStub);
+        expect(status).toBe(500);
+      });
+    });
+
+    describe('applySuggestion', () => {
+      const withSuggestion = (over = {}) => ({
+        _id: oid(), venueId: oid(), suggestion: { proposedBookingStatus: 'booking', proposedInterested: true }, ...over,
+      });
+
+      it('403s without venue:edit', async () => {
+        await c.applySuggestion({ user: 'a', params: { id: oid() }, body: {} }, resStub); // default agent lacks venue:edit
+        expect(status).toBe(403);
+      });
+
+      it('400s on an invalid id', async () => {
+        asAgent(['venue:edit']);
+        await c.applySuggestion({ user: 'a', params: { id: 'nope' }, body: {} }, resStub);
+        expect(status).toBe(400);
+      });
+
+      it('400s when the record is not found', async () => {
+        asAgent(['venue:edit']);
+        c.model.findById = vi.fn(() => Promise.resolve(null));
+        await c.applySuggestion({ user: 'a', params: { id: oid() }, body: {} }, resStub);
+        expect(status).toBe(400);
+      });
+
+      it('400s when there is no suggestion to apply', async () => {
+        asAgent(['venue:edit']);
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: 'o1', venueId: 'v1' }));
+        await c.applySuggestion({ user: 'a', params: { id: oid() }, body: {} }, resStub);
+        expect(status).toBe(400);
+      });
+
+      it('writes the suggested venue fields and marks the suggestion reviewed', async () => {
+        asAgent(['venue:edit']);
+        const rec = withSuggestion();
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: {} }, resStub);
+        expect((venueModel as any).findByIdAndUpdate).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
+          bookingStatus: 'booking', interested: true,
+        }));
+        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({ 'suggestion.reviewed': true }));
+        expect(status).toBe(200);
+      });
+
+      it('lets a Josh-edited body override the AI proposal', async () => {
+        asAgent(['venue:edit']);
+        const rec = withSuggestion();
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { bookingStatus: 'booked', interested: false } }, resStub);
+        expect((venueModel as any).findByIdAndUpdate).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
+          bookingStatus: 'booked', interested: false,
+        }));
+      });
+
+      it('400s on an invalid bookingStatus', async () => {
+        asAgent(['venue:edit']);
+        const rec = withSuggestion();
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { bookingStatus: 'maybe' } }, resStub);
+        expect(status).toBe(400);
+      });
+
+      it('dismiss reviews the suggestion WITHOUT writing the venue', async () => {
+        asAgent(['venue:edit']);
+        const rec = withSuggestion();
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { dismiss: true } }, resStub);
+        expect((venueModel as any).findByIdAndUpdate).not.toHaveBeenCalled();
+        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({ 'suggestion.reviewed': true }));
+      });
+
+      it('500s when the venue write throws', async () => {
+        asAgent(['venue:edit']);
+        const rec = withSuggestion();
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        (venueModel as any).findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db')));
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: {} }, resStub);
+        expect(status).toBe(500);
+      });
+
+      it('500s when the suggestion-reviewed update throws', async () => {
+        asAgent(['venue:edit']);
+        const rec = withSuggestion();
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db')));
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: {} }, resStub);
+        expect(status).toBe(500);
+      });
     });
   });
 });

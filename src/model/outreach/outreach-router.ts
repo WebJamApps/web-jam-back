@@ -59,9 +59,32 @@ router.route('/advance')
     void action();
   });
 
+// POST /outreach/check-replies — Gmail reply-detection tick (#825). IMAP scan;
+// halts the cadence on matched replies + attaches an AI suggestion for review.
+router.route('/check-replies')
+  .post((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'checkReplies', controller, authUtils);
+    void action();
+  });
+
+// GET /outreach/replies/pending — the "replies to review" queue (#825).
+router.route('/replies/pending')
+  .get((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'listPendingReplies', controller, authUtils);
+    void action();
+  });
+
 router.route('/')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'listOutreach', controller, authUtils);
+    void action();
+  });
+
+// POST /outreach/:id/apply-suggestion — Josh approves/edits/dismisses a reply
+// suggestion (#825). The ONLY path that writes an AI suggestion onto a venue.
+router.route('/:id/apply-suggestion')
+  .post((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'applySuggestion', controller, authUtils);
     void action();
   });
 
