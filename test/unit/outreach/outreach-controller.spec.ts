@@ -912,6 +912,38 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({ 'suggestion.reviewed': true }));
       });
 
+      it('reopen reverts a false positive to sent + resumes cadence, no venue write', async () => {
+        asAgent(['venue:edit']);
+        const rec = {
+          _id: oid(), venueId: oid(), step: 1, sentAt: new Date('2026-06-23T00:00:00Z'), status: 'replied', suggestion: { sentiment: 'needs-info' },
+        };
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { reopen: true } }, resStub);
+        expect((venueModel as any).findByIdAndUpdate).not.toHaveBeenCalled();
+        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({
+          status: 'sent', repliedAt: null, replySnippet: null, suggestion: null,
+        }));
+        expect(status).toBe(200);
+      });
+
+      it('reopen works even when there is no suggestion (Haiku failed)', async () => {
+        asAgent(['venue:edit']);
+        const rec = { _id: oid(), venueId: oid(), step: 1, sentAt: new Date('2026-06-23T00:00:00Z'), status: 'replied' };
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { reopen: true } }, resStub);
+        expect(status).toBe(200);
+        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({ status: 'sent' }));
+      });
+
+      it('500s when the reopen update throws', async () => {
+        asAgent(['venue:edit']);
+        const rec = { _id: oid(), venueId: oid(), step: 1, sentAt: new Date(), status: 'replied', suggestion: {} };
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db')));
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { reopen: true } }, resStub);
+        expect(status).toBe(500);
+      });
+
       it('500s when the venue write throws', async () => {
         asAgent(['venue:edit']);
         const rec = withSuggestion();

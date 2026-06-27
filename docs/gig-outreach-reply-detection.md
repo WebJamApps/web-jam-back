@@ -57,7 +57,18 @@ published OAuth app. An app password is a separate auth path that sidesteps it.
 | --- | --- | --- |
 | `POST /outreach/check-replies` | `outreach:edit` | IMAP scan; matched replies → `replied` (halts cadence) + snippet + Haiku suggestion. Returns `{ checked, matched, classified }`. |
 | `GET /outreach/replies/pending` | any `outreach:*` | The "replies to review" queue: replied records with an unreviewed suggestion. |
-| `POST /outreach/:id/apply-suggestion` | `venue:edit` | Josh approves/edits/dismisses. Writes the venue's `bookingStatus`/`interested` (edited body values win over the AI's), marks the suggestion reviewed. `{ "dismiss": true }` reviews without writing. **The only path that turns a suggestion into a venue write.** |
+| `POST /outreach/:id/apply-suggestion` | `venue:edit` | Josh approves/edits/dismisses/re-opens. Default: writes the venue's `bookingStatus`/`interested` (edited body values win over the AI's), marks the suggestion reviewed. `{ "dismiss": true }` reviews without writing. `{ "reopen": true }` reverts a **false-positive** back to `sent` (cadence resumes) — for when a detected "reply" wasn't a real venue reply. **Apply is the only path that turns a suggestion into a venue write.** |
+
+## Avoiding false matches
+
+Every pitch CCs Josh, so a copy of the pitch lands in the IMAP mailbox. A naive
+"references this Message-ID" search matches that copy and would mark the venue
+`replied` off its own outgoing mail. `findReplies` guards against it: a candidate
+is dropped unless it is **not** our own pitch/CC copy (its `Message-ID` isn't one
+of ours and its `From` isn't our sending address) **and** it actually references
+one of our pitches (`References`/`In-Reply-To`). The snippet is taken from the
+message **body** (after the header block), never the raw headers. If one ever
+slips through, the `reopen` action above puts the venue back into the cadence.
 
 ## The 30-second constraint
 
