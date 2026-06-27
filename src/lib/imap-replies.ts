@@ -13,20 +13,9 @@ const debug = Debug('web-jam-back:imap-replies');
 const IMAP_HOST = 'imap.gmail.com';
 // All Mail, so a reply that's been read/archived/deleted-from-inbox still matches.
 const MAILBOX = '[Gmail]/All Mail';
-
-export interface OutreachRef { outreachId: string; messageId: string; sentAt?: Date }
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// The IMAP search is bounded with a SINCE date so Gmail only scans recent mail
-// (a reply can only post-date its pitch) instead of all-time over All Mail —
-// this is what keeps the scan under Heroku's 30s request limit. Use the earliest
-// pitch date minus a 1-day buffer, or 90 days back if no dates are known.
-export function earliestSince(refs: OutreachRef[]): Date {
-  const times = refs.map((r) => r.sentAt).filter(Boolean).map((d) => new Date(d as Date).getTime());
-  if (times.length === 0) return new Date(Date.now() - 90 * DAY_MS);
-  return new Date(Math.min(...times) - DAY_MS);
-}
+export interface OutreachRef { outreachId: string; messageId: string; sentAt?: Date }
 export interface ReplyMatch {
   outreachId: string;
   fromAddress: string;
@@ -41,11 +30,79 @@ export function bareMessageId(messageId: string): string {
   return (messageId || '').replace(/^<|>$/g, '').trim();
 }
 
-// A reply carries the original Message-ID in References (preferred) or
-// In-Reply-To. Match either header containing the bare id.
-export function buildReplySearch(messageId: string): Record<string, unknown> {
-  const id = bareMessageId(messageId);
-  return { or: [{ header: { references: id } }, { header: { 'in-reply-to': id } }] };
+// The IMAP search is bounded with a SINCE date so Gmail only scans recent mail
+// (a reply can only post-date its pitch) instead of all-time over All Mail.
+// Use the earliest pitch date minus a 1-day buffer, or 90 days back if unknown.
+export function earliestSince(refs: OutreachRef[]): Date {
+  const times = refs.map((r) => r.sentAt).filter(Boolean).map((d) => new Date(d as Date).getTime());
+  if (times.length === 0) return new Date(Date.now() - 90 * DAY_MS);
+  return new Date(Math.min(...times) - DAY_MS);
+}
+
+// ONE search covering replies to ANY of our pitches: SINCE date AND
+// (references/in-reply-to contains id1 OR id2 OR …). A single server-side search
+// instead of one per pitch — this is what keeps the scan fast as the active set
+// grows. Null when there are no ids to search for.
+export function buildBatchSearch(bareIds: string[], since: Date): Record<string, unknown> | null {
+  const ids = bareIds.filter(Boolean);
+  if (ids.length === 0) return null;
+  const or: Record<string, unknown>[] = [];
+  for (const id of ids) {
+    or.push({ header: { references: id } });
+    or.push({ header: { 'in-reply-to': id } });
+  }
+  return { since, or };
+}
+
+// Pull a header value out of a raw RFC822 message (header block = everything
+// before the first blank line), case-insensitive, unfolding continuation lines.
+export function extractHeader(rawSource: string, name: string): string {
+  const headerBlock = (rawSource || '').split(/\r?\n\r?\n/)[0] || '';
+  const lower = name.toLowerCase();
+  const parts: string[] = [];
+  let capturing = false;
+  for (const line of headerBlock.split(/\r?\n/)) {
+    if (capturing) {
+      if (/^\s/.test(line)) { parts.push(line.trim()); continue; }
+      break;
+    }
+    const idx = line.indexOf(':');
+    if (idx > 0 && line.slice(0, idx).toLowerCase() === lower) {
+      parts.push(line.slice(idx + 1).trim());
+      capturing = true;
+    }
+  }
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+// Which of our pitches does this message reply to? The reply's References /
+// In-Reply-To headers carry the original pitch's Message-ID. Returns the matched
+// bare id (caller maps it to an outreach record), or null if it references none.
+export function referencedPitchId(rawSource: string, bareIds: string[]): string | null {
+  const refs = `${extractHeader(rawSource, 'references')} ${extractHeader(rawSource, 'in-reply-to')}`;
+  return bareIds.find((id) => id && refs.indexOf(id) !== -1) || null;
+}
+
+// Guard against matching our OWN mail rather than a venue reply. Every pitch CCs
+// Josh, so a copy lands in the IMAP mailbox; that copy's Message-ID IS one of our
+// pitch ids, and it's From our sending address. Either signal means "not a reply".
+export function isSelfOrPitch(
+  messageId: string | undefined,
+  fromAddress: string,
+  selfAddress: string,
+  bareIds: string[],
+): boolean {
+  const bare = bareMessageId(messageId || '');
+  if (bare && bareIds.indexOf(bare) !== -1) return true;
+  if (fromAddress && selfAddress && fromAddress.toLowerCase() === selfAddress.toLowerCase()) return true;
+  return false;
+}
+
+// The message body = everything after the first blank line (drop the RFC822
+// header block, which would otherwise be classified as the "reply" text).
+export function bodyFromSource(rawSource: string): string {
+  const parts = (rawSource || '').split(/\r?\n\r?\n/);
+  return parts.length > 1 ? parts.slice(1).join('\n\n') : (rawSource || '');
 }
 
 // Reduce a reply body to a short, readable snippet for the review queue: drop the
@@ -78,17 +135,22 @@ export function imapEnabled(): boolean {
 const SCAN_DEADLINE_MS = 25000;
 
 // Connect to Gmail over IMAP and return one ReplyMatch per outreach record that
-// has a genuine reply. Each search is bounded by SINCE (earliestSince) so Gmail
-// scans only recent mail, and the whole scan is raced against SCAN_DEADLINE_MS.
-// Returns [] / partial (never throws to the caller) when disabled, on a
-// connection failure, or on the deadline — so a bad credential or a slow mailbox
-// degrades the cron tick to a no-op rather than crashing or timing out the
-// request. The connection/fetch I/O is excluded from coverage; the pure
-// matching/snippet/since helpers above are unit-tested.
+// has a GENUINE venue reply. One bounded batched search finds candidate replies
+// to any pitch; each candidate is then verified — not our own pitch/CC copy
+// (isSelfOrPitch), and actually referencing one of our pitches (referencedPitchId)
+// — before its body snippet is taken. The whole scan is raced against a 25s
+// deadline. Returns [] / partial (never throws) when disabled, on a connection
+// failure, or on the deadline. The connection/fetch I/O is excluded from
+// coverage; the pure parse/match/guard helpers above are unit-tested.
 /* istanbul ignore next */
 export async function findReplies(refs: OutreachRef[]): Promise<ReplyMatch[]> {
   if (!imapEnabled() || refs.length === 0) return [];
-  const since = earliestSince(refs);
+  const idToOutreach = new Map<string, string>();
+  for (const r of refs) { const b = bareMessageId(r.messageId); if (b) idToOutreach.set(b, r.outreachId); }
+  const bareIds = [...idToOutreach.keys()];
+  const search = buildBatchSearch(bareIds, earliestSince(refs));
+  if (!search) return [];
+  const selfAddress = (process.env.GMAIL_IMAP_USER || '').toLowerCase();
   const client = new ImapFlow({
     host: IMAP_HOST,
     port: 993,
@@ -96,27 +158,30 @@ export async function findReplies(refs: OutreachRef[]): Promise<ReplyMatch[]> {
     auth: { user: process.env.GMAIL_IMAP_USER || '', pass: process.env.GMAIL_IMAP_APP_PASSWORD || '' },
     logger: false,
   });
-  const matches: ReplyMatch[] = [];
+  // Keyed by outreachId so a venue that replied more than once collapses to its
+  // latest reply (UIDs ascend, so a later one overwrites).
+  const byOutreach = new Map<string, ReplyMatch>();
 
   const scan = async (): Promise<void> => {
     await client.connect();
     const lock = await client.getMailboxLock(MAILBOX);
     try {
-      for (const ref of refs) {
-        if (!ref.messageId) continue;
+      const uids = await client.search(search, { uid: true });
+      for (const uid of uids || []) {
         // eslint-disable-next-line no-await-in-loop
-        const uids = await client.search({ since, ...buildReplySearch(ref.messageId) }, { uid: true });
-        if (!uids || uids.length === 0) continue;
-        // eslint-disable-next-line no-await-in-loop
-        const msg = await client.fetchOne(String(uids[uids.length - 1]), { envelope: true, source: true }, { uid: true });
-        if (!msg) continue;
-        const from = msg.envelope?.from?.[0];
-        const body = msg.source ? msg.source.toString() : '';
-        matches.push({
-          outreachId: ref.outreachId,
-          fromAddress: from ? `${from.address}` : '',
+        const msg = await client.fetchOne(String(uid), { envelope: true, source: true }, { uid: true });
+        if (!msg || !msg.source) continue;
+        const raw = msg.source.toString();
+        const from = msg.envelope?.from?.[0]?.address || '';
+        if (isSelfOrPitch(msg.envelope?.messageId, from, selfAddress, bareIds)) continue;
+        const pitchId = referencedPitchId(raw, bareIds);
+        const outreachId = pitchId ? idToOutreach.get(pitchId) : undefined;
+        if (!outreachId) continue;
+        byOutreach.set(outreachId, {
+          outreachId,
+          fromAddress: from,
           repliedAt: msg.envelope?.date || new Date(),
-          snippet: snippetFromBody(body),
+          snippet: snippetFromBody(bodyFromSource(raw)),
           gmailThreadId: msg.threadId ? String(msg.threadId) : undefined,
         });
       }
@@ -138,9 +203,10 @@ export async function findReplies(refs: OutreachRef[]): Promise<ReplyMatch[]> {
   } finally {
     if (timer) clearTimeout(timer);
   }
-  return matches;
+  return [...byOutreach.values()];
 }
 
 export default {
-  bareMessageId, buildReplySearch, snippetFromBody, imapEnabled, findReplies,
+  bareMessageId, earliestSince, buildBatchSearch, extractHeader, referencedPitchId,
+  isSelfOrPitch, bodyFromSource, snippetFromBody, imapEnabled, findReplies,
 };

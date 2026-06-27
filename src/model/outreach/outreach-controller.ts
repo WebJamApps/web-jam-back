@@ -724,27 +724,53 @@ class OutreachController extends Controller {
     return null;
   }
 
-  // POST /outreach/:id/apply-suggestion — Josh's approval of a reply suggestion.
-  // Writes the venue's bookingStatus/interested (from the edited body, else the
-  // suggestion's proposed values) and marks the suggestion reviewed so it leaves
-  // the queue. `dismiss: true` reviews it WITHOUT writing the venue. This is the
-  // ONLY path that turns an AI suggestion into a venue write — guarded by
-  // venue:edit, never automatic.
+  // Re-open a record whose detected "reply" wasn't a real venue reply (false
+  // positive, or an auto-responder): revert to `sent`, restore the next cadence
+  // touch from its step/sentAt so follow-ups resume, and clear the reply fields.
+  // The record drops out of the review queue because it's no longer `replied`.
+  async reopenOutreach(id: string, o: OutreachDoc, actor: string, res: Response): Promise<unknown> {
+    const update = {
+      status: 'sent',
+      nextTouchDue: nextTouchDueAfter(o.step || 1, new Date(o.sentAt || Date.now())),
+      repliedAt: null,
+      replySnippet: null,
+      suggestion: null,
+      lastModifiedBy: actor,
+    };
+    let updated;
+    try { updated = await this.model.findByIdAndUpdate(id, update); } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    return res.status(200).json(updated);
+  }
+
+  // POST /outreach/:id/apply-suggestion — Josh's review of a detected reply.
+  // Default: writes the venue's bookingStatus/interested (from the edited body,
+  // else the suggestion's proposed values) and marks the suggestion reviewed so
+  // it leaves the queue. `dismiss: true` reviews WITHOUT writing the venue.
+  // `reopen: true` reverts a false-positive back to `sent` (cadence resumes).
+  // The apply path is the ONLY one that turns an AI suggestion into a venue
+  // write — guarded by venue:edit, never automatic.
   async applySuggestion(req: AuthIdRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['venue:edit']);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ message: 'Update id is invalid' });
     }
-    const body = (req.body || {}) as { bookingStatus?: string; interested?: boolean; dismiss?: boolean; actor?: string };
+    const body = (req.body || {}) as {
+      bookingStatus?: string; interested?: boolean; dismiss?: boolean; reopen?: boolean; actor?: string;
+    };
     let o: OutreachDoc | null;
     try { o = await this.model.findById(req.params.id) as unknown as OutreachDoc | null; } catch (e) {
       return res.status(500).json({ message: (e as Error).message });
     }
     if (!o) return res.status(400).json({ message: 'Id Not Found' });
+    const actor = resolveActor(req, body);
+
+    if (body.reopen) return this.reopenOutreach(req.params.id, o, actor, res);
+
     const suggestion = (o as { suggestion?: { proposedBookingStatus?: string; proposedInterested?: boolean } }).suggestion;
     if (!suggestion) return res.status(400).json({ message: 'no suggestion to apply' });
-    const actor = resolveActor(req, body);
 
     if (!body.dismiss) {
       const writeErr = await this.writeSuggestedVenue(o, suggestion, body, actor);
