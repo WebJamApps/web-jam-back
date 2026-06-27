@@ -671,7 +671,9 @@ class OutreachController extends Controller {
     try {
       active = await this.model.find({ status: 'sent', messageId: { $nin: [null, ''] } }) as unknown as OutreachDoc[];
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
-    const refs = active.map((o) => ({ outreachId: String(o._id), messageId: (o as { messageId?: string }).messageId || '' }));
+    const refs = active.map((o) => ({
+      outreachId: String(o._id), messageId: (o as { messageId?: string }).messageId || '', sentAt: o.sentAt,
+    }));
     const matches = await findReplies(refs);
     const result = { checked: refs.length, matched: 0, classified: 0 };
     for (const m of matches) {
