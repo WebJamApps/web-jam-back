@@ -28,6 +28,22 @@ const followUpSchema = new Schema({
   step: { type: Number, required: false },
 }, { _id: false });
 
+// AI reply-classification (#825 Half B). When the reply-detection job matches a
+// venue's reply, Claude Haiku reads it and SUGGESTS a venue update here. The
+// suggestion is advisory only — it is surfaced in the AdminVenues "replies to
+// review" queue and NOTHING is written to the venue until Josh approves
+// (apply-suggestion). `reviewed` flips true once he approves/edits/dismisses, so
+// the suggestion drops out of the pending queue. `model` records which model
+// produced it. AI never auto-writes booking data (mis-send incident guardrail).
+const suggestionSchema = new Schema({
+  sentiment: { type: String, required: false, enum: ['positive', 'negative', 'needs-info'] },
+  proposedBookingStatus: { type: String, required: false, enum: ['booking', 'not-booking', 'booked'] },
+  proposedInterested: { type: Boolean, required: false },
+  rationale: { type: String, required: false },
+  model: { type: String, required: false },
+  reviewed: { type: Boolean, required: false, default: false },
+}, { _id: false });
+
 const outreachSchema = new Schema({
   venueId: { type: Schema.Types.ObjectId, ref: 'Venue', required: true },
   templateUsed: { type: String, required: false, trim: true },
@@ -48,6 +64,14 @@ const outreachSchema = new Schema({
   },
   messageId: { type: String, required: false, trim: true },
   gmailThreadId: { type: String, required: false, trim: true },
+  // Reply-detection (#825 Half B). When the IMAP job matches a venue's reply to
+  // this pitch's `messageId`, the record is moved to `replied` (which halts the
+  // cadence) and these capture when + a short text snippet of the reply. The
+  // `suggestion` holds Claude Haiku's advisory classification (human-approved
+  // before any venue write).
+  repliedAt: { type: Date, required: false, default: null },
+  replySnippet: { type: String, required: false, trim: true },
+  suggestion: { type: suggestionSchema, required: false, default: null },
   // Which AI agent or human sent this pitch (#818 `actor` field).
   sentBy: { type: String, required: false, trim: true },
   followUps: { type: [followUpSchema], required: false, default: [] },
