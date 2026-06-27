@@ -24,6 +24,20 @@ export interface ReplyMatch {
   gmailThreadId?: string;
 }
 
+// Minimal interface covering the ImapFlow methods findReplies actually uses.
+// Allows injection of a fake client in tests without pulling in the real network.
+export interface ImapClientLike {
+  connect(): Promise<unknown>;
+  getMailboxLock(mailbox: string): Promise<{ release: () => void }>;
+  search(query: unknown, opts: { uid: boolean }): Promise<number[] | false>;
+  fetchOne(uid: string, query: unknown, opts: { uid: boolean }): Promise<{
+    envelope?: { messageId?: string; from?: { address?: string }[]; date?: Date };
+    source?: Buffer | string; threadId?: string | number;
+  } | false>;
+  logout(): Promise<unknown>;
+  close(): void | Promise<unknown>;
+}
+
 // IMAP HEADER search does a substring match, so strip the angle brackets the
 // Message-ID is stored/sent with (`<abc@mail>` → `abc@mail`) for a clean match.
 export function bareMessageId(messageId: string): string {
@@ -98,6 +112,19 @@ export function isSelfOrPitch(
   return false;
 }
 
+// True if a message is an automated bounce / auto-reply rather than a human venue
+// reply — these legitimately reference our pitch but must NOT count as replies.
+export function isAutoOrBounce(fromAddress: string, rawSource: string): boolean {
+  const from = (fromAddress || '').toLowerCase();
+  if (from.includes('mailer-daemon@') || from.includes('postmaster@')) return true;
+  const localPart = from.split('@')[0];
+  if (localPart.startsWith('no-reply') || localPart.startsWith('noreply')) return true;
+  const autoSubmitted = extractHeader(rawSource, 'auto-submitted').toLowerCase();
+  if (autoSubmitted && autoSubmitted !== 'no') return true;
+  if (extractHeader(rawSource, 'content-type').toLowerCase().includes('multipart/report')) return true;
+  return false;
+}
+
 // The message body = everything after the first blank line (drop the RFC822
 // header block, which would otherwise be classified as the "reply" text).
 export function bodyFromSource(rawSource: string): string {
@@ -137,27 +164,28 @@ const SCAN_DEADLINE_MS = 25000;
 // Connect to Gmail over IMAP and return one ReplyMatch per outreach record that
 // has a GENUINE venue reply. One bounded batched search finds candidate replies
 // to any pitch; each candidate is then verified — not our own pitch/CC copy
-// (isSelfOrPitch), and actually referencing one of our pitches (referencedPitchId)
-// — before its body snippet is taken. The whole scan is raced against a 25s
-// deadline. Returns [] / partial (never throws) when disabled, on a connection
-// failure, or on the deadline. The connection/fetch I/O is excluded from
-// coverage; the pure parse/match/guard helpers above are unit-tested.
-/* istanbul ignore next */
-export async function findReplies(refs: OutreachRef[]): Promise<ReplyMatch[]> {
-  if (!imapEnabled() || refs.length === 0) return [];
+// (isSelfOrPitch), not a bounce/auto-reply (isAutoOrBounce), and actually
+// referencing one of our pitches (referencedPitchId) — before its body snippet
+// is taken. The whole scan is raced against a 25s deadline. Returns [] / partial
+// (never throws) when disabled, on a connection failure, or on the deadline.
+// An optional makeClient factory injects a fake IMAP client in tests; when
+// present the imapEnabled() env gate is skipped so tests never hit Gmail.
+export async function findReplies(refs: OutreachRef[], makeClient?: () => ImapClientLike): Promise<ReplyMatch[]> {
+  const injected = makeClient !== undefined;
+  if ((!injected && !imapEnabled()) || refs.length === 0) return [];
   const idToOutreach = new Map<string, string>();
   for (const r of refs) { const b = bareMessageId(r.messageId); if (b) idToOutreach.set(b, r.outreachId); }
   const bareIds = [...idToOutreach.keys()];
   const search = buildBatchSearch(bareIds, earliestSince(refs));
   if (!search) return [];
   const selfAddress = (process.env.GMAIL_IMAP_USER || '').toLowerCase();
-  const client = new ImapFlow({
+  const client = makeClient ? makeClient() : (new ImapFlow({
     host: IMAP_HOST,
     port: 993,
     secure: true,
     auth: { user: process.env.GMAIL_IMAP_USER || '', pass: process.env.GMAIL_IMAP_APP_PASSWORD || '' },
     logger: false,
-  });
+  }) as unknown as ImapClientLike);
   // Keyed by outreachId so a venue that replied more than once collapses to its
   // latest reply (UIDs ascend, so a later one overwrites).
   const byOutreach = new Map<string, ReplyMatch>();
@@ -174,6 +202,7 @@ export async function findReplies(refs: OutreachRef[]): Promise<ReplyMatch[]> {
         const raw = msg.source.toString();
         const from = msg.envelope?.from?.[0]?.address || '';
         if (isSelfOrPitch(msg.envelope?.messageId, from, selfAddress, bareIds)) continue;
+        if (isAutoOrBounce(from, raw)) continue;
         const pitchId = referencedPitchId(raw, bareIds);
         const outreachId = pitchId ? idToOutreach.get(pitchId) : undefined;
         if (!outreachId) continue;
@@ -208,5 +237,5 @@ export async function findReplies(refs: OutreachRef[]): Promise<ReplyMatch[]> {
 
 export default {
   bareMessageId, earliestSince, buildBatchSearch, extractHeader, referencedPitchId,
-  isSelfOrPitch, bodyFromSource, snippetFromBody, imapEnabled, findReplies,
+  isSelfOrPitch, isAutoOrBounce, bodyFromSource, snippetFromBody, imapEnabled, findReplies,
 };
