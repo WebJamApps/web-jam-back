@@ -1,5 +1,5 @@
 import {
-  bareMessageId, buildReplySearch, snippetFromBody, imapEnabled, findReplies,
+  bareMessageId, buildReplySearch, snippetFromBody, imapEnabled, findReplies, earliestSince,
 } from '#src/lib/imap-replies.js';
 
 describe('imap-replies', () => {
@@ -36,6 +36,21 @@ describe('imap-replies', () => {
     });
     it('returns empty for empty input', () => {
       expect(snippetFromBody('')).toBe('');
+    });
+  });
+
+  describe('earliestSince', () => {
+    it('returns the earliest pitch date minus a 1-day buffer', () => {
+      const refs = [
+        { outreachId: 'a', messageId: '<a>', sentAt: new Date('2026-06-10T00:00:00Z') },
+        { outreachId: 'b', messageId: '<b>', sentAt: new Date('2026-06-20T00:00:00Z') },
+      ];
+      expect(earliestSince(refs).toISOString()).toBe('2026-06-09T00:00:00.000Z');
+    });
+    it('falls back to ~90 days ago when no dates are known', () => {
+      const since = earliestSince([{ outreachId: 'a', messageId: '<a>' }]).getTime();
+      const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
+      expect(Math.abs(since - ninetyDaysAgo)).toBeLessThan(5000);
     });
   });
 
