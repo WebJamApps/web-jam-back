@@ -464,6 +464,45 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
+  describe('previewByVenue — batch form (venueIds plural) (#1149)', () => {
+    it('returns an array for multiple valid venueIds', async () => {
+      const id1 = oid();
+      const id2 = oid();
+      await c.previewByVenue({ user: 'a', query: { venueIds: `${id1},${id2}`, targetDates: 'Sept 25-27' } }, resStub);
+      expect(status).toBe(200);
+      expect(Array.isArray(payload)).toBe(true);
+      expect(payload).toHaveLength(2);
+      expect(payload[0]).toMatchObject({ venueId: id1, venueName: 'The Spot on Kirk', subject: expect.any(String), body: expect.any(String) });
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('skips invalid ids in the batch and still returns valid ones', async () => {
+      const id1 = oid();
+      await c.previewByVenue({ user: 'a', query: { venueIds: `${id1},not-a-valid-id`, targetDates: 'Sept 25-27' } }, resStub);
+      expect(status).toBe(200);
+      expect(Array.isArray(payload)).toBe(true);
+      expect(payload).toHaveLength(1);
+      expect(payload[0].venueId).toBe(id1);
+    });
+
+    it('skips venues that fail resolution (not found)', async () => {
+      const id1 = oid();
+      const id2 = oid();
+      (venueModel as any).findById = vi.fn()
+        .mockResolvedValueOnce(validVenue())
+        .mockResolvedValueOnce(null); // second venue not found
+      await c.previewByVenue({ user: 'a', query: { venueIds: `${id1},${id2}`, targetDates: 'Sept 25-27' } }, resStub);
+      expect(status).toBe(200);
+      expect(payload).toHaveLength(1);
+    });
+
+    it('returns an empty array when all ids are invalid', async () => {
+      await c.previewByVenue({ user: 'a', query: { venueIds: 'bad1,bad2,bad3', targetDates: 'Sept 25-27' } }, resStub);
+      expect(status).toBe(200);
+      expect(payload).toEqual([]);
+    });
+  });
+
   describe('config — auto-approve (#844)', () => {
     it('reads the default (OFF) when no doc exists', async () => {
       await c.getOutreachConfig({ user: 'a', query: {} }, resStub);
