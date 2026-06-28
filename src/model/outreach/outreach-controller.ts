@@ -505,13 +505,45 @@ class OutreachController extends Controller {
   }
 
   // GET /outreach/preview — render the exact email a venue would get, WITHOUT
-  // sending and WITHOUT requiring eligibility, so the approval UI (#1133) can
-  // show Josh the real copy while he curates the list. Query: venueId (required),
-  // templateType?, targetDates?, bookingPeriod?.
+  // sending and WITHOUT requiring eligibility, so the approval UI can show Josh
+  // the real copy while he curates the list.
+  //
+  // Supports two query shapes:
+  //   • venueIds=id1,id2,... (plural, comma-separated) — BATCH form used by the
+  //     AdminOutreach page (#1149). Returns an ARRAY of { venueId, venueName,
+  //     subject, body }, one per resolvable id. Invalid or unresolvable ids are
+  //     silently skipped so the page always gets a usable partial-or-full list.
+  //   • venueId=id (singular) — single-venue back-compat form; returns a single
+  //     { to, cc, subject, html } object (pre-#1149 contract, kept for any
+  //     existing single-venue callers such as the #1133 stage editor).
   async previewByVenue(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
-    const q = (req.query || {}) as { venueId?: string; templateType?: string; targetDates?: string; bookingPeriod?: string };
+    const q = (req.query || {}) as {
+      venueId?: string; venueIds?: string; templateType?: string; targetDates?: string; bookingPeriod?: string;
+    };
+
+    // BATCH form: venueIds (plural, comma-separated) → array of preview objects.
+    if (q.venueIds) {
+      const ids = q.venueIds.split(',').map((s) => s.trim()).filter(Boolean);
+      const results: { venueId: string; venueName: string; subject: string; body: string }[] = [];
+      for (const venueId of ids) {
+        if (!mongoose.Types.ObjectId.isValid(venueId)) continue; // skip invalid ids
+        const ctx = await this.resolvePitch( // eslint-disable-line no-await-in-loop
+          { venueId, templateType: q.templateType, targetDates: q.targetDates, bookingPeriod: q.bookingPeriod },
+          { skipDedup: true, requireEligible: false },
+        );
+        if (ctx.error) continue; // skip unresolvable venues
+        const { venue, template } = ctx as Required<PitchContext>;
+        const { subject, html } = buildPitchEmail(
+          venue, template, { targetDates: q.targetDates, bookingPeriod: q.bookingPeriod } as SendBody,
+        );
+        results.push({ venueId, venueName: venue.name || '', subject, body: html });
+      }
+      return res.status(200).json(results);
+    }
+
+    // SINGLE form (back-compat): venueId (singular) → single { to, cc, subject, html }.
     if (!q.venueId || !mongoose.Types.ObjectId.isValid(q.venueId)) return res.status(400).json({ message: 'valid venueId is required' });
     const ctx = await this.resolvePitch(
       { venueId: q.venueId, templateType: q.templateType, targetDates: q.targetDates, bookingPeriod: q.bookingPeriod },
