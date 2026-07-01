@@ -252,7 +252,7 @@ async function upsertTemplate(data) {
   return Template.findOneAndUpdate(
     { type: data.type, stage: data.stage },
     { $set: data },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: 'after' },
   );
 }
 
@@ -260,12 +260,12 @@ async function upsertVenue(data) {
   return Venue.findOneAndUpdate(
     { email: data.email },
     { $set: data },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: 'after' },
   );
 }
 
 async function upsertOutreach(filter, data) {
-  return Outreach.findOneAndUpdate(filter, { $set: data }, { upsert: true, new: true });
+  return Outreach.findOneAndUpdate(filter, { $set: data }, { upsert: true, returnDocument: 'after' });
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -296,7 +296,7 @@ async function run() {
   await OutreachConfig.findOneAndUpdate(
     { key: 'outreach' },
     { $set: { key: 'outreach', autoApprove: false, lastModifiedBy: 'seed-outreach' } },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: 'after' },
   );
   console.log('  config upserted: key=outreach autoApprove=false');
 
