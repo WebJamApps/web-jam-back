@@ -10,6 +10,9 @@ const userSchema = new Schema({
   userPhone: { type: Number, required: false },
   userStatus: { type: String, required: false },
   userType: { type: String, required: false },
+  // Artist slug an artist-scoped admin owns (#885). Absent for super-admins
+  // (Josh) and ordinary users. Set at login from the ArtistAdmins env config.
+  artist: { type: String, required: false },
   userStreetAddress: { type: String, required: false },
   userCity: { type: String, required: false },
   userState: { type: String, required: false },

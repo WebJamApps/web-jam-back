@@ -24,6 +24,10 @@ const bookSchema = new Schema({
   // page-content docs (e.g. type:'stewardshipPageContent') use this as an
   // admin on/off visibility toggle; absent/false = hidden (CollegeLutheran#707)
   enabled: { type: Boolean, required: false },
+  // Artist/tenant slug (#885). Absent on all pre-#885 records (incl. every
+  // CollegeLutheran doc), which read as the default (JaMmusic) artist. Slideshow
+  // photos and per-artist bio/page-content docs (e.g. type:'bio') carry a slug.
+  artist: { type: String, required: false },
 }, options);
 
 export default mongoose.models.Book || mongoose.model('Book', bookSchema);
