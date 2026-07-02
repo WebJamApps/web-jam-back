@@ -3,8 +3,9 @@
 //
 // Usage:  npm run seed:outreach
 //
-// SAFETY GUARD (critical): refuses to run unless MONGO_DB_URI contains 'localhost'
-// or '127.0.0.1'. This script must NEVER touch a production or Atlas database.
+// SAFETY GUARD (critical): only runs against a local Mongo (localhost/127.0.0.1)
+// or a DEV/TEST database (db name contains 'dev' or 'test'). It must NEVER touch
+// the 'release' (production) database. DEV Atlas is the normal local-dev target.
 //
 // Idempotent: uses upserts keyed on natural identifiers (Template by type+stage;
 // Venue by email; OutreachConfig by key:'outreach'; Outreach by venueId+targetDates).
@@ -22,10 +23,15 @@ config(); // load .env if present
 const uri = process.env.MONGO_DB_URI || 'mongodb://localhost:27017/web-jam-dev';
 
 // ── SAFETY GUARD ─────────────────────────────────────────────────────────────
-if (!uri.includes('localhost') && !uri.includes('127.0.0.1')) {
-  console.error('ERROR: seed:outreach requires a localhost MongoDB URI.');
-  console.error(`Current MONGO_DB_URI: ${uri.replace(/\/\/[^@]+@/, '//<credentials>@')}`);
-  console.error('Set MONGO_DB_URI=mongodb://localhost:27017/<db> to seed local data.');
+const maskedUri = uri.replace(/\/\/[^@]+@/, '//<credentials>@');
+const dbName = (uri.split('?')[0].split('/').pop() || '').toLowerCase();
+const isLocal = uri.includes('localhost') || uri.includes('127.0.0.1');
+const isDevOrTest = dbName.includes('dev') || dbName.includes('test');
+if (!isLocal && !isDevOrTest) {
+  console.error('ERROR: seed:outreach only runs against a local, DEV, or TEST database — never release/production.');
+  console.error(`Current MONGO_DB_URI: ${maskedUri}`);
+  console.error(`Parsed database name: ${dbName || '(none)'}`);
+  console.error('Point MONGO_DB_URI at your DEV Atlas DB (db name containing "dev" or "test") or a local Mongo.');
   process.exit(1);
 }
 
@@ -246,7 +252,7 @@ async function upsertTemplate(data) {
   return Template.findOneAndUpdate(
     { type: data.type, stage: data.stage },
     { $set: data },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: 'after' },
   );
 }
 
@@ -254,12 +260,12 @@ async function upsertVenue(data) {
   return Venue.findOneAndUpdate(
     { email: data.email },
     { $set: data },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: 'after' },
   );
 }
 
 async function upsertOutreach(filter, data) {
-  return Outreach.findOneAndUpdate(filter, { $set: data }, { upsert: true, new: true });
+  return Outreach.findOneAndUpdate(filter, { $set: data }, { upsert: true, returnDocument: 'after' });
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
@@ -290,7 +296,7 @@ async function run() {
   await OutreachConfig.findOneAndUpdate(
     { key: 'outreach' },
     { $set: { key: 'outreach', autoApprove: false, lastModifiedBy: 'seed-outreach' } },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: 'after' },
   );
   console.log('  config upserted: key=outreach autoApprove=false');
 
