@@ -181,6 +181,19 @@ These live in the **Web Jam LLC** Meta app (developers.facebook.com), not in cod
 - **Who can use "Reconnect Facebook":** because the app is in Development mode, only users with a **role on the app** (Admin / Developer / Tester) can complete `FB.login`. To let someone reconnect their own page (e.g. the CLC admin), add them under **App Roles → Roles → Testers**; they must also be an admin of that Facebook page.
 - **Consent dialog reuse:** `FB.login` is called with `auth_type: 'rerequest'` so the page picker shows every time. Without it Facebook offers *"continue with previous settings"* and silently reuses the last grant — which is how reconnecting one page can leave the other ungranted and 400 the next exchange (`page not found in /me/accounts`). Still **keep both pages checked** each time (see "Reconnecting a feed" above).
 
+### Artist-scoping env vars (#885)
+
+Powers timshermanmusic.com login and booking integrations. All four must be set on Heroku (webjamsalem) before timshermanmusic.com login and booking inquiry routing goes live.
+
+| Env var | Purpose | Example |
+|---------|---------|---------|
+| `ArtistAdmins` | JSON map of lower-cased login email → artist slug. A matching email is provisioned at login as an artist-scoped admin (`userType: artist-admin`). Unmatched emails are untouched. | `{"tim@example.com":"tim"}` |
+| `InquiryRecipients` | JSON map of artist slug → booking email. Routes contact/booking inquiries for that artist; unmapped artists fall back to the default JaMmusic recipients. | `{"tim":"booking@example.com"}` |
+| `TimGoogleClientId` | Google OAuth client ID for timshermanmusic.com login (its own GCP project). | (obtain from GCP Console) |
+| `TimGoogleClientSecret` | Google OAuth client secret for timshermanmusic.com login. **Secret — server-side only.** | (obtain from GCP Console) |
+
+Set these the same way as the Facebook vars above (Heroku dashboard Config Vars or `heroku config:set ... -a webjamsalem`).
+
 ## Test
 
 **`npm test`** runs the tests and generates a coverage report.

@@ -1,6 +1,7 @@
 import nodemailer, { Transporter } from 'nodemailer';
 import { Request, Response } from 'express';
 import Debug from 'debug';
+import { DEFAULT_ARTIST, normalizeArtist } from '#src/lib/artist.js';
 
 const debug = Debug('web-jam-back:InquiryController');
 
@@ -8,6 +9,21 @@ const RECIPIENT_EMAIL = 'joshua.v.sherman@gmail.com';
 // CC Maria on every inquiry so she sees booking requests in real time
 // (Josh's preference 2026-05-18). Comma-separated string per nodemailer spec.
 const INQUIRY_CC = 'chemmariasherman@gmail.com';
+
+// Contact/booking submissions are artist-scoped (#885): a submission carries an
+// `artist` slug and is emailed to that artist's booking contact. The default
+// (JaMmusic) artist keeps the original Josh + Maria-CC behaviour. Other artists'
+// recipients come from the InquiryRecipients env map ({"tim":"tim@example.com"});
+// an unmapped artist falls back to the default so no inquiry is ever dropped.
+export function recipientForArtist(artist: unknown): { to: string; cc?: string } {
+  const slug = normalizeArtist(artist);
+  if (slug === DEFAULT_ARTIST) return { to: RECIPIENT_EMAIL, cc: INQUIRY_CC };
+  let map: Record<string, string>;
+  try { map = JSON.parse(process.env.InquiryRecipients || '{}') as Record<string, string>; } catch { map = {}; }
+  // eslint-disable-next-line security/detect-object-injection
+  const to = map[slug];
+  return typeof to === 'string' && to ? { to } : { to: RECIPIENT_EMAIL, cc: INQUIRY_CC };
+}
 
 class InquiryController {
   private transporter: Transporter | null = null;
@@ -50,7 +66,8 @@ class InquiryController {
 
   handleInquiry(req: Request, res: Response) {
     debug(req.body);
-    return this.sendEmail(JSON.stringify(req.body), RECIPIENT_EMAIL, 'inquiry', res, INQUIRY_CC);
+    const { to, cc } = recipientForArtist((req.body as { artist?: unknown })?.artist);
+    return this.sendEmail(JSON.stringify(req.body), to, 'inquiry', res, cc);
   }
 }
 export default InquiryController;
