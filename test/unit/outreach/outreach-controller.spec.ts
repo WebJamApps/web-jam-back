@@ -922,12 +922,58 @@ describe('Outreach Controller (#844 batch model)', () => {
         });
       });
 
-      it('surfaces a bounce record (no suggestion) in the pending queue', async () => {
-        const recs = [{ _id: 'o1', status: 'no-response', replyKind: 'bounce' }];
+      it('surfaces a bounce record while its venue still needs attention (active, not re-verified)', async () => {
+        const recs = [{ _id: 'o1', venueId: 'v1', status: 'no-response', replyKind: 'bounce' }];
         c.model.find = vi.fn(() => Promise.resolve(recs));
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ contactVerified: false })));
         await c.listPendingReplies({ user: 'a' }, resStub);
         expect(status).toBe(200);
         expect(payload).toEqual(recs);
+      });
+
+      // #825 option B (decision 2026-07-02): bounce items auto-clear from venue
+      // state — no dismiss button. Three clear conditions:
+      it('auto-clears a bounce item once its venue is archived', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', replyKind: 'bounce' }]));
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ status: 'archived' })));
+        await c.listPendingReplies({ user: 'a' }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toEqual([]);
+      });
+
+      it('auto-clears a bounce item once its venue is re-verified (contactVerified true)', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', replyKind: 'bounce' }]));
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ contactVerified: true })));
+        await c.listPendingReplies({ user: 'a' }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toEqual([]);
+      });
+
+      it('auto-clears a bounce item whose venue no longer exists', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', replyKind: 'bounce' }]));
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(null));
+        await c.listPendingReplies({ user: 'a' }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toEqual([]);
+      });
+
+      it('keeps a bounce item pending when the venue lookup fails (never hide on a read error)', async () => {
+        const recs = [{ _id: 'o1', venueId: 'v1', replyKind: 'bounce' }];
+        c.model.find = vi.fn(() => Promise.resolve(recs));
+        (venueModel as any).findById = vi.fn(() => Promise.reject(new Error('db read fail')));
+        await c.listPendingReplies({ user: 'a' }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toEqual(recs);
+      });
+
+      it('leaves genuine reply-suggestion items untouched by the bounce auto-clear (no venue lookup)', async () => {
+        const recs = [{ _id: 'o1', status: 'replied', suggestion: { sentiment: 'positive', reviewed: false } }];
+        c.model.find = vi.fn(() => Promise.resolve(recs));
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(null)); // would clear a bounce; must not touch a reply
+        await c.listPendingReplies({ user: 'a' }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toEqual(recs);
+        expect(venueModel.findById).not.toHaveBeenCalled();
       });
 
       it('500s when the query throws', async () => {

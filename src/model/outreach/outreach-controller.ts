@@ -69,7 +69,7 @@ interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 
 interface VenueDoc {
   _id?: unknown; name?: string; email?: string; contactName?: string; phone?: string;
-  venueType?: string; status?: string; outreachEligible?: boolean;
+  venueType?: string; status?: string; outreachEligible?: boolean; contactVerified?: boolean;
   bookingStatus?: string; relationshipStage?: string; templateOverride?: string;
 }
 interface TemplateDoc { type?: string; subject?: string; bodyHtml?: string; footerPhotoRef?: string }
@@ -753,12 +753,26 @@ class OutreachController extends Controller {
     return res.status(200).json(result);
   }
 
+  // Is a bounce item still pending? (#825 option B, decision 2026-07-02 — bounce
+  // items AUTO-CLEAR from venue state; there is no dismiss button.) A bounce
+  // stays in the queue only while its venue still needs attention: it drops out
+  // once the venue is archived, re-verified (contactVerified true — Josh fixed
+  // the address), or deleted. A venue-lookup failure keeps the item pending —
+  // never hide an unresolved bounce because of a transient read error.
+  async isBounceStillPending(venueId: string): Promise<boolean> { // eslint-disable-line class-methods-use-this
+    let venue: VenueDoc | null;
+    try { venue = await venueModel.findById(venueId) as unknown as VenueDoc | null; } catch { return true; }
+    if (!venue || venue.status === 'archived') return false;
+    return !venue.contactVerified;
+  }
+
   // GET /outreach/replies/pending — the AdminVenues "replies to review" queue:
-  // replied records that carry an unreviewed AI suggestion, PLUS any bounce
-  // records (#825 auto-flag; replyKind: 'bounce') — the JaMmusic UI (#1162)
-  // renders those as "bounced — needs new email". A bounce item carries no
-  // suggestion and needs no apply-suggestion step; it's surfaced here purely so
-  // Josh can see it and go fix the venue's address.
+  // replied records that carry an unreviewed AI suggestion, PLUS bounce records
+  // (#825 auto-flag; replyKind: 'bounce') whose venue still needs attention —
+  // the JaMmusic UI (#1162) renders those as "bounced — needs new email". A
+  // bounce item carries no suggestion and needs no apply-suggestion step; it's
+  // surfaced here purely so Josh can see it and go fix the venue's address, and
+  // it auto-clears once he does (isBounceStillPending above).
   async listPendingReplies(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -771,7 +785,13 @@ class OutreachController extends Controller {
         ],
       });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
-    return res.status(200).json(records);
+    const pending: Record<string, unknown>[] = [];
+    for (const r of records) {
+      if (r.replyKind !== 'bounce') { pending.push(r); continue; }
+      // eslint-disable-next-line no-await-in-loop
+      if (await this.isBounceStillPending(String(r.venueId))) pending.push(r);
+    }
+    return res.status(200).json(pending);
   }
 
   // Write a reply suggestion's values (Josh's edited body values win, else the
