@@ -22,6 +22,11 @@ export interface ReplyMatch {
   repliedAt: Date;
   snippet: string;
   gmailThreadId?: string;
+  // #825 bounce auto-flag. True when this "match" is actually a delivery-failure
+  // bounce (isBounce below), not a genuine venue reply. The caller (checkReplies)
+  // branches on this: a bounce auto-flags the venue + halts the outreach
+  // deterministically, rather than going through the AI-suggestion review queue.
+  isBounce?: boolean;
 }
 
 // Minimal interface covering the ImapFlow methods findReplies actually uses.
@@ -112,16 +117,27 @@ export function isSelfOrPitch(
   return false;
 }
 
+// True if a message is a genuine delivery-failure BOUNCE — sent by the mail
+// system itself (mailer-daemon/postmaster), or a DSN report (multipart/report).
+// Narrower than isAutoOrBounce below: an out-of-office or other auto-reply is
+// NOT a bounce (the address is alive, a human just isn't at their desk), so it
+// must not trigger the #825 auto-flag. A bounce means the address is dead.
+export function isBounce(fromAddress: string, rawSource: string): boolean {
+  const from = (fromAddress || '').toLowerCase();
+  if (from.includes('mailer-daemon@') || from.includes('postmaster@')) return true;
+  if (extractHeader(rawSource, 'content-type').toLowerCase().includes('multipart/report')) return true;
+  return false;
+}
+
 // True if a message is an automated bounce / auto-reply rather than a human venue
 // reply — these legitimately reference our pitch but must NOT count as replies.
 export function isAutoOrBounce(fromAddress: string, rawSource: string): boolean {
+  if (isBounce(fromAddress, rawSource)) return true;
   const from = (fromAddress || '').toLowerCase();
-  if (from.includes('mailer-daemon@') || from.includes('postmaster@')) return true;
   const localPart = from.split('@')[0];
   if (localPart.startsWith('no-reply') || localPart.startsWith('noreply')) return true;
   const autoSubmitted = extractHeader(rawSource, 'auto-submitted').toLowerCase();
   if (autoSubmitted && autoSubmitted !== 'no') return true;
-  if (extractHeader(rawSource, 'content-type').toLowerCase().includes('multipart/report')) return true;
   return false;
 }
 
@@ -161,13 +177,50 @@ export function imapEnabled(): boolean {
 // request time out (H12) — the next tick re-scans the rest.
 const SCAN_DEADLINE_MS = 25000;
 
+// Minimal shape of a fetched candidate message, as returned by fetchOne.
+type CandidateMsg = {
+  envelope?: { messageId?: string; from?: { address?: string }[]; date?: Date };
+  source?: Buffer | string; threadId?: string | number;
+};
+
+// Classify one candidate message into a ReplyMatch to record, or null to skip
+// it: our own pitch/CC copy (isSelfOrPitch), a non-bounce auto-reply
+// (out-of-office etc. — isAutoOrBounce but not isBounce), or a message that
+// references none of our pitches. A genuine bounce is kept and flagged
+// (isBounce: true, #825 auto-flag) even though isAutoOrBounce is also true for
+// it. Extracted out of the scan loop to keep that loop's branching simple.
+function classifyCandidate(
+  msg: CandidateMsg, bareIds: string[], idToOutreach: Map<string, string>, selfAddress: string,
+): ReplyMatch | null {
+  const raw = (msg.source || '').toString();
+  const from = msg.envelope?.from?.[0]?.address || '';
+  if (isSelfOrPitch(msg.envelope?.messageId, from, selfAddress, bareIds)) return null;
+  const bounce = isBounce(from, raw);
+  if (!bounce && isAutoOrBounce(from, raw)) return null;
+  const pitchId = referencedPitchId(raw, bareIds);
+  const outreachId = pitchId ? idToOutreach.get(pitchId) : undefined;
+  if (!outreachId) return null;
+  const match: ReplyMatch = {
+    outreachId,
+    fromAddress: from,
+    repliedAt: msg.envelope?.date || new Date(),
+    snippet: snippetFromBody(bodyFromSource(raw)),
+    gmailThreadId: msg.threadId ? String(msg.threadId) : undefined,
+  };
+  if (bounce) match.isBounce = true;
+  return match;
+}
+
 // Connect to Gmail over IMAP and return one ReplyMatch per outreach record that
-// has a GENUINE venue reply. One bounded batched search finds candidate replies
-// to any pitch; each candidate is then verified — not our own pitch/CC copy
-// (isSelfOrPitch), not a bounce/auto-reply (isAutoOrBounce), and actually
-// referencing one of our pitches (referencedPitchId) — before its body snippet
-// is taken. The whole scan is raced against a 25s deadline. Returns [] / partial
-// (never throws) when disabled, on a connection failure, or on the deadline.
+// has a GENUINE venue reply OR a genuine bounce (#825 auto-flag; isBounce: true
+// on the match). One bounded batched search finds candidates referencing any
+// pitch; each candidate is then verified — not our own pitch/CC copy
+// (isSelfOrPitch); a true bounce (isBounce) is kept and flagged; any other
+// auto-reply (isAutoOrBounce, e.g. an out-of-office) is skipped entirely; the
+// rest must actually reference one of our pitches (referencedPitchId) before its
+// body snippet is taken. The whole scan is raced against a 25s deadline. Returns
+// [] / partial (never throws) when disabled, on a connection failure, or on the
+// deadline.
 // An optional makeClient factory injects a fake IMAP client in tests; when
 // present the imapEnabled() env gate is skipped so tests never hit Gmail.
 export async function findReplies(refs: OutreachRef[], makeClient?: () => ImapClientLike): Promise<ReplyMatch[]> {
@@ -199,20 +252,8 @@ export async function findReplies(refs: OutreachRef[], makeClient?: () => ImapCl
         // eslint-disable-next-line no-await-in-loop
         const msg = await client.fetchOne(String(uid), { envelope: true, source: true }, { uid: true });
         if (!msg || !msg.source) continue;
-        const raw = msg.source.toString();
-        const from = msg.envelope?.from?.[0]?.address || '';
-        if (isSelfOrPitch(msg.envelope?.messageId, from, selfAddress, bareIds)) continue;
-        if (isAutoOrBounce(from, raw)) continue;
-        const pitchId = referencedPitchId(raw, bareIds);
-        const outreachId = pitchId ? idToOutreach.get(pitchId) : undefined;
-        if (!outreachId) continue;
-        byOutreach.set(outreachId, {
-          outreachId,
-          fromAddress: from,
-          repliedAt: msg.envelope?.date || new Date(),
-          snippet: snippetFromBody(bodyFromSource(raw)),
-          gmailThreadId: msg.threadId ? String(msg.threadId) : undefined,
-        });
+        const match = classifyCandidate(msg, bareIds, idToOutreach, selfAddress);
+        if (match) byOutreach.set(match.outreachId, match);
       }
     } finally {
       lock.release();
@@ -237,5 +278,5 @@ export async function findReplies(refs: OutreachRef[], makeClient?: () => ImapCl
 
 export default {
   bareMessageId, earliestSince, buildBatchSearch, extractHeader, referencedPitchId,
-  isSelfOrPitch, isAutoOrBounce, bodyFromSource, snippetFromBody, imapEnabled, findReplies,
+  isSelfOrPitch, isBounce, isAutoOrBounce, bodyFromSource, snippetFromBody, imapEnabled, findReplies,
 };

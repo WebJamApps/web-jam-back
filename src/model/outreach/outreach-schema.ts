@@ -72,6 +72,13 @@ const outreachSchema = new Schema({
   repliedAt: { type: Date, required: false, default: null },
   replySnippet: { type: String, required: false, trim: true },
   suggestion: { type: suggestionSchema, required: false, default: null },
+  // #825 bounce auto-flag. Set to 'bounce' when the "reply" the IMAP job matched
+  // was actually a delivery-failure bounce (mailer-daemon/DSN), not a genuine
+  // venue reply. Distinguishes a bounced record (status already halted to
+  // `no-response`, deterministic, no AI suggestion) from a real replied record
+  // in the /outreach/replies-pending queue, so the JaMmusic UI (#1162) can render
+  // it as "bounced — needs new email".
+  replyKind: { type: String, required: false, enum: ['bounce'], default: null },
   // Which AI agent or human sent this pitch (#818 `actor` field).
   sentBy: { type: String, required: false, trim: true },
   followUps: { type: [followUpSchema], required: false, default: [] },

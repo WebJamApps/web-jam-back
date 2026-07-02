@@ -818,7 +818,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
         findReplies.mockResolvedValue([]);
         await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0 });
+        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0, bounced: 0 });
       });
 
       it('marks a matched reply replied, stores the snippet + suggestion, and halts cadence', async () => {
@@ -828,7 +828,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         }]);
         classifyReply.mockResolvedValue({ sentiment: 'positive', proposedBookingStatus: 'booking', model: 'claude-haiku-4-5' });
         await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 1, classified: 1 });
+        expect(payload).toEqual({ checked: 1, matched: 1, classified: 1, bounced: 0 });
         expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith('o1', expect.objectContaining({
           status: 'replied', replySnippet: 'We would love to!', gmailThreadId: 't9', nextTouchDue: null,
           suggestion: expect.objectContaining({ sentiment: 'positive' }),
@@ -840,14 +840,14 @@ describe('Outreach Controller (#844 batch model)', () => {
         findReplies.mockResolvedValue([{ outreachId: 'o1', repliedAt: new Date(), snippet: 'hi' }]);
         classifyReply.mockResolvedValue(null);
         await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 1, classified: 0 });
+        expect(payload).toEqual({ checked: 1, matched: 1, classified: 0, bounced: 0 });
       });
 
       it('skips a match that does not correspond to a scanned record', async () => {
         c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
         findReplies.mockResolvedValue([{ outreachId: 'ghost', repliedAt: new Date(), snippet: 'hi' }]);
         await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0 });
+        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0, bounced: 0 });
       });
 
       it('swallows a per-record update failure without aborting the scan', async () => {
@@ -855,7 +855,49 @@ describe('Outreach Controller (#844 batch model)', () => {
         findReplies.mockResolvedValue([{ outreachId: 'o1', repliedAt: new Date(), snippet: 'hi' }]);
         c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('write fail')));
         await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0 });
+        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0, bounced: 0 });
+      });
+
+      // #825 bounce auto-flag: a bounced match auto-flags the venue + halts the
+      // outreach deterministically, with NO AI suggestion involved.
+      it('auto-flags the venue and halts the outreach on a bounce match, without classifying', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
+        findReplies.mockResolvedValue([{
+          outreachId: 'o1', fromAddress: 'mailer-daemon@x.com', repliedAt: new Date('2026-06-26'),
+          snippet: 'Delivery failure notice.', gmailThreadId: 't9', isBounce: true,
+        }]);
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(payload).toEqual({ checked: 1, matched: 1, classified: 0, bounced: 1 });
+        expect(classifyReply).not.toHaveBeenCalled();
+        expect(venueModel.findByIdAndUpdate).toHaveBeenCalledWith('v1', expect.objectContaining({
+          contactVerified: false, outreachEligible: false,
+        }));
+        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith('o1', expect.objectContaining({
+          status: 'no-response', nextTouchDue: null, replyKind: 'bounce',
+          replySnippet: 'Delivery failure notice.', gmailThreadId: 't9',
+        }));
+        expect(c.model.findByIdAndUpdate).not.toHaveBeenCalledWith('o1', expect.objectContaining({ suggestion: expect.anything() }));
+      });
+
+      it('swallows a bounce venue-write failure and still halts the outreach', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
+        findReplies.mockResolvedValue([{
+          outreachId: 'o1', repliedAt: new Date(), snippet: 'bounce', isBounce: true,
+        }]);
+        (venueModel as any).findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('venue write fail')));
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(payload).toEqual({ checked: 1, matched: 1, classified: 0, bounced: 1 });
+        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith('o1', expect.objectContaining({ status: 'no-response' }));
+      });
+
+      it('swallows a bounce outreach-write failure without aborting the scan', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
+        findReplies.mockResolvedValue([{
+          outreachId: 'o1', repliedAt: new Date(), snippet: 'bounce', isBounce: true,
+        }]);
+        c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('write fail')));
+        await c.checkReplies({ user: 'a' }, resStub);
+        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0, bounced: 0 });
       });
     });
 
@@ -866,13 +908,26 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(status).toBe(403);
       });
 
-      it('returns replied records with an unreviewed suggestion', async () => {
+      it('returns replied records with an unreviewed suggestion, plus bounce records', async () => {
         const recs = [{ _id: 'o1', suggestion: { sentiment: 'positive', reviewed: false } }];
         c.model.find = vi.fn(() => Promise.resolve(recs));
         await c.listPendingReplies({ user: 'a' }, resStub);
         expect(status).toBe(200);
         expect(payload).toEqual(recs);
-        expect(c.model.find).toHaveBeenCalledWith(expect.objectContaining({ status: 'replied' }));
+        expect(c.model.find).toHaveBeenCalledWith({
+          $or: [
+            { status: 'replied', suggestion: { $ne: null }, 'suggestion.reviewed': { $ne: true } },
+            { replyKind: 'bounce' },
+          ],
+        });
+      });
+
+      it('surfaces a bounce record (no suggestion) in the pending queue', async () => {
+        const recs = [{ _id: 'o1', status: 'no-response', replyKind: 'bounce' }];
+        c.model.find = vi.fn(() => Promise.resolve(recs));
+        await c.listPendingReplies({ user: 'a' }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toEqual(recs);
       });
 
       it('500s when the query throws', async () => {
