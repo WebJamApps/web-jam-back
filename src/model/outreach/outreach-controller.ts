@@ -69,7 +69,7 @@ interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 
 interface VenueDoc {
   _id?: unknown; name?: string; email?: string; contactName?: string; phone?: string;
-  venueType?: string; status?: string; outreachEligible?: boolean;
+  venueType?: string; status?: string; outreachEligible?: boolean; contactVerified?: boolean;
   bookingStatus?: string; relationshipStage?: string; templateOverride?: string;
 }
 interface TemplateDoc { type?: string; subject?: string; bodyHtml?: string; footerPhotoRef?: string }
@@ -690,12 +690,39 @@ class OutreachController extends Controller {
     return !!suggestion;
   }
 
+  // Action one matched BOUNCE (#825 auto-flag): the venue's address is dead, so
+  // auto-flag the venue (contactVerified: false, outreachEligible: false — it can
+  // never be selected for a future batch) and halt this outreach record
+  // (no-response, nextTouchDue: null — cadence never follows up on a dead
+  // address). Entirely deterministic (the caller only reaches here off
+  // isAutoOrBounce/isBounce, no AI judgment): unlike recordReply, this NEVER
+  // attaches a suggestion, and the flagging takes effect immediately — there is
+  // no apply-suggestion review step for a bounce. The venue write is best-effort
+  // (swallowed) so a venue-write hiccup can't stop the more critical cadence
+  // halt below.
+  async recordBounce(o: OutreachDoc, match: { repliedAt: Date; snippet: string; gmailThreadId?: string }): Promise<void> {
+    try {
+      await venueModel.findByIdAndUpdate(String(o.venueId), {
+        contactVerified: false, outreachEligible: false, lastModifiedBy: 'reply-detection',
+      });
+    } catch { /* best-effort: the outreach halt below is the critical write */ }
+    const update: Record<string, unknown> = {
+      status: 'no-response', nextTouchDue: null, replyKind: 'bounce',
+      repliedAt: match.repliedAt, replySnippet: match.snippet, lastModifiedBy: 'reply-detection',
+    };
+    if (match.gmailThreadId) update.gmailThreadId = match.gmailThreadId;
+    await this.model.findByIdAndUpdate(String(o._id), update);
+  }
+
   // POST /outreach/check-replies — reply-detection tick (#825 Half B). Scans Gmail
   // over IMAP for replies to still-active (`sent`) pitches, matched precisely by
-  // the stored Message-ID; each match halts the cadence + gets an AI suggestion
-  // for review. Separate from /advance (no send IO) so the cron can run it more
-  // often. Dormant until GMAIL_IMAP_* (and ANTHROPIC_API_KEY for suggestions) are
-  // set — findReplies returns [] otherwise, so this is a safe no-op.
+  // the stored Message-ID. A genuine reply halts the cadence + gets an AI
+  // suggestion for review (recordReply); a genuine bounce instead auto-flags the
+  // venue + halts the cadence deterministically, with no AI suggestion
+  // (recordBounce, #825 auto-flag). Separate from /advance (no send IO) so the
+  // cron can run it more often. Dormant until GMAIL_IMAP_* (and ANTHROPIC_API_KEY
+  // for suggestions) are set — findReplies returns [] otherwise, so this is a
+  // safe no-op.
   async checkReplies(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['outreach:edit']);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -707,29 +734,64 @@ class OutreachController extends Controller {
       outreachId: String(o._id), messageId: (o as { messageId?: string }).messageId || '', sentAt: o.sentAt,
     }));
     const matches = await findReplies(refs);
-    const result = { checked: refs.length, matched: 0, classified: 0 };
+    const result = { checked: refs.length, matched: 0, classified: 0, bounced: 0 };
     for (const m of matches) {
       const o = active.find((a) => String(a._id) === m.outreachId);
       if (!o) continue;
       try {
-        const classified = await this.recordReply(o, m); // eslint-disable-line no-await-in-loop
-        result.matched += 1;
-        if (classified) result.classified += 1;
+        if (m.isBounce) {
+          await this.recordBounce(o, m); // eslint-disable-line no-await-in-loop
+          result.matched += 1;
+          result.bounced += 1;
+        } else {
+          const classified = await this.recordReply(o, m); // eslint-disable-line no-await-in-loop
+          result.matched += 1;
+          if (classified) result.classified += 1;
+        }
       } catch { /* one bad record shouldn't abort the whole scan */ }
     }
     return res.status(200).json(result);
   }
 
+  // Is a bounce item still pending? (#825 option B, decision 2026-07-02 — bounce
+  // items AUTO-CLEAR from venue state; there is no dismiss button.) A bounce
+  // stays in the queue only while its venue still needs attention: it drops out
+  // once the venue is archived, re-verified (contactVerified true — Josh fixed
+  // the address), or deleted. A venue-lookup failure keeps the item pending —
+  // never hide an unresolved bounce because of a transient read error.
+  async isBounceStillPending(venueId: string): Promise<boolean> { // eslint-disable-line class-methods-use-this
+    let venue: VenueDoc | null;
+    try { venue = await venueModel.findById(venueId) as unknown as VenueDoc | null; } catch { return true; }
+    if (!venue || venue.status === 'archived') return false;
+    return !venue.contactVerified;
+  }
+
   // GET /outreach/replies/pending — the AdminVenues "replies to review" queue:
-  // replied records that carry an unreviewed AI suggestion.
+  // replied records that carry an unreviewed AI suggestion, PLUS bounce records
+  // (#825 auto-flag; replyKind: 'bounce') whose venue still needs attention —
+  // the JaMmusic UI (#1162) renders those as "bounced — needs new email". A
+  // bounce item carries no suggestion and needs no apply-suggestion step; it's
+  // surfaced here purely so Josh can see it and go fix the venue's address, and
+  // it auto-clears once he does (isBounceStillPending above).
   async listPendingReplies(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     let records: Record<string, unknown>[];
     try {
-      records = await this.model.find({ status: 'replied', suggestion: { $ne: null }, 'suggestion.reviewed': { $ne: true } });
+      records = await this.model.find({
+        $or: [
+          { status: 'replied', suggestion: { $ne: null }, 'suggestion.reviewed': { $ne: true } },
+          { replyKind: 'bounce' },
+        ],
+      });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
-    return res.status(200).json(records);
+    const pending: Record<string, unknown>[] = [];
+    for (const r of records) {
+      if (r.replyKind !== 'bounce') { pending.push(r); continue; }
+      // eslint-disable-next-line no-await-in-loop
+      if (await this.isBounceStillPending(String(r.venueId))) pending.push(r);
+    }
+    return res.status(200).json(pending);
   }
 
   // Write a reply suggestion's values (Josh's edited body values win, else the

@@ -1,6 +1,6 @@
 import {
   bareMessageId, earliestSince, buildBatchSearch, extractHeader, referencedPitchId,
-  isSelfOrPitch, isAutoOrBounce, bodyFromSource, snippetFromBody, imapEnabled, findReplies,
+  isSelfOrPitch, isBounce, isAutoOrBounce, bodyFromSource, snippetFromBody, imapEnabled, findReplies,
   type ImapClientLike,
 } from '#src/lib/imap-replies.js';
 
@@ -186,6 +186,30 @@ describe('imap-replies', () => {
     });
   });
 
+  describe('isBounce', () => {
+    it('detects mailer-daemon sender', () => {
+      expect(isBounce('mailer-daemon@googlemail.com', '')).toBe(true);
+    });
+    it('detects postmaster sender', () => {
+      expect(isBounce('postmaster@example.com', '')).toBe(true);
+    });
+    it('detects multipart/report content-type (delivery-status report)', () => {
+      const raw = 'Content-Type: multipart/report; report-type=delivery-status\r\n\r\nbody';
+      expect(isBounce('system@domain.com', raw)).toBe(true);
+    });
+    it('does NOT flag a no-reply sender (auto-reply, not a bounce)', () => {
+      expect(isBounce('no-reply@domain.com', '')).toBe(false);
+    });
+    it('does NOT flag an Auto-Submitted header (auto-reply, not a bounce)', () => {
+      const raw = 'Auto-Submitted: auto-replied\r\n\r\nbody';
+      expect(isBounce('system@domain.com', raw)).toBe(false);
+    });
+    it('returns false for a normal human reply', () => {
+      const raw = 'Content-Type: text/plain\r\n\r\nHey, we would love to book you!';
+      expect(isBounce('booking@venue.com', raw)).toBe(false);
+    });
+  });
+
   describe('isAutoOrBounce', () => {
     it('detects mailer-daemon sender', () => {
       expect(isAutoOrBounce('mailer-daemon@googlemail.com', '')).toBe(true);
@@ -249,14 +273,59 @@ describe('imap-replies', () => {
   });
 
   describe('findReplies (via FakeImapClient)', () => {
-    it('returns only the genuine reply, filtering out bounce and self-copy', async () => {
+    it('returns the genuine reply AND the bounce (flagged isBounce), filtering out only the self-copy', async () => {
       const fake = makeFake(FAKE_MSGS);
       const result = await findReplies(PITCH_REFS, () => fake);
       expect(result).toHaveLength(1);
+      // Same outreachId (o1) for both fixtures — the bounce (later uid) collapses
+      // the map entry, same as two replies would. Confirms it carries isBounce.
       expect(result[0].outreachId).toBe('o1');
+      expect(result[0].isBounce).toBe(true);
+      expect(result[0].fromAddress).toBe('mailer-daemon@googlemail.com');
+    });
+
+    it('returns a genuine reply untouched (isBounce undefined) when no bounce follows it', async () => {
+      const fake = makeFake([FAKE_MSGS[0], FAKE_MSGS[2]]); // reply + self-copy only, no bounce
+      const result = await findReplies(PITCH_REFS, () => fake);
+      expect(result).toHaveLength(1);
+      expect(result[0].outreachId).toBe('o1');
+      expect(result[0].isBounce).toBeUndefined();
       expect(result[0].fromAddress).toBe('booking@thevenue.com');
       expect(result[0].snippet).toContain("Yes we'd love to host you");
       expect(result[0].gmailThreadId).toBe('thread-abc');
+    });
+
+    it('flags a bounce with no prior reply (isBounce: true, referencing the pitch)', async () => {
+      const fake = makeFake([FAKE_MSGS[1]]); // bounce only
+      const result = await findReplies(PITCH_REFS, () => fake);
+      expect(result).toEqual([{
+        outreachId: 'o1',
+        fromAddress: 'mailer-daemon@googlemail.com',
+        repliedAt: new Date('2026-06-21T11:00:00Z'),
+        snippet: 'Delivery failure notice.',
+        gmailThreadId: undefined,
+        isBounce: true,
+      }]);
+    });
+
+    it('drops a bounce that references none of our pitches (no outreachId to flag)', async () => {
+      const orphanBounce: FakeMsg = {
+        uid: 5,
+        envelope: {
+          messageId: '<orphan-bounce@mx.google.com>',
+          from: [{ address: 'mailer-daemon@googlemail.com' }],
+          date: new Date('2026-06-21T12:00:00Z'),
+        },
+        source: [
+          'From: mailer-daemon@googlemail.com',
+          'Subject: Delivery Status Notification (Failure)',
+          'Content-Type: multipart/report; report-type=delivery-status',
+          '',
+          'Delivery failure notice.',
+        ].join('\r\n'),
+      };
+      const result = await findReplies(PITCH_REFS, () => makeFake([orphanBounce]));
+      expect(result).toEqual([]);
     });
 
     it('returns [] when refs is empty (even with injected client)', async () => {
