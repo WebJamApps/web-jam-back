@@ -30,4 +30,21 @@ describe('google.ts', () => {
     const res = await google.authenticate(req);
     expect(res.emailAddresses[0].value).toBe('me@me.com');
   });
+  it("accepts Tim's OAuth client id (#885) and pairs it with Tim's secret", async () => {
+    const prevId = process.env.TimGoogleClientId;
+    const prevSecret = process.env.TimGoogleClientSecret;
+    process.env.TimGoogleClientId = 'tim-client-id';
+    process.env.TimGoogleClientSecret = 'tim-secret';
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ access_token: 'booya' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ emailAddresses: [{ value: 'tim@me.com' }], names: [] }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const req = { body: { code: 'whatever', clientId: 'tim-client-id', redirectUri: 'https://timshermanmusic.com' } };
+    const res = await google.authenticate(req);
+    expect(res.emailAddresses[0].value).toBe('tim@me.com');
+    // the token-exchange POST body carries Tim's secret, not JaMmusic's
+    expect((fetchMock.mock.calls[0][1] as { body: URLSearchParams }).body.get('client_secret')).toBe('tim-secret');
+    process.env.TimGoogleClientId = prevId;
+    process.env.TimGoogleClientSecret = prevSecret;
+  });
 });
