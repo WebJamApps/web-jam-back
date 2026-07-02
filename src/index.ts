@@ -9,6 +9,7 @@ import morgan from 'morgan';
 import cors from 'cors';
 import enforce from 'express-sslify';
 import utils from './lib/utils.js';
+import { makeCorsOptions } from './lib/cors.js';
 import ReadCSV from './ReadCSV/index.js';
 import routes from './routes.js';
 import songData from './model/song/reset-song.js';
@@ -29,11 +30,9 @@ process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason); // eslint-disable-line no-console
 });
 const readCsv = new ReadCSV();
-const corsOptions = {
-  origin: JSON.parse(process.env.AllowUrl || /* istanbul ignore next */'{}').urls,
-  credentials: true,
-  optionsSuccessStatus: 200, // some legacy browsers (IE11, various SmartTVs) choke on 204
-};
+// Allow-list built in lib/cors.ts: the AllowUrl env origins (JaMmusic +
+// CollegeLutheran) plus timshermanmusic.com and its *.pages.dev previews (#885).
+const corsOptions = makeCorsOptions();
 const app = express();
 
 /* istanbul ignore next */

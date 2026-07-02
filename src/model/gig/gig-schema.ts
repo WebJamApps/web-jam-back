@@ -21,6 +21,9 @@ const gigSchema = new Schema({
   duration: { type: Number, required: false, default: 0 },
   promoImageUrl: { type: String, required: false },
   more: { type: String, required: false },
+  // Artist/tenant slug (#885). Absent on all pre-#885 records, which read as the
+  // default (JaMmusic) artist. Kept in sync with WebJamSocketCluster's mirror.
+  artist: { type: String, required: false },
 }, options);
 
 // Gigs live in WebJamSocketCluster's Mongo, a DIFFERENT database than

@@ -14,6 +14,15 @@ export interface GoogleAuthenticateResponse {
   names: { displayName: string }[];
 }
 
+// Pick the OAuth client secret that pairs with the client the login came from
+// (#885). timshermanmusic.com uses its own GCP OAuth client, so its code-for-
+// token exchange needs a DIFFERENT secret than JaMmusic's. Any client id other
+// than Tim's falls back to the original secret — JaMmusic behaviour unchanged.
+function clientSecretFor(clientId: string | undefined): string {
+  if (clientId && clientId === process.env.TimGoogleClientId) return process.env.TimGoogleClientSecret || '';
+  return process.env.GoogleClientSecret || '';
+}
+
 async function authenticate(req: { body: { redirectUri: string; code: string; clientId: string; }; }): Promise<GoogleAuthenticateResponse> {
   const reUri = req.body.redirectUri;
   let tokenBody: GoogleTokenResponse;
@@ -21,7 +30,7 @@ async function authenticate(req: { body: { redirectUri: string; code: string; cl
   const params = new URLSearchParams({
     code: req.body.code,
     client_id: req.body.clientId,
-    client_secret: process.env.GoogleClientSecret || '',
+    client_secret: clientSecretFor(req.body.clientId),
     redirect_uri: reUri,
     grant_type: 'authorization_code',
   });

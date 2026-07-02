@@ -10,6 +10,9 @@ const debug = Debug('web-jam-back:authUtils');
 export interface AuthRequest extends Request {
   user?: string;
   userType?: string;
+  // Artist slug an artist-scoped admin owns (web-jam-back#885). Undefined for
+  // super-admins and ordinary users.
+  userArtist?: string;
 }
 
 export interface EmailCheckRequest {
@@ -20,6 +23,7 @@ export interface EmailCheckRequest {
 
 interface UserDoc {
   userType?: string;
+  artist?: string;
 }
 
 interface JwtPayload {
@@ -37,6 +41,7 @@ const findUserById = async (req: AuthRequest): Promise<void> => {
     throw new Error(`token does not match any existing user, ${e.message}`);
   }
   req.userType = myUser ? myUser.userType : 'none';
+  req.userArtist = myUser ? myUser.artist : undefined;
   debug(req.userType);
   debug(req.baseUrl);
   const route = req.baseUrl.split('/')[1] || '';
