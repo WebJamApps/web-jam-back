@@ -49,6 +49,14 @@ interface SendBody {
   bookingPeriod?: string;
   actor?: string;
   cc?: string | string[];
+  // #903 — two optional, independent one-off slots (supersedes #900's single
+  // prepended customBody, which caused a double-greeting):
+  //   customIntro — REPLACES the template's own intro (greeting + opening
+  //     line) when present; the default intro is not emitted alongside it.
+  //   customBody  — INSERTED at the template's [Custom Body] marker; the rest
+  //     of the body is unchanged. Absent => the marker renders to nothing.
+  customIntro?: string;
+  customBody?: string;
 }
 
 // #844 — batch target-list approval. The approval gate is the TARGET SELECTION
@@ -62,6 +70,9 @@ interface BatchBody {
   bookingPeriod?: string;
   actor?: string;
   cc?: string | string[];
+  // #903 — same customIntro/customBody as SendBody, applied to every venue in the batch.
+  customIntro?: string;
+  customBody?: string;
 }
 
 interface ConfigBody { autoApprove?: boolean; actor?: string }
@@ -72,7 +83,11 @@ interface VenueDoc {
   venueType?: string; status?: string; outreachEligible?: boolean; contactVerified?: boolean;
   bookingStatus?: string; relationshipStage?: string; templateOverride?: string;
 }
-interface TemplateDoc { type?: string; subject?: string; bodyHtml?: string; footerPhotoRef?: string }
+// introHtml (#903) is the template's addressable intro (greeting + opening
+// line), split out from bodyHtml so customIntro can replace it independently.
+// A template authored before the #903 migration simply has no introHtml (it
+// defaults to '' at render time) — its whole copy lives in bodyHtml, unchanged.
+interface TemplateDoc { type?: string; subject?: string; introHtml?: string; bodyHtml?: string; footerPhotoRef?: string }
 interface FollowUp { sentAt?: Date; type?: string; messageId?: string; eventId?: string; step?: number }
 interface OutreachDoc {
   _id?: unknown; venueId?: unknown; sentAt?: Date; step?: number; targetDates?: string; followUps?: FollowUp[];
@@ -136,14 +151,68 @@ function footerHtml(): string {
     + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>';
 }
 
-// Render a template into a ready-to-send email: token-filled subject + body,
-// with the footer photo appended as an inline-CID attachment when the template
-// names one (and the asset is on disk).
+// customIntro / customBody are free text (may come from a form, a phone paste,
+// or an AI draft upstream — #899) and are never trusted as HTML, unlike the
+// vetted template copy. Escape the five HTML-significant characters before
+// either ever reaches buildPitchEmail's output.
+function escapeHtml(text: string): string {
+  return text
+    .split('&').join('&amp;')
+    .split('<').join('&lt;')
+    .split('>').join('&gt;')
+    .split('"').join('&quot;')
+    .split("'").join('&#39;');
+}
+
+// Render one-off custom text (either slot) as its own HTML paragraph(s):
+// escape first, then turn blank-line breaks into paragraph breaks and single
+// newlines into <br>, so a multi-line note reads the way it was typed.
+function renderCustomHtml(customText: string): string {
+  const escaped = escapeHtml(customText.trim());
+  const paragraphs = escaped.split(/\n{2,}/).map((para) => para.split('\n').join('<br>'));
+  return paragraphs.map((para) => `<p>${para}</p>`).join('\n');
+}
+
+// #903 — the token a body template carries at the exact spot a customBody
+// should land. Kept out of the schema (it's copy authored into bodyHtml, not
+// a separate field) so an editor can move it per template.
+const CUSTOM_BODY_MARKER = '[Custom Body]';
+
+// #903 — customIntro (when present) REPLACES the template's own intro
+// (greeting + opening line) rather than being woven in alongside it — this is
+// what kills the double-greeting #900's prepend caused. Absent => the
+// template's own introHtml renders exactly as authored (personalized).
+function resolveIntroHtml(template: TemplateDoc, venue: VenueDoc, body: SendBody): string {
+  if (body.customIntro && body.customIntro.trim()) return renderCustomHtml(body.customIntro);
+  return personalize(template.introHtml || '', venue, body);
+}
+
+// #903 — customBody (when present) is INSERTED at the body's [Custom Body]
+// marker; the rest of the body is untouched (an insert, not a replace).
+// Absent => the marker renders to nothing. A body that predates the #903
+// template migration carries no marker at all — rather than silently
+// dropping a supplied customBody in that case, append it after the body so
+// the note is never lost, just less precisely placed.
+function fillCustomBodyMarker(bodyHtml: string, customBody?: string): string {
+  const custom = customBody && customBody.trim() ? renderCustomHtml(customBody) : '';
+  if (bodyHtml.indexOf(CUSTOM_BODY_MARKER) !== -1) return bodyHtml.split(CUSTOM_BODY_MARKER).join(custom);
+  return custom ? `${bodyHtml}\n${custom}` : bodyHtml;
+}
+
+// Render a template into a ready-to-send email: token-filled subject + intro +
+// body, with the footer photo appended as an inline-CID attachment when the
+// template names one (and the asset is on disk).
+//
+// #903 — customIntro/customBody are two independent optional slots (see the
+// resolveIntroHtml / fillCustomBodyMarker docs above); when both are absent,
+// this renders byte-for-byte identically to the pre-#903 template render.
 function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody): {
   subject: string; html: string; attachments: { filename: string; path: string; cid: string }[];
 } {
   const subject = personalize(template.subject || 'Performance Inquiry: Josh and Maria', venue, body);
-  let html = personalize(template.bodyHtml || '', venue, body);
+  const introHtml = resolveIntroHtml(template, venue, body);
+  const bodyHtml = fillCustomBodyMarker(personalize(template.bodyHtml || '', venue, body), body.customBody);
+  let html = introHtml + bodyHtml;
   const attachments = [];
   const assetPath = template.footerPhotoRef ? resolveFooterAsset(template.footerPhotoRef) : null;
   /* istanbul ignore else */
@@ -466,7 +535,10 @@ class OutreachController extends Controller {
     };
     for (const venueId of body.venueIds) {
       if (!mongoose.Types.ObjectId.isValid(venueId)) { result.skipped.push({ venueId, reason: 'invalid id' }); continue; }
-      const sendBody = { targetDates: body.targetDates, bookingPeriod: body.bookingPeriod, cc: body.cc };
+      const sendBody = {
+        targetDates: body.targetDates, bookingPeriod: body.bookingPeriod, cc: body.cc,
+        customIntro: body.customIntro, customBody: body.customBody,
+      };
       // eslint-disable-next-line no-await-in-loop
       const ctx = await this.resolvePitch({ venueId, templateType: body.templateType, ...sendBody });
       if (ctx.error) { result.skipped.push({ venueId, reason: ctx.error.message }); continue; }
@@ -521,6 +593,7 @@ class OutreachController extends Controller {
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     const q = (req.query || {}) as {
       venueId?: string; venueIds?: string; templateType?: string; targetDates?: string; bookingPeriod?: string;
+      customIntro?: string; customBody?: string;
     };
 
     // BATCH form: venueIds (plural, comma-separated) → array of preview objects.
@@ -536,7 +609,10 @@ class OutreachController extends Controller {
         if (ctx.error) continue; // skip unresolvable venues
         const { venue, template } = ctx as Required<PitchContext>;
         const { subject, html } = buildPitchEmail(
-          venue, template, { targetDates: q.targetDates, bookingPeriod: q.bookingPeriod } as SendBody,
+          venue, template,
+          {
+            targetDates: q.targetDates, bookingPeriod: q.bookingPeriod, customIntro: q.customIntro, customBody: q.customBody,
+          } as SendBody,
         );
         results.push({ venueId, venueName: venue.name || '', subject, body: html });
       }
@@ -551,7 +627,12 @@ class OutreachController extends Controller {
     );
     if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message });
     const { venue, template } = ctx as Required<PitchContext>;
-    const { subject, html } = buildPitchEmail(venue, template, { targetDates: q.targetDates, bookingPeriod: q.bookingPeriod } as SendBody);
+    const { subject, html } = buildPitchEmail(
+      venue, template,
+      {
+        targetDates: q.targetDates, bookingPeriod: q.bookingPeriod, customIntro: q.customIntro, customBody: q.customBody,
+      } as SendBody,
+    );
     return res.status(200).json({ to: venue.email, cc: PITCH_CC, subject, html });
   }
 

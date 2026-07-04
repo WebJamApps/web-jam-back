@@ -13,6 +13,14 @@ const options = {
 // [Target Dates], filled in at send time (#823). `footerPhotoRef` is a KEY into
 // the repo-bundled email assets (resolved to an inline-CID image at send), not a
 // URL. `type` is unique — one template per type.
+//
+// `introHtml` (#903) is the template's addressable intro (greeting + opening
+// line), split out from `bodyHtml` so a per-send `customIntro` can REPLACE it
+// without also emitting the default greeting (the #900 double-greeting bug).
+// `bodyHtml` carries a `[Custom Body]` marker at the spot a per-send
+// `customBody` should be INSERTED; a template with no marker just has no
+// insertion point. Both introHtml and the marker are optional — a template
+// authored before #903 has neither and renders exactly as before.
 const templateSchema = new Schema({
   type: {
     type: String,
@@ -30,6 +38,7 @@ const templateSchema = new Schema({
     default: 'cold',
   },
   subject: { type: String, required: false, trim: true },
+  introHtml: { type: String, required: false },
   bodyHtml: { type: String, required: false },
   footerPhotoRef: { type: String, required: false, trim: true },
   active: { type: Boolean, required: false, default: true },

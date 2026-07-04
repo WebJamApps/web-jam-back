@@ -69,6 +69,17 @@ describe('Outreach Controller (#844 batch model)', () => {
     ...over,
   });
 
+  // #903 — a migrated template: introHtml split out (greeting), bodyHtml
+  // carries the [Custom Body] marker right where the ask begins.
+  const templateWithSlots = (over = {}) => ({
+    type: 'Originals',
+    subject: 'Performance Inquiry for [Venue Name]',
+    introHtml: '<p>Hi [Contact Name],</p>',
+    bodyHtml: '[Custom Body]<p>we are booking our [Booking Period] run and want [Target Dates] at [Venue Name].</p>',
+    footerPhotoRef: 'footer-josh-maria',
+    ...over,
+  });
+
   beforeEach(() => {
     status = 0;
     payload = undefined;
@@ -500,6 +511,214 @@ describe('Outreach Controller (#844 batch model)', () => {
       await c.previewByVenue({ user: 'a', query: { venueIds: 'bad1,bad2,bad3', targetDates: 'Sept 25-27' } }, resStub);
       expect(status).toBe(200);
       expect(payload).toEqual([]);
+    });
+  });
+
+  describe('customIntro + customBody (#903, supersedes #900)', () => {
+    const body = () => ({ venueId: oid(), targetDates: 'Aug 14-16', bookingPeriod: 'August' });
+
+    it('sendPitch: both absent leaves the rendered html byte-for-byte unchanged (un-migrated template, no marker)', async () => {
+      asApprover();
+      await c.sendPitch({ user: 'josh', body: body() }, resStub);
+      expect(status).toBe(201);
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html).toBe(
+        '<p>Hi Pat, we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>'
+          + '\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin-top:16px;">'
+          + '<tr><td style="text-align:center;">'
+          + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
+          + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>',
+      );
+    });
+
+    it('sendPitch: both absent on a migrated (marker-carrying) template is also byte-for-byte unchanged', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendPitch({ user: 'josh', body: body() }, resStub);
+      expect(status).toBe(201);
+      const html = (sendMail as any).mock.calls[0][0].html;
+      // introHtml ("Hi Pat,") + bodyHtml with the marker stripped to '' reproduces
+      // exactly the same copy the pre-#903 single-bodyHtml template would render.
+      expect(html.startsWith('<p>Hi Pat,</p><p>we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>')).toBe(true);
+      expect(html).not.toContain('[Custom Body]');
+    });
+
+    it('sendPitch: customIntro REPLACES the template intro — default intro is not also emitted (kills the #900 double-greeting)', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendPitch(
+        { user: 'josh', body: { ...body(), customIntro: 'We stopped in Wednesday and left a card.' } },
+        resStub,
+      );
+      expect(status).toBe(201);
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html.indexOf('<p>We stopped in Wednesday and left a card.</p>')).toBe(0);
+      expect(html).not.toContain('Hi Pat,'); // default intro NOT emitted alongside customIntro
+      expect(html).toContain('we are booking our August run');
+    });
+
+    it('sendPitch: customBody is INSERTED at the [Custom Body] marker, template intro stays intact', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendPitch(
+        { user: 'josh', body: { ...body(), customBody: 'Loved your open mic last week!' } },
+        resStub,
+      );
+      expect(status).toBe(201);
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html.startsWith('<p>Hi Pat,</p><p>Loved your open mic last week!</p><p>we are booking our August run')).toBe(true);
+    });
+
+    it('sendPitch: customIntro and customBody together — replace + insert, no double-greeting', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendPitch(
+        {
+          user: 'josh',
+          body: { ...body(), customIntro: 'Hey Pat, following up!', customBody: 'We met at the farmers market.' },
+        },
+        resStub,
+      );
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html.indexOf('<p>Hey Pat, following up!</p>')).toBe(0);
+      expect(html).not.toContain('Hi Pat,');
+      expect(html).toContain('<p>We met at the farmers market.</p><p>we are booking our August run');
+      // cc / tracking / cadence stay intact regardless of the custom slots.
+      expect((sendMail as any).mock.calls[0][0].cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
+      const rec = (c.model.create as any).mock.calls[0][0];
+      expect(rec.status).toBe('sent');
+      expect(rec.nextTouchDue).toBeInstanceOf(Date);
+    });
+
+    it('sendPitch: a customBody supplied against an un-migrated (marker-less) template is appended, never dropped', async () => {
+      asApprover();
+      await c.sendPitch({ user: 'josh', body: { ...body(), customBody: 'We stopped in Wednesday and left a card.' } }, resStub);
+      expect(status).toBe(201);
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html).toContain('Hi Pat, we are booking our August run');
+      expect(html).toContain('<p>We stopped in Wednesday and left a card.</p>');
+      // appended after the body, not prepended (the #900 behavior this supersedes).
+      expect(html.indexOf('<p>We stopped in Wednesday and left a card.</p>')).toBeGreaterThan(html.indexOf('Hi Pat'));
+    });
+
+    it('sendPitch: blank/whitespace-only customIntro and customBody are treated as absent', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendPitch({ user: 'josh', body: { ...body(), customIntro: '   ', customBody: '  ' } }, resStub);
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html.startsWith('<p>Hi Pat,</p><p>we are booking our August run')).toBe(true);
+    });
+
+    it('sendPitch: customIntro is HTML-escaped', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendPitch(
+        { user: 'josh', body: { ...body(), customIntro: 'Q&A: is "5pm" ok? <script>bad()</script>' } },
+        resStub,
+      );
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html).toContain('Q&amp;A: is &quot;5pm&quot; ok? &lt;script&gt;bad()&lt;/script&gt;');
+      expect(html).not.toContain('<script>');
+    });
+
+    it('sendPitch: customBody is HTML-escaped', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendPitch(
+        { user: 'josh', body: { ...body(), customBody: 'Q&A: is "5pm" ok? <script>bad()</script>' } },
+        resStub,
+      );
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html).toContain('Q&amp;A: is &quot;5pm&quot; ok? &lt;script&gt;bad()&lt;/script&gt;');
+      expect(html).not.toContain('<script>');
+    });
+
+    it('sendPitch: a multi-line customBody renders as multiple paragraphs with <br> for single breaks', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendPitch(
+        { user: 'josh', body: { ...body(), customBody: 'Line one\nLine two\n\nSecond paragraph' } },
+        resStub,
+      );
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html).toContain('<p>Line one<br>Line two</p>\n<p>Second paragraph</p>');
+    });
+
+    it('sendPitch: a multi-line customIntro renders as multiple paragraphs with <br> for single breaks', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendPitch(
+        { user: 'josh', body: { ...body(), customIntro: 'Line one\nLine two\n\nSecond paragraph' } },
+        resStub,
+      );
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html.indexOf('<p>Line one<br>Line two</p>\n<p>Second paragraph</p>')).toBe(0);
+    });
+
+    it('sendBatch: threads customIntro + customBody to every venue in the batch', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.sendBatch(
+        {
+          user: 'josh',
+          body: {
+            venueIds: [oid(), oid()], targetDates: 'Aug 14-16',
+            customIntro: 'Hey again!', customBody: 'Loved your open mic last week!',
+          },
+        },
+        resStub,
+      );
+      expect(status).toBe(200);
+      expect(payload.sent).toBe(2);
+      expect((sendMail as any).mock.calls[0][0].html.indexOf('<p>Hey again!</p>')).toBe(0);
+      expect((sendMail as any).mock.calls[0][0].html).toContain('<p>Loved your open mic last week!</p>');
+      expect((sendMail as any).mock.calls[1][0].html).toContain('<p>Loved your open mic last week!</p>');
+    });
+
+    it('sendBatch: both absent leaves batch sends unchanged', async () => {
+      asApprover();
+      await c.sendBatch({ user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16' } }, resStub);
+      expect((sendMail as any).mock.calls[0][0].html.startsWith('<p>Hi Pat')).toBe(true);
+    });
+
+    it('previewByVenue (single form): reflects customIntro + customBody without sending', async () => {
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      await c.previewByVenue(
+        {
+          user: 'a',
+          query: {
+            venueId: oid(), targetDates: 'Aug 14-16', customIntro: 'Hi there again,', customBody: 'We met at the farmers market.',
+          },
+        },
+        resStub,
+      );
+      expect(status).toBe(200);
+      expect(sendMail).not.toHaveBeenCalled();
+      expect(payload.html.indexOf('<p>Hi there again,</p>')).toBe(0);
+      expect(payload.html).toContain('<p>We met at the farmers market.</p>');
+      expect(payload.html).not.toContain('Hi Pat,');
+    });
+
+    it('previewByVenue (batch form): reflects customIntro + customBody per venue', async () => {
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
+      const id1 = oid();
+      await c.previewByVenue(
+        {
+          user: 'a',
+          query: {
+            venueIds: id1, targetDates: 'Sept 25-27', customIntro: 'Following up,', customBody: 'Card left at the bar.',
+          },
+        },
+        resStub,
+      );
+      expect(status).toBe(200);
+      expect(payload[0].body.indexOf('<p>Following up,</p>')).toBe(0);
+      expect(payload[0].body).toContain('<p>Card left at the bar.</p>');
+    });
+
+    it('previewByVenue: both absent leaves preview unchanged', async () => {
+      await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      expect(payload.html.startsWith('<p>Hi Pat')).toBe(true);
     });
   });
 

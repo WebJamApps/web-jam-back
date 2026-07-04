@@ -14,13 +14,19 @@ const router = express.Router();
 // parsed as an id.
 
 // POST /outreach/send — send ONE pitch immediately to a vetted venue (#844).
+// Body accepts two optional, independent slots (#903, supersedes #900's
+// prepend): `customIntro` REPLACES the template's own intro; `customBody` is
+// INSERTED at the template's [Custom Body] marker. Still goes through the
+// full tracked pipeline (record, PITCH_CC, cadence).
 router.route('/send')
   .post((req, res) => {
     const action = routeUtils.makeAction(req, res, 'sendPitch', controller, authUtils);
     void action();
   });
 
-// POST /outreach/batch — send the approved target list (#844).
+// POST /outreach/batch — send the approved target list (#844). Body accepts
+// the same optional `customIntro` + `customBody` (#903), applied to every
+// venue in the batch.
 router.route('/batch')
   .post((req, res) => {
     const action = routeUtils.makeAction(req, res, 'sendBatch', controller, authUtils);
@@ -35,6 +41,8 @@ router.route('/candidates')
   });
 
 // GET /outreach/preview — render a venue's pitch email without sending (#844).
+// Accepts optional `customIntro` + `customBody` query params (#903) so either
+// slot can be reviewed before send.
 router.route('/preview')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'previewByVenue', controller, authUtils);
