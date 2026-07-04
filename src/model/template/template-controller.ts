@@ -28,6 +28,9 @@ interface TemplateBody {
   type?: string;
   stage?: string;
   subject?: string;
+  // introHtml (#903) — the addressable intro (greeting + opening line),
+  // split out from bodyHtml so a per-send customIntro can replace it.
+  introHtml?: string;
   bodyHtml?: string;
   footerPhotoRef?: string;
   active?: boolean;

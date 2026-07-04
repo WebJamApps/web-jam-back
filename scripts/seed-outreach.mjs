@@ -40,10 +40,14 @@ if (!isLocal && !isDevOrTest) {
 const { Schema } = mongoose;
 
 // mirror: src/model/template/template-schema.ts — unique index on (type, stage)
+// introHtml + the bodyHtml [Custom Body] marker are the #903 template migration
+// (see the templates array below): intro split out so a per-send customIntro
+// can replace it; marker dropped into bodyHtml as the customBody insertion point.
 const templateSchema = new Schema({
   type: { type: String, required: true, enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar', 'OnlineForm'] },
   stage: { type: String, enum: ['cold', 'returning'], default: 'cold' },
   subject: String,
+  introHtml: String,
   bodyHtml: String,
   footerPhotoRef: String,
   active: { type: Boolean, default: true },
@@ -97,15 +101,29 @@ const Outreach = mongoose.models.Outreach || mongoose.model('Outreach', outreach
 const OutreachConfig = mongoose.models.OutreachConfig || mongoose.model('OutreachConfig', configSchema);
 
 // ── Seed data: 6 Templates (3 venueTypes × 2 stages) ────────────────────────
+//
+// #903 template migration: each template's intro (greeting + opening line)
+// is split out into `introHtml`, and `bodyHtml` now opens with a
+// `[Custom Body]` marker at the insertion point for a per-send customBody.
+// The intro/body split boundary is consistent across all 6: introHtml is the
+// first two <p> blocks (greeting, then the opening line introducing who we
+// are / the context); bodyHtml is the marker followed by everything else
+// (the ask, any closing line, and the signature). Concatenating
+// introHtml + bodyHtml-with-marker-removed reproduces the pre-#903 bodyHtml
+// byte-for-byte (verified: neither slot adds or removes any surrounding
+// whitespace beyond the marker token itself).
 
 const templates = [
   {
     type: 'Originals', stage: 'cold',
     subject: 'Performance Inquiry: Josh & Maria at [Venue Name]',
-    bodyHtml: [
+    introHtml: [
       '<p>Hi [Contact Name],</p>',
       '<p>My name is Josh Sherman and I perform alongside my wife Maria as an acoustic duo',
       ' based in Salem, VA. We specialize in original music and love venues that value songwriting.</p>',
+    ].join(''),
+    bodyHtml: [
+      '[Custom Body]',
       '<p>We\'d love to be considered for a slot at [Venue Name] around [Target Dates].',
       ' Our [Booking Period] calendar is filling up and [Venue Name] would be a great fit.</p>',
       '<p>Happy to send samples or answer any questions.</p>',
@@ -117,10 +135,13 @@ const templates = [
   {
     type: 'Originals', stage: 'returning',
     subject: 'Would love to return to [Venue Name] — Josh & Maria',
-    bodyHtml: [
+    introHtml: [
       '<p>Hi [Contact Name],</p>',
       '<p>We loved playing at [Venue Name] and would be thrilled to come back',
       ' for another show around [Target Dates] during [Booking Period].</p>',
+    ].join(''),
+    bodyHtml: [
+      '[Custom Body]',
       '<p>We have some new songs since our last visit and would love to share them with your crowd again.</p>',
       '<p>Best,<br>Josh &amp; Maria<br>540-494-8035<br>',
       '<a href="https://www.joshandmariamusic.com">joshandmariamusic.com</a></p>',
@@ -130,10 +151,13 @@ const templates = [
   {
     type: 'PubFestivalBrewery', stage: 'cold',
     subject: 'Live Music Inquiry — Josh & Maria for [Venue Name]',
-    bodyHtml: [
+    introHtml: [
       '<p>Hi [Contact Name],</p>',
       '<p>I\'m Josh Sherman — my wife Maria and I perform as an acoustic duo out of Salem, VA.',
       ' We play a crowd-pleasing mix of covers and originals, perfect for a pub or brewery atmosphere.</p>',
+    ].join(''),
+    bodyHtml: [
+      '[Custom Body]',
       '<p>We\'d love to play [Venue Name] around [Target Dates].',
       ' We\'re booking our [Booking Period] dates and think [Venue Name] would be a great fit.</p>',
       '<p>Happy to share samples!</p>',
@@ -145,10 +169,13 @@ const templates = [
   {
     type: 'PubFestivalBrewery', stage: 'returning',
     subject: 'We\'d love to return to [Venue Name] — Josh & Maria',
-    bodyHtml: [
+    introHtml: [
       '<p>Hi [Contact Name],</p>',
       '<p>Thank you again for having us at [Venue Name] — the crowd was fantastic.',
       ' We\'d love to come back around [Target Dates] if there\'s a spot available during [Booking Period].</p>',
+    ].join(''),
+    bodyHtml: [
+      '[Custom Body]',
       '<p>Same acoustic duo, same good energy.</p>',
       '<p>Best,<br>Josh &amp; Maria<br>540-494-8035<br>',
       '<a href="https://www.joshandmariamusic.com">joshandmariamusic.com</a></p>',
@@ -158,10 +185,13 @@ const templates = [
   {
     type: 'MidRangeCafeBar', stage: 'cold',
     subject: 'Acoustic Live Music for [Venue Name] — Josh & Maria',
-    bodyHtml: [
+    introHtml: [
       '<p>Hi [Contact Name],</p>',
       '<p>I\'m Josh Sherman — my wife Maria and I are an acoustic duo in Salem, VA.',
       ' We play original songs and acoustic covers, ideal for a relaxed café or bar setting.</p>',
+    ].join(''),
+    bodyHtml: [
+      '[Custom Body]',
       '<p>We\'d love to bring live music to [Venue Name] around [Target Dates]',
       ' — looks like a great spot for [Booking Period] entertainment.</p>',
       '<p>Thanks for your consideration!</p>',
@@ -173,10 +203,13 @@ const templates = [
   {
     type: 'MidRangeCafeBar', stage: 'returning',
     subject: 'Hope to play [Venue Name] again — Josh & Maria',
-    bodyHtml: [
+    introHtml: [
       '<p>Hi [Contact Name],</p>',
       '<p>It was great playing at [Venue Name] — we\'d love to come back',
       ' around [Target Dates] for [Booking Period] if you have availability.</p>',
+    ].join(''),
+    bodyHtml: [
+      '[Custom Body]',
       '<p>Same acoustic duo, a few new songs, same good vibes.</p>',
       '<p>Best,<br>Josh &amp; Maria<br>540-494-8035<br>',
       '<a href="https://www.joshandmariamusic.com">joshandmariamusic.com</a></p>',
