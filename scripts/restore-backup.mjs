@@ -29,11 +29,23 @@
 // not attempt to recreate them itself.
 //
 // TRANSFORM SEAM (for web-jam-tools#897): --transform <path> dynamically
-// imports a module whose default export is `(doc, collectionName) => doc`,
-// run on every document immediately after EJSON.parse and before insertMany.
-// Defaults to an identity passthrough, so plain #116 restores are unaffected.
-// #897 will use this (not implemented here) to add an `artist` field to
-// migrated documents on the way into web-jam-data — see docs/mongo-backup.md.
+// imports a module whose default export is a per-document hook,
+// `(doc, collectionName) => result`, run on every document immediately after
+// EJSON.parse and before insertMany. `result` is one of:
+//   - a plain document object  -> inserted into the SAME collection as the
+//     source file (this is what an identity/#116 passthrough returns).
+//   - `null` or `undefined`    -> the document is DROPPED (not inserted
+//     anywhere).
+//   - `{ collection, doc }`    -> the document is redirected: `doc` is
+//     inserted into `collection` instead of the source file's collection
+//     name (e.g. #897's book -> jamPics filtered remap).
+// Defaults to an identity passthrough (returns `doc` unchanged, same
+// collection, nothing dropped), so plain #116 restores are unaffected.
+// A source collection is only touched (dropped + reinserted) if at least one
+// document actually resolves to it — so a collection that's entirely
+// redirected/dropped (like #897's `book`) is never created or cleared in the
+// target database. See docs/mongo-backup.md and
+// scripts/transforms/josh-migration.mjs (the #897 implementation).
 
 import { config } from 'dotenv';
 import mongoose from 'mongoose';
@@ -88,10 +100,34 @@ if (!isLocal && !isDevOrTest && !args.force) {
   process.exit(1);
 }
 
-async function restoreCollection(db, name, filePath, transform) {
+// Reads one exported <collection>.ndjson file and buckets its (transformed)
+// documents by DESTINATION collection name — usually just `name` (identity),
+// but a transform may redirect some/all docs elsewhere via `{ collection, doc
+// }`, or drop a doc entirely via `null`/`undefined`. Returns a Map of
+// destination-collection-name -> docs[]. An empty source file still yields a
+// `name -> []` entry (preserves the pre-#897 "replace with empty" behavior
+// for a collection that legitimately has zero documents).
+function readAndTransform(name, filePath, transform) {
   const raw = fs.readFileSync(filePath, 'utf8');
   const lines = raw.split('\n').filter((line) => line.trim().length > 0);
-  const docs = lines.map((line) => transform(EJSON.parse(line), name));
+  const byDestination = new Map();
+  if (lines.length === 0) {
+    byDestination.set(name, []);
+    return byDestination;
+  }
+  for (const line of lines) {
+    const result = transform(EJSON.parse(line), name);
+    if (result === null || result === undefined) continue; // dropped
+    const isRedirect = typeof result === 'object' && !Array.isArray(result) && 'doc' in result && 'collection' in result;
+    const destName = isRedirect ? result.collection : name;
+    const doc = isRedirect ? result.doc : result;
+    if (!byDestination.has(destName)) byDestination.set(destName, []);
+    byDestination.get(destName).push(doc);
+  }
+  return byDestination;
+}
+
+async function insertIntoCollection(db, name, docs) {
   try { await db.dropCollection(name); } catch { /* collection didn't exist yet — fine */ }
   if (docs.length === 0) return 0;
   const result = await db.collection(name).insertMany(docs, { ordered: false });
@@ -105,11 +141,23 @@ async function main() {
   const conn = await mongoose.createConnection(uri).asPromise();
   const { db } = conn;
   const files = fs.readdirSync(dbDir).filter((f) => f.endsWith('.ndjson')).sort();
-  const counts = {};
+
+  // Merge every source file's per-destination buckets (a redirect target like
+  // `jamPics` may receive docs from more than one source file, in principle).
+  const merged = new Map();
   for (const file of files) {
     const name = file.replace(/\.ndjson$/, '');
+    const byDestination = readAndTransform(name, path.join(dbDir, file), transform);
+    for (const [destName, docs] of byDestination) {
+      if (!merged.has(destName)) merged.set(destName, []);
+      merged.get(destName).push(...docs);
+    }
+  }
+
+  const counts = {};
+  for (const [destName, docs] of merged) {
     // eslint-disable-next-line no-await-in-loop
-    counts[name] = await restoreCollection(db, name, path.join(dbDir, file), transform);
+    counts[destName] = await insertIntoCollection(db, destName, docs);
   }
   await conn.close();
 

@@ -118,12 +118,39 @@ issue's local/dev backup drill:
   exported subfolder to restore. #897 passes its own `--uri`/`--db` rather than
   needing a fork of this script.
 - **`--transform <path-to-module>`** is an optional per-record hook: the
-  module's default export, `(doc, collectionName) => doc`, runs on every
-  document immediately after `EJSON.parse` and before `insertMany`. It
-  defaults to an identity passthrough, so a plain #116 restore is unaffected.
-  #897 will point this at a small transform module that adds the `artist`
-  field expected by web-jam-data — that logic is intentionally **not**
-  implemented here, only the seam it plugs into.
+  module's default export, `(doc, collectionName) => result`, runs on every
+  document immediately after `EJSON.parse` and before `insertMany`. `result`
+  is one of:
+  - a plain document object — inserted into the **same** collection as the
+    source file (this is what the default identity passthrough returns, so a
+    plain #116 restore is unaffected).
+  - `null` / `undefined` — the document is **dropped** (not inserted
+    anywhere).
+  - `{ collection, doc }` — the document is **redirected**: `doc` is inserted
+    into `collection` instead of the source file's collection name.
+
+  A source collection is only dropped-and-reinserted in the target database if
+  at least one document actually resolves to it, so a collection that's
+  entirely redirected/dropped by a transform is never touched in the target
+  (see `scripts/transforms/josh-migration.mjs` below).
+
+  #897's implementation lives in `scripts/transforms/josh-migration.mjs`:
+  every `gigs` doc gets `artist: "josh"` added (same collection); every `book`
+  doc is kept only if `type === 'JaMmusic-music'` and, if kept, redirected into
+  a **new** `jamPics` collection — not `book`, since web-jam-data already has
+  its own `book` collection (CollegeLutheran's) that this migration must never
+  touch. Non-kept `book` docs are dropped. Unit tests for this module live at
+  `test/unit/backup/josh-migration.spec.ts`.
+
+  Example invocation (into a DEV/TEST `web-jam-data` target only — the safety
+  guard above still applies, and this step is never run with `--force`):
+
+  ```sh
+  node scripts/restore-backup.mjs \
+    --folder <run-folder> --db webjamsocket \
+    --uri "<dev-or-test web-jam-data Mongo URI>" \
+    --transform scripts/transforms/josh-migration.mjs
+  ```
 
 ### End-to-end restore drill
 
