@@ -13,6 +13,7 @@ import venue from './model/venue/venue-router.js';
 import template from './model/template/template-router.js';
 import outreach from './model/outreach/outreach-router.js';
 import facebook from './model/facebook/index.js';
+import backup from './model/backup/backup-router.js';
 
 const router = express.Router();
 
@@ -32,4 +33,5 @@ export default function route(app: Express): void {
   router.use('/template', template);
   router.use('/outreach', outreach);
   router.use('/facebook', facebook);
+  router.use('/admin/backup', backup);
 }

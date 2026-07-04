@@ -56,3 +56,6 @@ src/experiments
 
 .yarn
 .yarnrc
+
+# git worktrees used for parallel agent sessions (never repo content)
+.worktrees/
