@@ -14,13 +14,17 @@ const router = express.Router();
 // parsed as an id.
 
 // POST /outreach/send — send ONE pitch immediately to a vetted venue (#844).
+// Body accepts an optional `customBody` (#900) — one-off wording woven into
+// the rendered pitch ahead of the template copy; still goes through the full
+// tracked pipeline (record, PITCH_CC, cadence).
 router.route('/send')
   .post((req, res) => {
     const action = routeUtils.makeAction(req, res, 'sendPitch', controller, authUtils);
     void action();
   });
 
-// POST /outreach/batch — send the approved target list (#844).
+// POST /outreach/batch — send the approved target list (#844). Body accepts
+// an optional `customBody` (#900), applied to every venue in the batch.
 router.route('/batch')
   .post((req, res) => {
     const action = routeUtils.makeAction(req, res, 'sendBatch', controller, authUtils);
@@ -35,6 +39,8 @@ router.route('/candidates')
   });
 
 // GET /outreach/preview — render a venue's pitch email without sending (#844).
+// Accepts an optional `customBody` query param (#900) so the woven-in wording
+// can be reviewed before send.
 router.route('/preview')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'previewByVenue', controller, authUtils);
