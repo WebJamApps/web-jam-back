@@ -503,6 +503,110 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
+  describe('customBody (#900)', () => {
+    const body = () => ({ venueId: oid(), targetDates: 'Aug 14-16', bookingPeriod: 'August' });
+
+    it('sendPitch: absent customBody leaves the rendered html byte-for-byte unchanged', async () => {
+      asApprover();
+      await c.sendPitch({ user: 'josh', body: body() }, resStub);
+      expect(status).toBe(201);
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html).toBe(
+        '<p>Hi Pat, we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>'
+          + '\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin-top:16px;">'
+          + '<tr><td style="text-align:center;">'
+          + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
+          + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>',
+      );
+    });
+
+    it('sendPitch: a present customBody is prepended ahead of the template body', async () => {
+      asApprover();
+      await c.sendPitch({ user: 'josh', body: { ...body(), customBody: 'We stopped in Wednesday and left a card.' } }, resStub);
+      expect(status).toBe(201);
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html.indexOf('<p>We stopped in Wednesday and left a card.</p>')).toBe(0);
+      expect(html).toContain('Hi Pat, we are booking our August run');
+      // cc / tracking / cadence stay intact regardless of customBody.
+      expect((sendMail as any).mock.calls[0][0].cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
+      const rec = (c.model.create as any).mock.calls[0][0];
+      expect(rec.status).toBe('sent');
+      expect(rec.nextTouchDue).toBeInstanceOf(Date);
+    });
+
+    it('sendPitch: a blank/whitespace-only customBody is treated as absent', async () => {
+      asApprover();
+      await c.sendPitch({ user: 'josh', body: { ...body(), customBody: '   ' } }, resStub);
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html.startsWith('<p>Hi Pat')).toBe(true);
+    });
+
+    it('sendPitch: customBody is HTML-escaped', async () => {
+      asApprover();
+      await c.sendPitch(
+        { user: 'josh', body: { ...body(), customBody: 'Q&A: is "5pm" ok? <script>bad()</script>' } },
+        resStub,
+      );
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html).toContain('Q&amp;A: is &quot;5pm&quot; ok? &lt;script&gt;bad()&lt;/script&gt;');
+      expect(html).not.toContain('<script>');
+    });
+
+    it('sendPitch: a multi-line customBody renders as multiple paragraphs with <br> for single breaks', async () => {
+      asApprover();
+      await c.sendPitch(
+        { user: 'josh', body: { ...body(), customBody: 'Line one\nLine two\n\nSecond paragraph' } },
+        resStub,
+      );
+      const html = (sendMail as any).mock.calls[0][0].html;
+      expect(html).toContain('<p>Line one<br>Line two</p>\n<p>Second paragraph</p>');
+    });
+
+    it('sendBatch: threads customBody to every venue in the batch', async () => {
+      asApprover();
+      await c.sendBatch(
+        { user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', customBody: 'Loved your open mic last week!' } },
+        resStub,
+      );
+      expect(status).toBe(200);
+      expect(payload.sent).toBe(2);
+      expect((sendMail as any).mock.calls[0][0].html).toContain('<p>Loved your open mic last week!</p>');
+      expect((sendMail as any).mock.calls[1][0].html).toContain('<p>Loved your open mic last week!</p>');
+    });
+
+    it('sendBatch: absent customBody leaves batch sends unchanged', async () => {
+      asApprover();
+      await c.sendBatch({ user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16' } }, resStub);
+      expect((sendMail as any).mock.calls[0][0].html.startsWith('<p>Hi Pat')).toBe(true);
+    });
+
+    it('previewByVenue (single form): reflects customBody without sending', async () => {
+      await c.previewByVenue(
+        { user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16', customBody: 'We met at the farmers market.' } },
+        resStub,
+      );
+      expect(status).toBe(200);
+      expect(sendMail).not.toHaveBeenCalled();
+      expect(payload.html).toContain('<p>We met at the farmers market.</p>');
+      expect(payload.html).toContain('Hi Pat,');
+    });
+
+    it('previewByVenue (batch form): reflects customBody per venue', async () => {
+      const id1 = oid();
+      await c.previewByVenue(
+        { user: 'a', query: { venueIds: id1, targetDates: 'Sept 25-27', customBody: 'Card left at the bar.' } },
+        resStub,
+      );
+      expect(status).toBe(200);
+      expect(payload[0].body).toContain('<p>Card left at the bar.</p>');
+    });
+
+    it('previewByVenue: absent customBody leaves preview unchanged', async () => {
+      await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      expect(payload.html.startsWith('<p>Hi Pat')).toBe(true);
+    });
+  });
+
   describe('config — auto-approve (#844)', () => {
     it('reads the default (OFF) when no doc exists', async () => {
       await c.getOutreachConfig({ user: 'a', query: {} }, resStub);
