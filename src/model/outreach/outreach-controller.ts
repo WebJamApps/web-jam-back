@@ -49,6 +49,10 @@ interface SendBody {
   bookingPeriod?: string;
   actor?: string;
   cc?: string | string[];
+  // #900 — optional one-off wording (e.g. "we stopped in Wednesday, submitted
+  // your form, left a card") woven into the rendered pitch ahead of the
+  // template copy, while still going through the tracked send pipeline.
+  customBody?: string;
 }
 
 // #844 — batch target-list approval. The approval gate is the TARGET SELECTION
@@ -62,6 +66,8 @@ interface BatchBody {
   bookingPeriod?: string;
   actor?: string;
   cc?: string | string[];
+  // #900 — same customBody as SendBody, applied to every venue in the batch.
+  customBody?: string;
 }
 
 interface ConfigBody { autoApprove?: boolean; actor?: string }
@@ -136,14 +142,45 @@ function footerHtml(): string {
     + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>';
 }
 
+// customBody is free text (may come from a form, a phone paste, or an AI draft
+// upstream — #899) and is never trusted as HTML, unlike the vetted template
+// copy. Escape the five HTML-significant characters before it ever reaches
+// buildPitchEmail's output.
+function escapeHtml(text: string): string {
+  return text
+    .split('&').join('&amp;')
+    .split('<').join('&lt;')
+    .split('>').join('&gt;')
+    .split('"').join('&quot;')
+    .split("'").join('&#39;');
+}
+
+// Render a one-off customBody as its own HTML paragraph(s): escape first, then
+// turn blank-line breaks into paragraph breaks and single newlines into <br>,
+// so a multi-line note reads the way it was typed.
+function renderCustomBodyHtml(customBody: string): string {
+  const escaped = escapeHtml(customBody.trim());
+  const paragraphs = escaped.split(/\n{2,}/).map((para) => para.split('\n').join('<br>'));
+  return paragraphs.map((para) => `<p>${para}</p>`).join('\n');
+}
+
 // Render a template into a ready-to-send email: token-filled subject + body,
 // with the footer photo appended as an inline-CID attachment when the template
 // names one (and the asset is on disk).
+//
+// #900 — an optional customBody is woven in as an INTRO paragraph ahead of the
+// template's own copy (not a replacement): the template still supplies the
+// standard closing/signature/CTA, so a one-off note (e.g. "we stopped in
+// Wednesday, submitted your form, left a card") reads as a personal lead-in to
+// the familiar pitch rather than orphaning the send from its usual framing.
 function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody): {
   subject: string; html: string; attachments: { filename: string; path: string; cid: string }[];
 } {
   const subject = personalize(template.subject || 'Performance Inquiry: Josh and Maria', venue, body);
   let html = personalize(template.bodyHtml || '', venue, body);
+  if (body.customBody && body.customBody.trim()) {
+    html = `${renderCustomBodyHtml(body.customBody)}\n${html}`;
+  }
   const attachments = [];
   const assetPath = template.footerPhotoRef ? resolveFooterAsset(template.footerPhotoRef) : null;
   /* istanbul ignore else */
@@ -466,7 +503,9 @@ class OutreachController extends Controller {
     };
     for (const venueId of body.venueIds) {
       if (!mongoose.Types.ObjectId.isValid(venueId)) { result.skipped.push({ venueId, reason: 'invalid id' }); continue; }
-      const sendBody = { targetDates: body.targetDates, bookingPeriod: body.bookingPeriod, cc: body.cc };
+      const sendBody = {
+        targetDates: body.targetDates, bookingPeriod: body.bookingPeriod, cc: body.cc, customBody: body.customBody,
+      };
       // eslint-disable-next-line no-await-in-loop
       const ctx = await this.resolvePitch({ venueId, templateType: body.templateType, ...sendBody });
       if (ctx.error) { result.skipped.push({ venueId, reason: ctx.error.message }); continue; }
@@ -521,6 +560,7 @@ class OutreachController extends Controller {
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     const q = (req.query || {}) as {
       venueId?: string; venueIds?: string; templateType?: string; targetDates?: string; bookingPeriod?: string;
+      customBody?: string;
     };
 
     // BATCH form: venueIds (plural, comma-separated) → array of preview objects.
@@ -536,7 +576,8 @@ class OutreachController extends Controller {
         if (ctx.error) continue; // skip unresolvable venues
         const { venue, template } = ctx as Required<PitchContext>;
         const { subject, html } = buildPitchEmail(
-          venue, template, { targetDates: q.targetDates, bookingPeriod: q.bookingPeriod } as SendBody,
+          venue, template,
+          { targetDates: q.targetDates, bookingPeriod: q.bookingPeriod, customBody: q.customBody } as SendBody,
         );
         results.push({ venueId, venueName: venue.name || '', subject, body: html });
       }
@@ -551,7 +592,9 @@ class OutreachController extends Controller {
     );
     if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message });
     const { venue, template } = ctx as Required<PitchContext>;
-    const { subject, html } = buildPitchEmail(venue, template, { targetDates: q.targetDates, bookingPeriod: q.bookingPeriod } as SendBody);
+    const { subject, html } = buildPitchEmail(
+      venue, template, { targetDates: q.targetDates, bookingPeriod: q.bookingPeriod, customBody: q.customBody } as SendBody,
+    );
     return res.status(200).json({ to: venue.email, cc: PITCH_CC, subject, html });
   }
 
