@@ -36,12 +36,19 @@ describe('scripts/transforms/josh-migration.mjs', () => {
     });
   });
 
-  describe('book', () => {
+  // The live wj-prod collection is `books` (plural — Mongoose pluralizes the
+  // Book model). This is the SAME name as CollegeLutheran's own `books`
+  // collection in the target web-jam-data, so every `books` doc MUST resolve
+  // to a redirect (jamPics) or a drop — never identity — or the restore would
+  // drop+replace CollegeLutheran's books. These tests key on 'books' (plural);
+  // an earlier version keyed on 'book' (singular) and slipped that hazard past
+  // the dry-run. See the transform's header comment.
+  describe('books', () => {
     it('redirects a JaMmusic-music doc into the jamPics collection, preserving _id and fields', async () => {
       const transform = await loadTransform();
       const doc = { _id: 'book1', type: 'JaMmusic-music', title: 'Valhalla Winery 2019', url: 'https://example.com/x.png' };
 
-      const result = transform(doc, 'book');
+      const result = transform(doc, 'books');
 
       expect(result).toEqual({ collection: 'jamPics', doc });
     });
@@ -50,7 +57,7 @@ describe('scripts/transforms/josh-migration.mjs', () => {
       const transform = await loadTransform();
       const doc = { _id: 'book2', type: 'CollegeLutheran-photo', title: 'Not ours' };
 
-      const result = transform(doc, 'book');
+      const result = transform(doc, 'books');
 
       expect(result).toBeNull();
     });
@@ -59,9 +66,23 @@ describe('scripts/transforms/josh-migration.mjs', () => {
       const transform = await loadTransform();
       const doc = { _id: 'book3', title: 'Untyped' };
 
-      const result = transform(doc, 'book');
+      const result = transform(doc, 'books');
 
       expect(result).toBeNull();
+    });
+
+    it('never returns an identity passthrough for a books doc (would clobber CollegeLutheran)', async () => {
+      const transform = await loadTransform();
+      // whatever the doc, a books doc must be either a redirect or a drop —
+      // never the plain doc back (which would keep it in the `books` collection).
+      for (const doc of [
+        { _id: 'a', type: 'JaMmusic-music' },
+        { _id: 'b', type: 'something-else' },
+        { _id: 'c' },
+      ]) {
+        const result = transform(doc, 'books');
+        expect(result).not.toBe(doc);
+      }
     });
   });
 
