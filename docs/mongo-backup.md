@@ -4,20 +4,20 @@ Reference: [web-jam-tools#116](https://github.com/WebJamApps/web-jam-tools/issue
 
 ## TL;DR
 
-`POST /admin/backup` exports every collection of **both** prod databases as EJSON
-and uploads them to Dropbox, keeping the newest 8 weekly runs. Free M0 Atlas has
-no snapshots/PITR, so this self-export is the only safety net. Triggered weekly
-by the Deno cron app (`web-jam-tools`, same pattern as `/outreach/advance`) — that
-half is a separate PR in that repo.
+`POST /admin/backup` exports every collection of this app's own database as
+EJSON and uploads them to Dropbox, keeping the newest 8 weekly runs. Free M0
+Atlas has no snapshots/PITR, so this self-export is the only safety net.
+Triggered weekly by the Deno cron app (`web-jam-tools`, same pattern as
+`/outreach/advance`) — that half is a separate PR in that repo.
 
-- Both DBs exported: **webjamsalem** (this app's own `MONGO_DB_URI`) and
-  **webjamsocket** (WebJamSocketCluster's Mongo, via `GIGS_MONGO_DB_URI` — the
-  var `src/model/gig/gig-schema.ts` already uses to read the `gigs` collection
-  from that same cluster; no *new* env var was needed for the second DB).
+- One DB exported: **webjamsalem** (this app's own `MONGO_DB_URI`, the
+  web-jam-data database — gigs live here too as an artist-scoped collection
+  since web-jam-back#897 retired the old WebJamSocketCluster mirror connection
+  and its `GIGS_MONGO_DB_URI` var).
 - Responds **202 immediately**; the export + upload run async so the request
   never rides Heroku's 30s router timeout (H12).
 - Exports collection-by-collection (one collection's documents in memory at a
-  time, never both DBs at once).
+  time).
 - EJSON preserves data + types (ObjectId/Date/etc.) but **not** indexes or
   collection options — Mongoose re-creates indexes on the app's next boot.
 
@@ -56,17 +56,11 @@ heroku config:set DROPBOX_APP_SECRET="<app secret>" -a webjamsalem
 heroku config:set DROPBOX_REFRESH_TOKEN="<refresh token>" -a webjamsalem
 ```
 
-`GIGS_MONGO_DB_URI` should already be set (it powers the existing `gigs` read
-path) — confirm with `heroku config:get GIGS_MONGO_DB_URI -a webjamsalem`. If it
-somehow isn't set, the backup still runs but the `webjamsocket` half is skipped
-(logged, reflected as `ok: false` in that run's `manifest.json`).
-
 ### Environment variables
 
 | Var | Purpose | Without it |
 | --- | --- | --- |
 | `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET` / `DROPBOX_REFRESH_TOKEN` | Dropbox refresh-token flow | Export still runs, upload is skipped (local disk only) |
-| `GIGS_MONGO_DB_URI` | Already-existing var for the WebJamSocketCluster Mongo (webjamsocket DB) | `webjamsocket` half of the export is skipped |
 | `BACKUP_OUTPUT_DIR` | Optional override for the local export scratch dir (default: OS tmpdir) | n/a |
 | `BACKUP_KEEP_LOCAL` | Set to `true` to keep the local export after a successful Dropbox upload (debugging) | Local export is deleted once safely in Dropbox |
 
@@ -109,13 +103,15 @@ node scripts/restore-backup.mjs --folder <path/to/run-folder> --db webjamsalem
 
 ### Parameterization (reused by web-jam-tools#897)
 
-This same script is designed to be reusable, unchanged, as the import half of
-the wj-prod → web-jam-data migration (web-jam-tools#897) — not just this
-issue's local/dev backup drill:
+This same script was reused, unchanged, as the import half of the wj-prod →
+web-jam-data migration (web-jam-tools#897, now complete — the mirror
+connection and `GIGS_MONGO_DB_URI` it used to feed have since been retired)
+— not just this issue's local/dev backup drill. It stays generic/reusable for
+any future one-off migration:
 
 - **Target database is already parameterized**, never hardcoded: `--uri`
   points the restore at any Mongo connection string, and `--db` selects which
-  exported subfolder to restore. #897 passes its own `--uri`/`--db` rather than
+  exported subfolder to restore. #897 passed its own `--uri`/`--db` rather than
   needing a fork of this script.
 - **`--transform <path-to-module>`** is an optional per-record hook: the
   module's default export, `(doc, collectionName) => result`, runs on every
