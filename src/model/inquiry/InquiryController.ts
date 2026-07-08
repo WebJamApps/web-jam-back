@@ -2,6 +2,7 @@ import nodemailer, { Transporter } from 'nodemailer';
 import { Request, Response } from 'express';
 import Debug from 'debug';
 import { DEFAULT_ARTIST, normalizeArtist } from '#src/lib/artist.js';
+import { formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
 
 const debug = Debug('web-jam-back:InquiryController');
 
@@ -42,12 +43,19 @@ class InquiryController {
     return this.transporter;
   }
 
-  async sendEmail(bodyhtml: string, toemail: string, subjectline: string, res: Response, ccemail?: string) {
+  async sendEmail(
+    bodyhtml: string,
+    toemail: string,
+    subjectline: string,
+    res: Response,
+    ccemail?: string,
+    bodytext?: string,
+  ) {
     const msg: Record<string, string> = {
       to: toemail,
       from: process.env.GMAIL_USER || /* istanbul ignore next */ '',
       subject: subjectline,
-      text: bodyhtml,
+      text: bodytext || bodyhtml,
       html: bodyhtml,
     };
     if (ccemail) msg.cc = ccemail;
@@ -67,7 +75,8 @@ class InquiryController {
   handleInquiry(req: Request, res: Response) {
     debug(req.body);
     const { to, cc } = recipientForArtist((req.body as { artist?: unknown })?.artist);
-    return this.sendEmail(JSON.stringify(req.body), to, 'inquiry', res, cc);
+    const { subject, html, text } = formatInquiryEmail(req.body as Record<string, unknown>);
+    return this.sendEmail(html, to, subject, res, cc, text);
   }
 }
 export default InquiryController;
