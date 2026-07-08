@@ -8,10 +8,10 @@ import dropbox from '#src/lib/dropbox.js';
 import type { Icontroller } from '#src/lib/routeUtils.js';
 
 // POST /admin/backup — weekly Mongo backup (web-jam-tools#116), triggered by the
-// Deno cron app. Exports every collection of BOTH prod DBs as EJSON and uploads
-// them to Dropbox, then prunes old runs. Heroku kills requests at 30s, so the
-// route responds 202 immediately and the export+upload run async — never on the
-// request path.
+// Deno cron app. Exports every collection of this app's own database as EJSON
+// and uploads them to Dropbox, then prunes old runs. Heroku kills requests at
+// 30s, so the route responds 202 immediately and the export+upload run async —
+// never on the request path.
 const debug = Debug('web-jam-back:backup-controller');
 
 // Filesystem/Dropbox-safe run label: an ISO timestamp with `:`/`.` stripped, so

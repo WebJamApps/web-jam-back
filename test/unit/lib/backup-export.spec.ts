@@ -97,44 +97,38 @@ describe('backup-export.ts', () => {
       return Promise.resolve({ db, close: () => Promise.resolve() });
     };
 
-    it('exports both databases when both URIs are configured, and writes a manifest', async () => {
-      const primaryDb = fakeDb({ user: [{ name: 'josh' }] });
-      const secondaryDb = fakeDb({ gigs: [{ venue: 'The Bridge' }, { venue: 'Pub Fest' }] });
+    it('exports the app\'s own database when its URI is configured, and writes a manifest', async () => {
+      const primaryDb = fakeDb({ user: [{ name: 'josh' }], gigs: [{ venue: 'The Bridge' }, { venue: 'Pub Fest' }] });
       const outDir = path.join(tmpDir, 'run-1');
 
       const manifest = await runFullBackup(outDir, {
         primaryUri: 'mongodb://primary',
-        secondaryUri: 'mongodb://secondary',
-        connect: fakeConnect({ 'mongodb://primary': primaryDb, 'mongodb://secondary': secondaryDb }),
+        connect: fakeConnect({ 'mongodb://primary': primaryDb }),
       });
 
-      expect(manifest.databases.webjamsalem).toEqual({ ok: true, collections: { user: 1 } });
-      expect(manifest.databases.webjamsocket).toEqual({ ok: true, collections: { gigs: 2 } });
+      expect(manifest.databases.webjamsalem).toEqual({ ok: true, collections: { user: 1, gigs: 2 } });
       expect(fs.existsSync(path.join(outDir, 'webjamsalem', 'user.ndjson'))).toBe(true);
-      expect(fs.existsSync(path.join(outDir, 'webjamsocket', 'gigs.ndjson'))).toBe(true);
+      expect(fs.existsSync(path.join(outDir, 'webjamsalem', 'gigs.ndjson'))).toBe(true);
 
       const manifestOnDisk = JSON.parse(fs.readFileSync(path.join(outDir, 'manifest.json'), 'utf8'));
       expect(manifestOnDisk.databases.webjamsalem.ok).toBe(true);
       expect(typeof manifestOnDisk.generatedAt).toBe('string');
     });
 
-    it('skips a database with no URI configured (logged, not thrown) — the local GIGS_MONGO_DB_URI-unset case', async () => {
-      const primaryDb = fakeDb({ user: [] });
+    it('skips the database with no URI configured (logged, not thrown)', async () => {
       const outDir = path.join(tmpDir, 'run-2');
 
       const manifest = await runFullBackup(outDir, {
-        primaryUri: 'mongodb://primary',
-        secondaryUri: undefined,
-        connect: fakeConnect({ 'mongodb://primary': primaryDb }),
+        primaryUri: undefined,
+        connect: fakeConnect({}),
       });
 
-      expect(manifest.databases.webjamsalem.ok).toBe(true);
-      expect(manifest.databases.webjamsocket).toEqual({
+      expect(manifest.databases.webjamsalem).toEqual({
         ok: false,
-        reason: 'webjamsocket skipped — no URI configured for this database',
+        reason: 'webjamsalem skipped — no URI configured for this database',
         collections: {},
       });
-      expect(fs.existsSync(path.join(outDir, 'webjamsocket'))).toBe(false);
+      expect(fs.existsSync(path.join(outDir, 'webjamsalem'))).toBe(false);
     });
 
     it('records a failed connection as ok:false with the error message, without throwing', async () => {
@@ -143,12 +137,10 @@ describe('backup-export.ts', () => {
 
       const manifest = await runFullBackup(outDir, {
         primaryUri: 'mongodb://primary',
-        secondaryUri: 'mongodb://secondary',
         connect: failingConnect,
       });
 
       expect(manifest.databases.webjamsalem).toEqual({ ok: false, reason: 'bad auth', collections: {} });
-      expect(manifest.databases.webjamsocket).toEqual({ ok: false, reason: 'bad auth', collections: {} });
     });
   });
 });

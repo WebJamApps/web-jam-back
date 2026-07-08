@@ -120,27 +120,23 @@ async function exportLabeledDb(
 }
 
 export interface RunBackupOptions {
-  // Defaults: MONGO_DB_URI (webjamsalem, this app's own DB) and
-  // GIGS_MONGO_DB_URI — the WebJamSocketCluster URI ALREADY used by
-  // src/model/gig/gig-schema.ts to read the `gigs` collection from that same
-  // database, so no new Heroku config var is needed for the second DB.
+  // Default: MONGO_DB_URI (webjamsalem, this app's own DB — the only database
+  // this app owns as of web-jam-back#897; the WebJamSocketCluster mirror DB
+  // this used to also export was retired along with GIGS_MONGO_DB_URI).
   primaryUri?: string;
-  secondaryUri?: string;
   connect?: (uri: string) => Promise<OpenDb>;
 }
 
-// Exports both prod databases (web-jam-tools#116) into outDir/<label>/*.ndjson
-// plus a manifest.json summary. A DB whose URI isn't configured is skipped with
-// a logged warning (reflected in the manifest as ok:false), not a thrown error —
-// locally GIGS_MONGO_DB_URI is normally unset.
+// Exports this app's own database (web-jam-tools#116) into
+// outDir/webjamsalem/*.ndjson plus a manifest.json summary. If the URI isn't
+// configured the export is skipped with a logged warning (reflected in the
+// manifest as ok:false), not a thrown error.
 export async function runFullBackup(outDir: string, opts: RunBackupOptions = {}): Promise<BackupManifest> {
   const connect = opts.connect || defaultConnect;
   const primaryUri = opts.primaryUri ?? process.env.MONGO_DB_URI;
-  const secondaryUri = opts.secondaryUri ?? process.env.GIGS_MONGO_DB_URI;
 
   const databases: Record<string, DbExportResult> = {};
   databases.webjamsalem = await exportLabeledDb('webjamsalem', primaryUri, path.join(outDir, 'webjamsalem'), connect);
-  databases.webjamsocket = await exportLabeledDb('webjamsocket', secondaryUri, path.join(outDir, 'webjamsocket'), connect);
 
   const manifest: BackupManifest = { generatedAt: new Date().toISOString(), databases };
   fs.mkdirSync(outDir, { recursive: true });
