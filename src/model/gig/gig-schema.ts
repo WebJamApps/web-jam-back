@@ -6,9 +6,12 @@ const options = {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
 };
 
-// Mirror of the gig schema owned by WebJamSocketCluster (it writes the data).
-// web-jam-back only reads from the same Mongo `gigs` collection — keep the
-// shape and explicit collection name in sync with that repo.
+// Gigs used to live in WebJamSocketCluster's own Mongo, read here via a
+// dedicated mirror connection (GIGS_MONGO_DB_URI, web-jam-back#814). As of
+// web-jam-back#897 that data has been migrated into web-jam-data (this app's
+// own default database, artist-scoped per #885) and the mirror connection is
+// retired — gigs are now just another collection on the default mongoose
+// connection, like every other model.
 const gigSchema = new Schema({
   date: { type: String, required: false },
   time: { type: String, required: false },
@@ -21,19 +24,9 @@ const gigSchema = new Schema({
   duration: { type: Number, required: false, default: 0 },
   promoImageUrl: { type: String, required: false },
   more: { type: String, required: false },
-  // Artist/tenant slug (#885). Absent on all pre-#885 records, which read as the
-  // default (JaMmusic) artist. Kept in sync with WebJamSocketCluster's mirror.
+  // Artist/tenant slug (#885). Absent on all pre-#885 records, which read as
+  // the default (JaMmusic) artist.
   artist: { type: String, required: false },
 }, options);
 
-// Gigs live in WebJamSocketCluster's Mongo, a DIFFERENT database than
-// web-jam-back's default connection. In production GIGS_MONGO_DB_URI is set to
-// that DB's URI, so bind the Gig model to a dedicated connection. When it's
-// unset (tests/CI) use the default mongoose connection (the test DB) — the same
-// connection every other model uses, which the test harness already manages, so
-// gigs are read/written in the test DB and prod is never reachable from tests.
-// (web-jam-back#814)
-const gigsUri = process.env.GIGS_MONGO_DB_URI;
-const conn = gigsUri ? mongoose.createConnection(gigsUri) : mongoose;
-
-export default conn.models.Gig || conn.model('Gig', gigSchema, 'gigs');
+export default mongoose.models.Gig || mongoose.model('Gig', gigSchema, 'gigs');
