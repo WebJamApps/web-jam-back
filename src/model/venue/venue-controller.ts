@@ -168,12 +168,19 @@ class VenueController extends Controller {
 
   // Drop venues that have a gig within ±2 months of the target date. Gigs live
   // in a different DB (read via gigModel); matching is by venue name against the
-  // gig's HTML `venue` text (best-effort, name-based).
+  // gig's HTML `venue` text (best-effort, name-based). Outreach is Josh & Maria's:
+  // scope to Josh's gigs (or pre-migration docs with no artist field) so Tim's
+  // gigs (web-jam-back#922) never gate Josh's venue eligibility.
   static async filterEligible(venues: Record<string, unknown>[], target: Date): Promise<Record<string, unknown>[]> {
     const start = new Date(target); start.setMonth(start.getMonth() - ELIGIBILITY_WINDOW_MONTHS);
     const end = new Date(target); end.setMonth(end.getMonth() + ELIGIBILITY_WINDOW_MONTHS);
     let gigs: GigDoc[];
-    try { gigs = await gigModel.find({}) as unknown as GigDoc[]; } catch (e) { return Promise.reject(e); }
+    try {
+      gigs = await gigModel.find({
+        $or: [{ artist: 'josh' }, { artist: { $exists: false } }],
+      }) as unknown as GigDoc[];
+    } catch (e) { return Promise.reject(e); }
+    // `booked` entries are already lowercased by stripHtml, matching `name` below.
     const booked = gigs
       .filter((g) => g.datetime && new Date(g.datetime) >= start && new Date(g.datetime) <= end)
       .map((g) => stripHtml(String(g.venue || '')));
