@@ -232,6 +232,30 @@ describe('Venue Controller', () => {
       await c.listVenues({ user: 'a', query: { eligibleFor: 'not-a-date' } }, resStub);
       expect(status).toBe(400);
     });
+
+    // web-jam-back#922: gigs is a shared collection — Tim's calendar must never
+    // gate Josh's outreach eligibility.
+    it('does not drop a venue for a Tim-only gig, but still drops for josh/artist-less gigs', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([
+        { name: 'Venue X' }, { name: 'Venue Y' }, { name: 'Venue Z' },
+      ]));
+      (gigModel as any).find = vi.fn((filter: any) => {
+        // Simulate the real Mongo $or predicate against a mixed-artist collection.
+        const all = [
+          { venue: 'Venue X', datetime: '2026-07-15T00:00:00.000Z', artist: 'tim' },
+          { venue: 'Venue Y', datetime: '2026-07-15T00:00:00.000Z', artist: 'josh' },
+          { venue: 'Venue Z', datetime: '2026-07-15T00:00:00.000Z' }, // pre-migration, no artist field
+        ];
+        const matches = all.filter((g) => filter.$or.some((clause: any) => (
+          clause.artist === g.artist
+          || (clause.artist && clause.artist.$exists === false && g.artist === undefined)
+        )));
+        return Promise.resolve(matches);
+      });
+      await c.listVenues({ user: 'a', query: { eligibleFor: '2026-07-01' } }, resStub);
+      expect(status).toBe(200);
+      expect(payload.map((v: any) => v.name)).toEqual(['Venue X']);
+    });
   });
 
   describe('buildListFilter', () => {
