@@ -30,6 +30,29 @@ describe('google.ts', () => {
     const res = await google.authenticate(req);
     expect(res.emailAddresses[0].value).toBe('me@me.com');
   });
+  it('#929 logs Google\'s status/error/error_description and clientId (never the secret) on exchange failure', async () => {
+    const prevSecret = process.env.GoogleClientSecret;
+    process.env.GoogleClientSecret = 'super-secret-value';
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      json: async () => ({ error: 'invalid_grant', error_description: 'Bad Request' }),
+    }));
+    const req = { body: { code: 'whatever', clientId: 'my-client-id', redirectUri: 'http://whatever.com' } };
+    await expect(google.authenticate(req)).rejects.toThrow('400 Bad Request');
+    expect(consoleErrorSpy).toHaveBeenCalledWith('[auth/google] token exchange failed', {
+      status: 400,
+      error: 'invalid_grant',
+      error_description: 'Bad Request',
+      clientId: 'my-client-id',
+    });
+    expect(JSON.stringify(consoleErrorSpy.mock.calls[0])).not.toContain('super-secret-value');
+    consoleErrorSpy.mockRestore();
+    process.env.GoogleClientSecret = prevSecret;
+  });
+
   it("accepts Tim's OAuth client id (#885) and pairs it with Tim's secret", async () => {
     const prevId = process.env.TimGoogleClientId;
     const prevSecret = process.env.TimGoogleClientSecret;
