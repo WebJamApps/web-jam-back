@@ -40,7 +40,19 @@ async function authenticate(req: { body: { redirectUri: string; code: string; cl
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
       body: params,
     });
-    if (!tokenRes.ok) throw new Error(`${tokenRes.status} ${tokenRes.statusText}`);
+    if (!tokenRes.ok) {
+      // #929: Heroku logs showed nothing diagnosable because `debug()` is a
+      // no-op unless DEBUG is set in prod. Log Google's actual error body
+      // (never the secret/full request config) so failures are traceable.
+      const errBody = await tokenRes.json().catch(() => undefined) as { error?: string; error_description?: string } | undefined;
+      console.error('[auth/google] token exchange failed', { // eslint-disable-line no-console
+        status: tokenRes.status,
+        error: errBody?.error,
+        error_description: errBody?.error_description,
+        clientId: req.body.clientId,
+      });
+      throw new Error(`${tokenRes.status} ${tokenRes.statusText}`);
+    }
     tokenBody = await tokenRes.json() as GoogleTokenResponse;
     debug(tokenBody);
   } catch (e) { debug(e); throw e; }
