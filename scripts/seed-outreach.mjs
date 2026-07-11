@@ -74,13 +74,19 @@ const venueSchema = new Schema({
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
 
 // mirror: src/model/outreach/outreach-schema.ts (abridged — only fields seeded here)
+// #923: status enum + targetWeekend synced with the real schema. This seed
+// data itself still only sets targetDates (display-only) — none of the local
+// seed fixtures need a targetWeekend to exercise the pre-#923 UI flows above.
 const outreachSchema = new Schema({
   venueId: { type: Schema.Types.ObjectId, ref: 'Venue', required: true },
   templateUsed: String,
   targetDates: String,
+  targetWeekend: { start: Date, end: Date },
   bookingPeriod: String,
   sentAt: { type: Date, default: Date.now },
-  status: { type: String, enum: ['sent', 'replied', 'declined', 'booked', 'no-response'], default: 'sent' },
+  status: {
+    type: String, enum: ['sent', 'replied', 'no-response', 'interested', 'not-interested', 'booked', 'target-filled'], default: 'sent',
+  },
   step: { type: Number, default: 1 },
   nextTouchDue: { type: Date, default: null },
   followUps: { type: Array, default: [] },
