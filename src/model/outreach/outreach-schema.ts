@@ -44,10 +44,27 @@ const suggestionSchema = new Schema({
   reviewed: { type: Boolean, required: false, default: false },
 }, { _id: false });
 
+// The target weekend (#923) — canonical target identity for a pitch/send,
+// replacing the free-text `targetDates` as the thing dedup + (later, #898)
+// target-filled logic actually key on. Optional on the schema so legacy
+// records (sent before #923) stay valid; the send endpoints (sendPitch/
+// sendBatch) enforce it as required for every NEW record going forward —
+// enforcement lives at the controller layer, not here, so a legacy record
+// missing it can still be read/updated freely.
+const targetWeekendSchema = new Schema({
+  start: { type: Date, required: false },
+  end: { type: Date, required: false },
+}, { _id: false });
+
 const outreachSchema = new Schema({
   venueId: { type: Schema.Types.ObjectId, ref: 'Venue', required: true },
   templateUsed: { type: String, required: false, trim: true },
+  // Display-only free text (e.g. "Sept 25 to 27") — kept for the email copy
+  // and human-readable history. #923: no longer participates in ANY logic
+  // (dedup, candidates, target-filled) — `targetWeekend` below is the single
+  // source of truth for that.
   targetDates: { type: String, required: false, trim: true },
+  targetWeekend: { type: targetWeekendSchema, required: false },
   // The booking window pitched (e.g. "August"); stored on the sent record so the
   // copy and any cadence follow-ups stay consistent with what went out.
   bookingPeriod: { type: String, required: false, trim: true },
@@ -56,12 +73,28 @@ const outreachSchema = new Schema({
   // the approval gate is the venue selection, not a per-email draft — so the
   // `draft`/`rejected` states are gone. A record exists only once an email has
   // actually gone out (`sent`), then advances via replies/cadence.
+  //
+  // #923 outcome data model: `interested`/`not-interested`/`booked`/
+  // `target-filled` are the new outcome values a human (or, later, #898's
+  // auto-flip) records against a pitch. `not-interested` is the permanent
+  // decline (pairs with the venue's `doNotContact` flag); `target-filled`
+  // means a DIFFERENT record for the same weekend got booked, so this one
+  // returns to the pool for a future target rather than being a rejection.
   status: {
     type: String,
     required: false,
-    enum: ['sent', 'replied', 'declined', 'booked', 'no-response'],
+    enum: ['sent', 'replied', 'no-response', 'interested', 'not-interested', 'booked', 'target-filled'],
     default: 'sent',
   },
+  // Outcome stamps (#923). Set alongside a status transition into one of the
+  // outcome values above; `outcomeBy` is the actor (human or agent) that
+  // recorded it. Written by the outcome-recording endpoint (#898) — this
+  // issue only adds the fields.
+  outcomeAt: { type: Date, required: false },
+  outcomeBy: { type: String, required: false, trim: true },
+  // The actual gig date once booked (e.g. 2026-09-26) — distinct from the
+  // `targetWeekend` range that was pitched.
+  bookedDate: { type: Date, required: false },
   messageId: { type: String, required: false, trim: true },
   gmailThreadId: { type: String, required: false, trim: true },
   // Reply-detection (#825 Half B). When the IMAP job matches a venue's reply to

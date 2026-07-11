@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.2.6",
+  "version": "2.2.7",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -20,6 +20,7 @@
     "dev": "rimraf build && tsc && npm run copy:assets && concurrently --raw \"npm:ts-start\" \"npm:ts-watch\"",
     "copy:assets": "node scripts/copy-assets.mjs",
     "seed:outreach": "node scripts/seed-outreach.mjs",
+    "migrate:target-weekend": "node build/src/scripts/migrate-target-weekend.js",
     "restore:backup": "node scripts/restore-backup.mjs",
     "ts-watch": "tsc -w",
     "ts-start": "DEBUG=web-jam-back:* node --watch --trace-deprecation build/src/index.js",
