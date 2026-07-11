@@ -96,6 +96,17 @@ router.route('/:id/apply-suggestion')
     void action();
   });
 
+// POST /outreach/:id/outcome — record an outcome (interested / not-interested
+// / booked / target-filled) on a pitch (#898). The single choke point: stamps
+// outcomeAt/outcomeBy, halts the cadence, writes the venue timeline event, and
+// runs the not-interested/booked side effects (incl. the target-filled
+// auto-flip on booking). See outreach-controller.recordOutcome.
+router.route('/:id/outcome')
+  .post((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'recordOutcome', controller, authUtils);
+    void action();
+  });
+
 router.route('/:id')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'getOutreach', controller, authUtils);

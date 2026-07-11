@@ -132,6 +132,30 @@ function parseTargetWeekend(raw: RawTargetWeekend | undefined): TargetWeekend | 
   return { start, end };
 }
 
+// The Mongo overlap clause for "an outreach whose targetWeekend range overlaps
+// `tw`" — shared by the dedup guard, the #898 target-filled auto-flip, and the
+// #898 candidates target-weekend filter, so the three stay in lockstep instead
+// of drifting into subtly different date-overlap logic. A legacy record with
+// no targetWeekend can never match (both clauses require the field to exist).
+function targetWeekendOverlapClause(tw: TargetWeekend): Record<string, unknown> {
+  return {
+    'targetWeekend.start': { $exists: true, $lte: tw.end },
+    'targetWeekend.end': { $exists: true, $gte: tw.start },
+  };
+}
+
+// #898 — the outcome values recordOutcome accepts. Deliberately narrower than
+// the full OUTREACH_STATUSES enum below: this endpoint records a HUMAN (or
+// auto-flip) DECISION about a pitch, not the sent/replied/no-response
+// lifecycle states, which stay on updateOutreach.
+const OUTCOME_VALUES = ['interested', 'not-interested', 'booked', 'target-filled'];
+
+interface OutcomeBody { status?: string; bookedDate?: string; actor?: string }
+interface TouchRecord {
+  date: Date; type: string; note?: string; templateType?: string; targetWeekend?: TargetWeekend;
+  outcome?: string; bookedDate?: Date; outreachId?: string; actor?: string;
+}
+
 function checkAccess(user: AuthedUser, required: string[]): AuthzResult {
   const privileges = user.privileges || [];
   if (privileges.length) {
@@ -409,6 +433,139 @@ class OutreachController extends Controller {
     return res.status(200).json(doc);
   }
 
+  // Append one venue timeline touch (#898). Best-effort: a venue-write hiccup
+  // must never fail the outreach status change, which is the critical write
+  // here (mirrors the existing lastContacted / recordBounce best-effort
+  // pattern elsewhere in this file).
+  async appendVenueTouch(venueId: unknown, touch: TouchRecord): Promise<void> {
+    try {
+      await venueModel.findByIdAndUpdate(String(venueId), { $push: { touches: touch } } as unknown as Record<string, unknown>);
+    } catch { /* best-effort */ }
+  }
+
+  // Auto-flip every OTHER active (`sent`) record whose targetWeekend overlaps
+  // the just-booked record's targetWeekend to `target-filled` (#898/#923): not
+  // a rejection, the venue returns to the pool for a future target. Runs ONLY
+  // when the booked record itself carries a targetWeekend (a legacy record
+  // with none has nothing to compare against, so nothing is flipped). Each
+  // flipped record is also stamped outcomeAt/outcomeBy (actor
+  // 'outcome-auto-flip', distinguishing an automatic flip from a human-
+  // recorded one) and gets a matching 'outcome' touch on ITS OWN venue's
+  // timeline, so every affected venue's history reflects the target-filled
+  // outcome, not just the venue that got booked. One bad record must not
+  // abort the rest of the flip, so each write is individually swallowed.
+  async autoFlipTargetFilled(recordId: string, tw: TargetWeekend | null): Promise<void> {
+    if (!tw) return;
+    let others: OutreachDoc[];
+    try {
+      others = await this.model.find({
+        _id: { $ne: recordId }, status: 'sent', ...targetWeekendOverlapClause(tw),
+      }) as unknown as OutreachDoc[];
+    } catch { return; }
+    const now = new Date();
+    for (const o of others) {
+      try {
+        await this.model.findByIdAndUpdate(String(o._id), { // eslint-disable-line no-await-in-loop
+          status: 'target-filled', nextTouchDue: null, outcomeAt: now, outcomeBy: 'outcome-auto-flip', lastModifiedBy: 'outcome-auto-flip',
+        });
+      } catch { /* one bad record shouldn't abort the rest of the flip */ }
+      await this.appendVenueTouch(o.venueId, { // eslint-disable-line no-await-in-loop
+        date: now, type: 'outcome', outcome: 'target-filled', targetWeekend: tw, outreachId: String(o._id), actor: 'outcome-auto-flip',
+      });
+    }
+  }
+
+  // Validate a recordOutcome body. Returns an error message, or '' when valid.
+  // Split out of recordOutcome to keep its cognitive complexity down.
+  static validateOutcomeBody(body: OutcomeBody): string {
+    if (!body.status || OUTCOME_VALUES.indexOf(body.status) === -1) {
+      return `status must be one of ${OUTCOME_VALUES.join(', ')}`;
+    }
+    if (body.status === 'booked' && (!body.bookedDate || Number.isNaN(new Date(body.bookedDate).getTime()))) {
+      return 'bookedDate (valid date) is required for a booked outcome';
+    }
+    return '';
+  }
+
+  // The venue-side effects of recording an outcome (#898) — split out of
+  // recordOutcome to keep its cognitive complexity down. All best-effort
+  // (mirrors recordBounce elsewhere in this file): the outreach status change
+  // already committed by the caller is the critical write; a venue hiccup
+  // here shouldn't undo it.
+  //   - not-interested → venue.doNotContact = true (PERMANENT, per #923).
+  //   - booked → bookedDate + bookingStatus:'booked' on the venue (a judgment
+  //     call: the venue's coarse booking standing should track the specific
+  //     gig date recorded here), plus the target-filled auto-flip.
+  // Every outcome also gets a matching timeline touch on the venue.
+  async applyOutcomeSideEffects(
+    existing: OutreachDoc,
+    status: string,
+    bookedDate: Date | undefined,
+    actor: string,
+    outcomeAt: Date,
+    recordId: string,
+  ): Promise<void> {
+    const tw = (existing as unknown as { targetWeekend?: TargetWeekend }).targetWeekend;
+    if (status === 'not-interested') {
+      try { await venueModel.findByIdAndUpdate(String(existing.venueId), { doNotContact: true, lastModifiedBy: actor }); } catch { /* best-effort */ }
+    }
+    if (status === 'booked') {
+      try {
+        await venueModel.findByIdAndUpdate(String(existing.venueId), {
+          bookedDate, bookingStatus: 'booked', lastModifiedBy: actor,
+        });
+      } catch { /* best-effort */ }
+    }
+    await this.appendVenueTouch(existing.venueId, {
+      date: outcomeAt, type: 'outcome', outcome: status, targetWeekend: tw, bookedDate, outreachId: recordId, actor,
+    });
+    if (status === 'booked') await this.autoFlipTargetFilled(recordId, tw || null);
+  }
+
+  // POST /outreach/:id/outcome — the single choke point for recording an
+  // outcome on a pitch (#898, per #923's design). Sets status (interested /
+  // not-interested / booked / target-filled), stamps outcomeAt + outcomeBy,
+  // nulls nextTouchDue (the same #850 "any non-sent status halts the cadence"
+  // rule updateOutreach already applies), writes the corresponding venue
+  // timeline event, and runs the status-specific side effects documented on
+  // applyOutcomeSideEffects above. Distinct from the generic updateOutreach
+  // (PUT /outreach/:id, which only does status/gmailThreadId and does NOT
+  // stamp outcomeAt/outcomeBy or run any side effect) — recordOutcome is the
+  // ONLY path that does either.
+  async recordOutcome(req: AuthIdRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, ['outreach:edit']);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Update id is invalid' });
+    }
+    const body = (req.body || {}) as OutcomeBody;
+    const invalid = OutreachController.validateOutcomeBody(body);
+    if (invalid) return res.status(400).json({ message: invalid });
+    const bookedDate = body.status === 'booked' ? new Date(body.bookedDate as string) : undefined;
+
+    let existing: OutreachDoc | null;
+    try { existing = await this.model.findById(req.params.id) as unknown as OutreachDoc | null; } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    if (!existing) return res.status(400).json({ message: 'Id Not Found' });
+
+    const actor = resolveActor(req, body);
+    const outcomeAt = new Date();
+    const update: Record<string, unknown> = {
+      status: body.status, outcomeAt, outcomeBy: actor, nextTouchDue: null, lastModifiedBy: actor,
+    };
+    if (bookedDate) update.bookedDate = bookedDate;
+
+    let updated: OutreachDoc | null;
+    try { updated = await this.model.findByIdAndUpdate(req.params.id, update) as unknown as OutreachDoc | null; } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    if (!updated) return res.status(400).json({ message: 'Id Not Found' });
+
+    await this.applyOutcomeSideEffects(existing, body.status as string, bookedDate, actor, outcomeAt, req.params.id);
+    return res.status(200).json(updated);
+  }
+
   // DELETE /outreach/:id — hard-delete an outreach record (#857). Outreach is a
   // log, not a venue, so a bad / test / mis-sent record is removed outright
   // rather than archived. Requires outreach:delete.
@@ -460,10 +617,7 @@ class OutreachController extends Controller {
   // legacy records don't block. Returns the error envelope to relay, or null.
   async dedupGuard(venueId: string | undefined, tw: TargetWeekend | null): Promise<AuthzError | null> {
     const query: Record<string, unknown> = { venueId, status: { $in: ACTIVE_STATUSES } };
-    if (tw) {
-      query['targetWeekend.start'] = { $exists: true, $lte: tw.end };
-      query['targetWeekend.end'] = { $exists: true, $gte: tw.start };
-    }
+    if (tw) Object.assign(query, targetWeekendOverlapClause(tw));
     let dupe;
     try {
       dupe = await this.model.findOne(query);
@@ -537,6 +691,12 @@ class OutreachController extends Controller {
     try {
       await venueModel.findByIdAndUpdate(String(venue._id), { lastContacted: new Date(), lastModifiedBy: actor });
     } catch { /* best-effort */ }
+    // #898 — log this send on the venue's timeline: email + which template +
+    // which target weekend the pitch was for (the rescope's "pitched for Sept
+    // 26 vs Oct 10" requirement). Best-effort, like the lastContacted stamp.
+    await this.appendVenueTouch(venue._id, {
+      date: sentAt, type: 'email', templateType: type, targetWeekend: fields.targetWeekend, outreachId: String(record._id), actor,
+    });
     return { ok: true, record };
   }
 
@@ -614,9 +774,14 @@ class OutreachController extends Controller {
   }
 
   // GET /outreach/candidates — propose the target list (#844): vetted
-  // (outreachEligible), non-archived venues with an email, minus any that already
-  // have an active outreach for the given targetDates. Read-only. Optional query:
-  // targetDates (to exclude already-pitched venues for that window).
+  // (outreachEligible), non-archived venues with an email, minus any that
+  // already have an active outreach with an OVERLAPPING targetWeekend. #898:
+  // this filter is now targetWeekend/date-range aware (matching the dedup
+  // guard's overlap semantics) rather than the old targetDates string filter —
+  // the note in PR #933 deferred this rekey to this issue, since #923 already
+  // established targetDates no longer participates in any logic. Read-only.
+  // Optional query: targetWeekend {start, end} (bracket-notation query params
+  // over HTTP, e.g. ?targetWeekend[start]=...&targetWeekend[end]=...).
   async getCandidates(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -629,11 +794,18 @@ class OutreachController extends Controller {
       });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
 
-    const targetDates = typeof (req.query || {}).targetDates === 'string' ? (req.query as { targetDates: string }).targetDates : undefined;
+    const query = (req.query || {}) as { targetWeekend?: RawTargetWeekend };
+    let tw: TargetWeekend | null = null;
+    if (query.targetWeekend !== undefined) {
+      tw = parseTargetWeekend(query.targetWeekend);
+      if (!tw) return res.status(400).json({ message: 'targetWeekend must include valid start and end' });
+    }
     let handled = new Set<string>();
-    if (targetDates) {
+    if (tw) {
       let active: { venueId?: unknown }[];
-      try { active = await this.model.find({ targetDates, status: { $in: ACTIVE_STATUSES } }); } catch (e) {
+      try {
+        active = await this.model.find({ status: { $in: ACTIVE_STATUSES }, ...targetWeekendOverlapClause(tw) });
+      } catch (e) {
         return res.status(500).json({ message: (e as Error).message });
       }
       handled = new Set(active.map((a) => String(a.venueId)));
