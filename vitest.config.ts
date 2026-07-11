@@ -24,6 +24,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],
+      // Manually-run migration/ops scripts (never imported by the app or a
+      // test, run by hand via `npm run migrate:*` / heroku run) — excluded
+      // from the coverage gate the same way scripts/*.mjs already is by
+      // living outside src/. #923's migrate-target-weekend.ts needs to live
+      // under src/ so tsconfig.prod.json's build compiles it to build/, but
+      // it shouldn't drag the 90% statements gate down as dead-to-tests code.
+      exclude: ['src/scripts/**'],
       reporter: ['text', 'html', 'lcov'],
       // CI gate: vitest exits non-zero (failing `npm test` on CircleCI) when
       // total coverage drops below these floors. Statements + lines held at the
