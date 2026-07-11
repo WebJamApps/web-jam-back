@@ -531,12 +531,38 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect((venueModel as any).find).toHaveBeenCalledWith(expect.objectContaining({ doNotContact: { $ne: true } }));
     });
 
-    it('excludes venues already pitched for the target dates', async () => {
+    it('excludes venues already pitched for an overlapping target weekend (#898)', async () => {
       (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }, { _id: 'b' }]));
-      c.model.find = vi.fn(() => Promise.resolve([{ venueId: 'a' }]));
+      const findMock = vi.fn(() => Promise.resolve([{ venueId: 'a' }]));
+      c.model.find = findMock;
       await c.getCandidates({ user: 'a', query: { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(payload).toHaveLength(1);
       expect(payload[0]._id).toBe('b');
+      expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
+        status: { $in: ['sent', 'replied'] },
+        'targetWeekend.start': { $exists: true, $lte: new Date(VALID_WEEKEND.end) },
+        'targetWeekend.end': { $exists: true, $gte: new Date(VALID_WEEKEND.start) },
+      }));
+    });
+
+    // #898 — targetDates is display-only per #923; a bare targetDates with no
+    // targetWeekend must NOT filter anything (the old string-equality filter
+    // is gone).
+    it('does not filter when only the legacy targetDates is given (#898)', async () => {
+      (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }, { _id: 'b' }]));
+      const findMock = vi.fn(() => Promise.resolve([{ venueId: 'a' }]));
+      c.model.find = findMock;
+      await c.getCandidates({ user: 'a', query: { targetDates: 'Aug 14-16' } }, resStub);
+      expect(status).toBe(200);
+      expect(payload).toHaveLength(2);
+      expect(findMock).not.toHaveBeenCalled();
+    });
+
+    it('400s an invalid/incomplete targetWeekend (#898)', async () => {
+      (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+      await c.getCandidates({ user: 'a', query: { targetWeekend: { start: '2026-09-25' } } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('targetWeekend');
     });
 
     it('500s when the venue query throws', async () => {
@@ -1427,6 +1453,246 @@ describe('Outreach Controller (#844 batch model)', () => {
         await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: {} }, resStub);
         expect(status).toBe(500);
       });
+    });
+  });
+
+  describe('performSend logs a venue timeline touch (#898)', () => {
+    it('appends an email touch with templateType + targetWeekend on sendPitch', async () => {
+      asApprover();
+      c.model.create = vi.fn((doc: any) => Promise.resolve({ _id: 'o42', ...doc }));
+      const venueUpd = vi.fn(() => Promise.resolve({}));
+      (venueModel as any).findByIdAndUpdate = venueUpd;
+      const venue = validVenue();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(venue));
+      await c.sendPitch({
+        user: 'josh', body: { venueId: venue._id, targetDates: 'Sept 25-27', targetWeekend: VALID_WEEKEND },
+      }, resStub);
+      expect(status).toBe(201);
+      const touchCall = (venueUpd.mock.calls as any[]).find((call: any) => call[1].$push) as any;
+      expect(touchCall[0]).toBe(String(venue._id));
+      expect(touchCall[1].$push.touches).toMatchObject({
+        type: 'email', templateType: 'Originals', outreachId: 'o42',
+        targetWeekend: { start: new Date(VALID_WEEKEND.start), end: new Date(VALID_WEEKEND.end) },
+      });
+    });
+
+    it('does not fail the send when the venue touch write throws', async () => {
+      asApprover();
+      c.model.create = vi.fn((doc: any) => Promise.resolve({ _id: 'o43', ...doc }));
+      (venueModel as any).findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('venue down')));
+      await c.sendPitch({
+        user: 'josh', body: { venueId: oid(), targetDates: 'Sept 25-27', targetWeekend: VALID_WEEKEND },
+      }, resStub);
+      expect(status).toBe(201);
+    });
+  });
+
+  describe('recordOutcome (#898) — the single choke point (#923)', () => {
+    const outreachRec = (over = {}) => ({
+      _id: oid(), venueId: oid(), status: 'sent', targetWeekend: { start: new Date(VALID_WEEKEND.start), end: new Date(VALID_WEEKEND.end) }, ...over,
+    });
+
+    beforeEach(() => {
+      asAgent(['outreach:edit']);
+    });
+
+    it('403s without outreach:edit', async () => {
+      asAgent(['outreach:create']);
+      await c.recordOutcome({ user: 'a', params: { id: oid() }, body: { status: 'interested' } }, resStub);
+      expect(status).toBe(403);
+    });
+
+    it('400s on an invalid id', async () => {
+      await c.recordOutcome({ user: 'a', params: { id: 'bad' }, body: { status: 'interested' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('400s on an invalid/missing status', async () => {
+      await c.recordOutcome({ user: 'a', params: { id: oid() }, body: {} }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('status must be one of');
+      await c.recordOutcome({ user: 'a', params: { id: oid() }, body: { status: 'sent' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('400s a booked outcome with no bookedDate', async () => {
+      await c.recordOutcome({ user: 'a', params: { id: oid() }, body: { status: 'booked' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('bookedDate');
+    });
+
+    it('400s a booked outcome with an invalid bookedDate', async () => {
+      await c.recordOutcome({ user: 'a', params: { id: oid() }, body: { status: 'booked', bookedDate: 'not-a-date' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('400s when the record is not found', async () => {
+      c.model.findById = vi.fn(() => Promise.resolve(null));
+      await c.recordOutcome({ user: 'a', params: { id: oid() }, body: { status: 'interested' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('500s when the load throws', async () => {
+      c.model.findById = vi.fn(() => Promise.reject(new Error('db down')));
+      await c.recordOutcome({ user: 'a', params: { id: oid() }, body: { status: 'interested' } }, resStub);
+      expect(status).toBe(500);
+    });
+
+    it('500s when the outreach update throws', async () => {
+      const rec = outreachRec();
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db down')));
+      await c.recordOutcome({ user: 'a', params: { id: String(rec._id) }, body: { status: 'interested' } }, resStub);
+      expect(status).toBe(500);
+    });
+
+    it('400s when the outreach update returns nothing', async () => {
+      const rec = outreachRec();
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve(null));
+      await c.recordOutcome({ user: 'a', params: { id: String(rec._id) }, body: { status: 'interested' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('stamps status/outcomeAt/outcomeBy and nulls nextTouchDue on an interested outcome', async () => {
+      const rec = outreachRec();
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      const upd = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
+      c.model.findByIdAndUpdate = upd;
+      await c.recordOutcome({
+        user: 'a', params: { id: String(rec._id) }, body: { status: 'interested', actor: 'josh' },
+      }, resStub);
+      expect(status).toBe(200);
+      expect(upd).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({
+        status: 'interested', outcomeBy: 'josh', nextTouchDue: null,
+      }));
+      expect((upd.mock.calls[0] as any)[1].outcomeAt).toBeInstanceOf(Date);
+    });
+
+    it('writes a venue timeline touch for the outcome', async () => {
+      const rec = outreachRec();
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      const venueUpd = vi.fn(() => Promise.resolve({}));
+      (venueModel as any).findByIdAndUpdate = venueUpd;
+      await c.recordOutcome({ user: 'a', params: { id: String(rec._id) }, body: { status: 'interested', actor: 'josh' } }, resStub);
+      expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
+        $push: { touches: expect.objectContaining({ type: 'outcome', outcome: 'interested', actor: 'josh' }) },
+      }));
+    });
+
+    it('not-interested sets venue.doNotContact permanently', async () => {
+      const rec = outreachRec();
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      const venueUpd = vi.fn(() => Promise.resolve({}));
+      (venueModel as any).findByIdAndUpdate = venueUpd;
+      await c.recordOutcome({ user: 'a', params: { id: String(rec._id) }, body: { status: 'not-interested' } }, resStub);
+      expect(status).toBe(200);
+      expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({ doNotContact: true }));
+    });
+
+    it('booked stamps bookedDate on the record + venue, and marks venue.bookingStatus booked', async () => {
+      const rec = outreachRec();
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      const outreachUpd = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
+      c.model.findByIdAndUpdate = outreachUpd;
+      const venueUpd = vi.fn(() => Promise.resolve({}));
+      (venueModel as any).findByIdAndUpdate = venueUpd;
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      await c.recordOutcome({
+        user: 'a', params: { id: String(rec._id) }, body: { status: 'booked', bookedDate: '2026-09-26', actor: 'josh' },
+      }, resStub);
+      expect(status).toBe(200);
+      expect((outreachUpd.mock.calls[0] as any)[1].bookedDate).toEqual(new Date('2026-09-26'));
+      expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
+        bookedDate: new Date('2026-09-26'), bookingStatus: 'booked',
+      }));
+    });
+
+    it('booked auto-flips every OTHER sent+overlapping record to target-filled (+ nextTouchDue null)', async () => {
+      const rec = outreachRec();
+      const other1 = { _id: oid(), venueId: oid(), status: 'sent' };
+      const other2 = { _id: oid(), venueId: oid(), status: 'sent' };
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      const outreachUpd = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
+      c.model.findByIdAndUpdate = outreachUpd;
+      const findMock = vi.fn((q: any) => {
+        // dedup/candidates use different filters elsewhere; the auto-flip query
+        // excludes the booked record itself and matches status:'sent'.
+        if (q._id && q._id.$ne === String(rec._id)) return Promise.resolve([other1, other2]);
+        return Promise.resolve([]);
+      });
+      c.model.find = findMock;
+      const venueUpd = vi.fn(() => Promise.resolve({}));
+      (venueModel as any).findByIdAndUpdate = venueUpd;
+      await c.recordOutcome({
+        user: 'a', params: { id: String(rec._id) }, body: { status: 'booked', bookedDate: '2026-09-26' },
+      }, resStub);
+      expect(status).toBe(200);
+      expect(findMock).toHaveBeenCalledWith(expect.objectContaining({ _id: { $ne: String(rec._id) }, status: 'sent' }));
+      const flipCalls = outreachUpd.mock.calls.filter((call: any) => call[1].status === 'target-filled');
+      expect(flipCalls).toHaveLength(2);
+      expect(flipCalls[0][1]).toMatchObject({ status: 'target-filled', nextTouchDue: null, outcomeBy: 'outcome-auto-flip' });
+      // Each flipped record's OWN venue also gets a target-filled touch.
+      expect(venueUpd).toHaveBeenCalledWith(String(other1.venueId), expect.objectContaining({
+        $push: { touches: expect.objectContaining({ type: 'outcome', outcome: 'target-filled' }) },
+      }));
+      expect(venueUpd).toHaveBeenCalledWith(String(other2.venueId), expect.objectContaining({
+        $push: { touches: expect.objectContaining({ type: 'outcome', outcome: 'target-filled' }) },
+      }));
+    });
+
+    it('booked with no targetWeekend on the record skips the auto-flip entirely', async () => {
+      const rec = outreachRec({ targetWeekend: undefined });
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      c.model.findByIdAndUpdate = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
+      const findMock = vi.fn(() => Promise.resolve([{ _id: oid(), venueId: oid(), status: 'sent' }]));
+      c.model.find = findMock;
+      await c.recordOutcome({
+        user: 'a', params: { id: String(rec._id) }, body: { status: 'booked', bookedDate: '2026-09-26' },
+      }, resStub);
+      expect(status).toBe(200);
+      expect(findMock).not.toHaveBeenCalled();
+    });
+
+    it('the primary outcome write still succeeds when the auto-flip lookup itself throws', async () => {
+      const rec = outreachRec();
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      c.model.findByIdAndUpdate = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
+      c.model.find = vi.fn(() => Promise.reject(new Error('db down')));
+      await c.recordOutcome({
+        user: 'a', params: { id: String(rec._id) }, body: { status: 'booked', bookedDate: '2026-09-26' },
+      }, resStub);
+      expect(status).toBe(200);
+    });
+
+    it('a bad record in the auto-flip batch does not abort the rest', async () => {
+      const rec = outreachRec();
+      const other1 = { _id: oid(), venueId: oid(), status: 'sent' };
+      const other2 = { _id: oid(), venueId: oid(), status: 'sent' };
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      c.model.find = vi.fn(() => Promise.resolve([other1, other2]));
+      let calls = 0;
+      c.model.findByIdAndUpdate = vi.fn((id: string, u: any) => {
+        calls += 1;
+        if (calls === 2) return Promise.reject(new Error('db down')); // fails flipping other1
+        return Promise.resolve({ _id: id, ...u });
+      });
+      await c.recordOutcome({
+        user: 'a', params: { id: String(rec._id) }, body: { status: 'booked', bookedDate: '2026-09-26' },
+      }, resStub);
+      expect(status).toBe(200); // the primary write (call 1) succeeded before the flip ran
+    });
+
+    it('target-filled can be recorded directly (no auto-flip side effects)', async () => {
+      const rec = outreachRec();
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      const outreachUpd = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
+      c.model.findByIdAndUpdate = outreachUpd;
+      const findMock = vi.fn(() => Promise.resolve([]));
+      c.model.find = findMock;
+      await c.recordOutcome({ user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled' } }, resStub);
+      expect(status).toBe(200);
+      expect(findMock).not.toHaveBeenCalled(); // auto-flip only runs off a 'booked' recording
     });
   });
 });
