@@ -13,6 +13,9 @@ const BOOKING_STATUSES = ['booking', 'not-booking', 'booked'];
 // Prospect-ranking enums (#867) — drive the AdminVenues "Prospect Score" sort.
 const ORIGINALS_FIT = ['none', 'some', 'loves'];
 const TRAVEL_BANDS = ['local', 'regional', 'far'];
+// Per-venue timeline (#898) — mirrors touchSchema's enums in venue-schema.ts.
+const TOUCH_TYPES = ['visit', 'form', 'card', 'call', 'email', 'gig', 'other', 'outcome'];
+const TOUCH_OUTCOMES = ['interested', 'not-interested', 'booked', 'target-filled'];
 
 // Role fallback for human admins who authorize by role (no privileges array).
 // AI agents pass via the venue:* capabilities on the shared web-jam-llm identity.
@@ -66,6 +69,21 @@ interface VenueBody {
 
 interface GigDoc { venue?: string; datetime?: string | Date }
 
+// #898 — wire shape for POST /venue/:id/touch. `targetWeekend` mirrors the
+// outreach schema's shape (strings over the wire; parsed to Dates below).
+interface RawTargetWeekend { start?: string | Date; end?: string | Date }
+interface TouchBody {
+  date?: string;
+  type?: string;
+  note?: string;
+  templateType?: string;
+  targetWeekend?: RawTargetWeekend;
+  outcome?: string;
+  bookedDate?: string;
+  outreachId?: string;
+  actor?: string;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -79,7 +97,7 @@ function stripHtml(value: string): string {
 
 // The actor that performed a write: an explicit `actor` (stamped by the MCP
 // server / agent) wins; otherwise fall back to the authenticated token subject.
-function resolveActor(req: AuthRequest, body: VenueBody): string {
+function resolveActor(req: AuthRequest, body: { actor?: string }): string {
   return (body.actor || '').trim() || req.user || '';
 }
 
@@ -105,6 +123,69 @@ function invalidEnum(body: VenueBody): string {
     return v !== undefined && v !== '' && f.allowed.indexOf(v) === -1;
   });
   return bad ? `${bad.key} not valid` : '';
+}
+
+// #898 — parse + validate a wire-shape targetWeekend into real Dates. Returns
+// null for anything malformed (missing either bound, unparseable, or an
+// inverted range) — mirrors outreach-controller's parseTargetWeekend. Kept as
+// a local copy (not shared) so venue-controller has no import dependency on
+// outreach-controller.
+function parseTargetWeekend(raw: RawTargetWeekend | undefined): { start: Date; end: Date } | null {
+  if (!raw || !raw.start || !raw.end) return null;
+  const start = new Date(raw.start);
+  const end = new Date(raw.end);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  if (start.getTime() > end.getTime()) return null;
+  return { start, end };
+}
+
+// Outcome-specific validation for a `type: 'outcome'` touch — split out of
+// validateTouchBody to keep its cognitive complexity down. Returns an error
+// message, or '' when valid. A 'booked' outcome additionally requires a valid
+// `bookedDate` (the actual gig date being recorded).
+function validateTouchOutcome(body: TouchBody): string {
+  if (!body.outcome || TOUCH_OUTCOMES.indexOf(body.outcome) === -1) {
+    return `outcome must be one of ${TOUCH_OUTCOMES.join(', ')} for an outcome touch`;
+  }
+  if (body.outcome === 'booked' && (!body.bookedDate || Number.isNaN(new Date(body.bookedDate).getTime()))) {
+    return 'bookedDate (valid date) is required for a booked outcome touch';
+  }
+  return '';
+}
+
+// Validate a POST /venue/:id/touch body. Returns an error message, or '' when
+// valid. `type` is always required; `outcome` is required (and enum-checked,
+// see validateTouchOutcome) only for an 'outcome' touch.
+function validateTouchBody(body: TouchBody): string {
+  if (!body.type || TOUCH_TYPES.indexOf(body.type) === -1) return `type must be one of ${TOUCH_TYPES.join(', ')}`;
+  if (body.targetWeekend !== undefined && !parseTargetWeekend(body.targetWeekend)) {
+    return 'targetWeekend must include valid start and end';
+  }
+  if (body.type === 'outcome') {
+    const outcomeErr = validateTouchOutcome(body);
+    if (outcomeErr) return outcomeErr;
+  } else if (body.outcome !== undefined) {
+    return 'outcome is only valid on an outcome touch';
+  }
+  if (body.outreachId !== undefined && !mongoose.Types.ObjectId.isValid(body.outreachId)) return 'outreachId is invalid';
+  if (body.date !== undefined && Number.isNaN(new Date(body.date).getTime())) return 'date must be a valid date';
+  return '';
+}
+
+// Build the touch subdocument to append, from a validated body.
+function buildTouch(body: TouchBody, actor: string): Record<string, unknown> {
+  const tw = parseTargetWeekend(body.targetWeekend);
+  return {
+    date: body.date ? new Date(body.date) : new Date(),
+    type: body.type,
+    note: body.note,
+    templateType: body.templateType,
+    targetWeekend: tw || undefined,
+    outcome: body.outcome,
+    bookedDate: body.bookedDate ? new Date(body.bookedDate) : undefined,
+    outreachId: body.outreachId,
+    actor,
+  };
 }
 
 function invalidPriority(priority: number | undefined): boolean {
@@ -282,6 +363,31 @@ class VenueController extends Controller {
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     if (!doc) return res.status(400).json({ message: 'Id Not Found' });
     return res.status(200).json(doc);
+  }
+
+  // POST /venue/:id/touch — append one timeline event (#898). Gated by
+  // `venue:edit` like every other venue mutation (no dedicated capability —
+  // a touch is just another field write on the venue). Used for manual
+  // contact events (visit/form/card/call/gig/other) AND, from the outreach
+  // side, by the outcome-recording endpoint (#898's recordOutcome in
+  // outreach-controller) to log email sends and recorded outcomes.
+  async addTouch(req: AuthIdRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, ['venue:edit']);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Update id is invalid' });
+    const body = (req.body || {}) as TouchBody;
+    const invalid = validateTouchBody(body);
+    if (invalid) return res.status(400).json({ message: invalid });
+    const actor = resolveActor(req, body);
+    const touch = buildTouch(body, actor);
+    let doc;
+    try {
+      doc = await this.model.findByIdAndUpdate(req.params.id, {
+        $push: { touches: touch }, lastModifiedBy: actor,
+      } as unknown as Record<string, unknown>);
+    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    if (!doc) return res.status(400).json({ message: 'Id Not Found' });
+    return res.status(201).json(doc);
   }
 
   // DELETE /venue/:id — soft-delete (archive), never a hard remove, so history

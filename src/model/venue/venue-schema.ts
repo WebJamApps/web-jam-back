@@ -6,6 +6,59 @@ const options = {
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
 };
 
+// The target weekend a touch relates to (#898/#923) — same shape as the
+// outreach schema's targetWeekend, duplicated here (rather than shared) so the
+// venue model has no import dependency on the outreach model. Optional: only
+// send/outcome touches carry one; a plain visit/call/card touch does not.
+const touchTargetWeekendSchema = new Schema({
+  start: { type: Date, required: false },
+  end: { type: Date, required: false },
+}, { _id: false });
+
+// Per-venue contact timeline (#898) — the backend of the JaMmusic outreach
+// workspace's per-venue history view. Kept as a small embedded array (not its
+// own collection like `outreach`, #823): a touch is a lightweight timeline
+// entry, always read as part of "show me this venue's history," never queried
+// across venues on its own.
+//
+// `type` covers both manual/offline contact (visit/form/card/call/gig/other)
+// AND the two events the 2026-07-10 rescope (#898 comments) called out
+// specifically:
+//   - 'email': an outreach send (pitch or follow-up). Carries `templateType`
+//     (which template rendered) + `targetWeekend` (which weekend the pitch was
+//     for), so the UI can show "pitched for Sept 26" vs "pitched for Oct 10"
+//     distinctly per the rescope's example.
+//   - 'outcome': a recorded outcome (interested / not-interested / booked /
+//     target-filled). Carries `outcome` (the recorded value), `targetWeekend`
+//     (which pitch this outcome answers), and `bookedDate` when the outcome is
+//     'booked' (the actual gig date, distinct from the weekend range pitched).
+// `outreachId` links a touch back to the outreach record that generated it,
+// when there is one (a manual 'visit'/'card' touch has none). `actor` is who
+// or what recorded the touch (human name or agent identity, #818 convention).
+//
+// Written by POST /venue/:id/touch (manual touches) and by the outcome-
+// recording endpoint (#898, outreach-controller.recordOutcome) for email-sent
+// and outcome touches.
+const touchSchema = new Schema({
+  date: { type: Date, required: true, default: Date.now },
+  type: {
+    type: String,
+    required: true,
+    enum: ['visit', 'form', 'card', 'call', 'email', 'gig', 'other', 'outcome'],
+  },
+  note: { type: String, required: false, trim: true },
+  templateType: { type: String, required: false, trim: true },
+  targetWeekend: { type: touchTargetWeekendSchema, required: false },
+  outcome: {
+    type: String,
+    required: false,
+    enum: ['interested', 'not-interested', 'booked', 'target-filled'],
+  },
+  bookedDate: { type: Date, required: false },
+  outreachId: { type: Schema.Types.ObjectId, ref: 'Outreach', required: false },
+  actor: { type: String, required: false, trim: true },
+}, { _id: false });
+
 // Booking-outreach venues. As of web-jam-back#819 Mongo is the single master
 // for venues (the Gig Booking Worksheet xlsx is retired). Unlike gigs — which
 // live in WebJamSocketCluster's DB and are read via a dedicated connection —
@@ -87,6 +140,8 @@ const venueSchema = new Schema({
   // by the outcome-recording endpoint (#898) — this issue only adds the fields.
   doNotContact: { type: Boolean, required: false, default: false },
   bookedDate: { type: Date, required: false },
+  // Per-venue contact timeline (#898) — see touchSchema above.
+  touches: { type: [touchSchema], required: false, default: [] },
   // The AI agent or human that last wrote this record (#818 `actor` field — one
   // shared agent identity authenticates, but each write records who acted).
   lastModifiedBy: { type: String, required: false },

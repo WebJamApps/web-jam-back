@@ -328,6 +328,137 @@ describe('Venue Controller', () => {
     });
   });
 
+  describe('addTouch — POST /venue/:id/touch (#898)', () => {
+    it('403s without venue:edit', async () => {
+      asAgent(['venue:create']);
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'call' } }, resStub);
+      expect(status).toBe(403);
+    });
+
+    it('rejects an invalid venue id', async () => {
+      await c.addTouch({ user: 'a', params: { id: 'nope' }, body: { type: 'call' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('rejects a missing/invalid type', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.addTouch({ user: 'a', params: { id }, body: {} }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('type must be one of');
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'smoke-signal' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('rejects an invalid targetWeekend', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.addTouch({
+        user: 'a', params: { id }, body: { type: 'email', targetWeekend: { start: '2026-09-25' } },
+      }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('targetWeekend');
+    });
+
+    it('rejects an outcome touch missing/invalid outcome', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'outcome' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('outcome must be one of');
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'outcome', outcome: 'meh' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('rejects a booked outcome touch with no/invalid bookedDate', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'outcome', outcome: 'booked' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('bookedDate');
+      await c.addTouch({
+        user: 'a', params: { id }, body: { type: 'outcome', outcome: 'booked', bookedDate: 'nope' },
+      }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('rejects outcome set on a non-outcome touch', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'call', outcome: 'booked' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('only valid on an outcome touch');
+    });
+
+    it('rejects an invalid outreachId', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'email', outreachId: 'bad' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('outreachId');
+    });
+
+    it('rejects an invalid explicit date', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'call', date: 'whenever' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('date');
+    });
+
+    it('appends a manual touch (visit/call/card/etc.)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id, touches: [{ type: 'call' }] }));
+      c.model.findByIdAndUpdate = upd;
+      await c.addTouch({
+        user: 'agent', params: { id }, body: { type: 'call', note: 'left voicemail', actor: 'josh' },
+      }, resStub);
+      expect(status).toBe(201);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({
+        $push: { touches: expect.objectContaining({ type: 'call', note: 'left voicemail', actor: 'josh' }) },
+        lastModifiedBy: 'josh',
+      }));
+    });
+
+    it('appends an email-sent touch with templateType + targetWeekend', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.addTouch({
+        user: 'agent',
+        params: { id },
+        body: {
+          type: 'email', templateType: 'Originals', targetWeekend: { start: '2026-09-25', end: '2026-09-27' },
+        },
+      }, resStub);
+      expect(status).toBe(201);
+      const touch = (upd.mock.calls[0] as any)[1].$push.touches;
+      expect(touch).toMatchObject({
+        type: 'email', templateType: 'Originals', targetWeekend: { start: new Date('2026-09-25'), end: new Date('2026-09-27') },
+      });
+    });
+
+    it('appends an outcome touch (booked) with bookedDate', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.addTouch({
+        user: 'agent', params: { id }, body: { type: 'outcome', outcome: 'booked', bookedDate: '2026-09-26' },
+      }, resStub);
+      expect(status).toBe(201);
+      const touch = (upd.mock.calls[0] as any)[1].$push.touches;
+      expect(touch).toMatchObject({ type: 'outcome', outcome: 'booked', bookedDate: new Date('2026-09-26') });
+    });
+
+    it('400s when the id is not found', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve(null));
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'visit' } }, resStub);
+      expect(status).toBe(400);
+    });
+
+    it('500s when the write throws', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db down')));
+      await c.addTouch({ user: 'a', params: { id }, body: { type: 'visit' } }, resStub);
+      expect(status).toBe(500);
+    });
+  });
+
   describe('outreachEligible tagging (#843)', () => {
     it('persists outreachEligible on create (passes through ...body)', async () => {
       c.model.findOne = vi.fn(() => Promise.resolve(null));
