@@ -33,4 +33,12 @@ router.route('/:id')
     void action();
   });
 
+// POST /venue/:id/touch — append one timeline event (#898). See
+// venue-controller.addTouch for the touch shape + validation.
+router.route('/:id/touch')
+  .post((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'addTouch', controller, authUtils);
+    void action();
+  });
+
 export default router;
