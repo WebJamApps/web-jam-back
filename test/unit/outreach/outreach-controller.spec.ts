@@ -33,6 +33,10 @@ const { default: configModel } = await import('#src/model/outreach/outreach-conf
 
 const c = controller as any;
 const oid = () => new mongoose.Types.ObjectId().toString();
+// #923 — sendPitch/sendBatch now require a structured targetWeekend on every
+// new send. Reused wherever a test body needs to get PAST validation (targetDates
+// stays purely cosmetic/display, unrelated to this).
+const VALID_WEEKEND = { start: '2026-09-25', end: '2026-09-27' };
 
 describe('Outreach Controller (#844 batch model)', () => {
   let status = 0;
@@ -108,7 +112,7 @@ describe('Outreach Controller (#844 batch model)', () => {
   describe('authorize', () => {
     it('403s when no send capability is held', async () => {
       asAgent(['outreach:edit']);
-      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(403);
       expect(payload.message).toContain('outreach:create');
     });
@@ -128,7 +132,7 @@ describe('Outreach Controller (#844 batch model)', () => {
 
   describe('sendPitch — validation', () => {
     it('rejects a missing/invalid venueId', async () => {
-      await c.sendPitch({ user: 'a', body: { targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendPitch({ user: 'a', body: { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('venueId');
     });
@@ -142,7 +146,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('400s when the venue is not found', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn(() => Promise.resolve(null));
-      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('venue not found');
     });
@@ -150,7 +154,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('400s when the venue is archived', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ status: 'archived' })));
-      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('archived');
     });
@@ -158,7 +162,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('400s when the venue is NOT outreach-eligible (the #844 safety guard)', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ outreachEligible: false })));
-      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('not outreach-eligible');
       expect(sendMail).not.toHaveBeenCalled();
@@ -167,7 +171,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('400s when the venue has no email', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ email: '' })));
-      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('no email');
     });
@@ -175,7 +179,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('400s when no template type can be resolved', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ venueType: '' })));
-      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('venueType');
     });
@@ -183,14 +187,53 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('400s when no active template exists for the type', async () => {
       asApprover();
       (templateModel as any).findOne = vi.fn(() => Promise.resolve(null));
-      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('no active template');
+    });
+
+    // #923 — targetWeekend is required on every NEW send (dedup + eventual
+    // target-filled logic key on it; targetDates stays display-only).
+    describe('targetWeekend required (#923)', () => {
+      it('rejects a missing targetWeekend', async () => {
+        asApprover();
+        await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('targetWeekend');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('rejects a targetWeekend missing its end bound', async () => {
+        asApprover();
+        await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: { start: '2026-09-25' } } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('targetWeekend');
+      });
+
+      it('rejects an unparseable targetWeekend date', async () => {
+        asApprover();
+        await c.sendPitch(
+          { user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: { start: 'not-a-date', end: '2026-09-27' } } },
+          resStub,
+        );
+        expect(status).toBe(400);
+        expect(payload.message).toContain('targetWeekend');
+      });
+
+      it('rejects an inverted targetWeekend range (start after end)', async () => {
+        asApprover();
+        await c.sendPitch(
+          { user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: { start: '2026-09-27', end: '2026-09-25' } } },
+          resStub,
+        );
+        expect(status).toBe(400);
+        expect(payload.message).toContain('targetWeekend');
+      });
     });
   });
 
   describe('sendPitch — authorization to send (canSend)', () => {
-    const body = () => ({ venueId: oid(), targetDates: 'Aug 14-16', bookingPeriod: 'August' });
+    const body = () => ({ venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, bookingPeriod: 'August' });
 
     it('403s an agent when auto-approve is OFF (no send)', async () => {
       await c.sendPitch({ user: 'opus', body: body() }, resStub);
@@ -234,18 +277,62 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect((c.model.findOne as any).mock.calls[0][0].status).toEqual({ $in: ['sent', 'replied'] });
     });
 
+    // #923 — the guard is now keyed on an OVERLAPPING targetWeekend range, not
+    // targetDates string equality (root cause of the 7/5 duplicate-cadence
+    // incident: 'Sept 25 to 27' / 'Sep 25-27' / 'Friday, September 25...' never
+    // string-matched despite being the same weekend).
+    describe('dedup guard rekeyed on targetWeekend overlap (#923)', () => {
+      it('queries an overlap range keyed on the sent targetWeekend, not targetDates', async () => {
+        asApprover();
+        c.model.findOne = vi.fn(() => Promise.resolve(null));
+        await c.sendPitch({ user: 'a', body: body() }, resStub);
+        const query = (c.model.findOne as any).mock.calls[0][0];
+        expect(query.targetDates).toBeUndefined();
+        expect(query['targetWeekend.start']).toEqual({ $exists: true, $lte: new Date(VALID_WEEKEND.end) });
+        expect(query['targetWeekend.end']).toEqual({ $exists: true, $gte: new Date(VALID_WEEKEND.start) });
+      });
+
+      it('409s when an existing record has an overlapping (not identical) targetWeekend', async () => {
+        asApprover();
+        // Existing record's range (Sept 24-26) overlaps the new send's (Sept 25-27)
+        // without being identical — this is exactly the case string-matching missed.
+        c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'existing', status: 'sent' }));
+        await c.sendPitch({ user: 'a', body: body() }, resStub);
+        expect(status).toBe(409);
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('sends when no overlapping active record exists (dedup query itself excludes legacy no-targetWeekend records)', async () => {
+        asApprover();
+        c.model.findOne = vi.fn(() => Promise.resolve(null));
+        await c.sendPitch({ user: 'a', body: body() }, resStub);
+        expect(status).toBe(201);
+        expect(sendMail).toHaveBeenCalledTimes(1);
+      });
+
+      it('stores the real targetWeekend Dates on the created record', async () => {
+        asApprover();
+        await c.sendPitch({ user: 'a', body: body() }, resStub);
+        const rec = (c.model.create as any).mock.calls[0][0];
+        expect(rec.targetWeekend).toEqual({ start: new Date(VALID_WEEKEND.start), end: new Date(VALID_WEEKEND.end) });
+      });
+    });
+
     it('honors an explicit templateType', async () => {
       asApprover();
       const findOne = vi.fn(() => Promise.resolve(validTemplate({ type: 'MidRangeCafeBar' })));
       (templateModel as any).findOne = findOne;
-      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', templateType: 'MidRangeCafeBar' } }, resStub);
+      await c.sendPitch(
+        { user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, templateType: 'MidRangeCafeBar' } },
+        resStub,
+      );
       expect(status).toBe(201);
       expect(findOne).toHaveBeenCalledWith(expect.objectContaining({ type: 'MidRangeCafeBar', active: true }));
     });
   });
 
   describe('sendPitch — error handling', () => {
-    const send = () => c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+    const send = () => c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
 
     it('500s when authorize itself throws', async () => {
       (userModel as any).findById = vi.fn(() => Promise.reject(new Error('auth down')));
@@ -331,7 +418,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('send uses the per-venue templateOverride as the type', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ venueType: 'Originals', templateOverride: 'MidRangeCafeBar' })));
-      await c.sendPitch({ user: 'josh', body: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendPitch({ user: 'josh', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(201);
       expect((c.model.create as any).mock.calls[0][0].templateUsed).toBe('MidRangeCafeBar');
     });
@@ -340,15 +427,15 @@ describe('Outreach Controller (#844 batch model)', () => {
   describe('sendBatch (#844)', () => {
     it('403s without a send capability', async () => {
       asAgent(['outreach:edit']);
-      await c.sendBatch({ user: 'a', body: { venueIds: [oid()], targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendBatch({ user: 'a', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(403);
     });
 
     it('400s when venueIds is missing or empty', async () => {
-      await c.sendBatch({ user: 'a', body: { targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendBatch({ user: 'a', body: { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('venueIds');
-      await c.sendBatch({ user: 'a', body: { venueIds: [], targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendBatch({ user: 'a', body: { venueIds: [], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
     });
 
@@ -358,15 +445,25 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(payload.message).toContain('targetDates');
     });
 
+    it('400s when targetWeekend is missing (#923)', async () => {
+      await c.sendBatch({ user: 'a', body: { venueIds: [oid()], targetDates: 'Aug 14-16' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('targetWeekend');
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
     it('403s an agent when auto-approve is OFF', async () => {
-      await c.sendBatch({ user: 'opus', body: { venueIds: [oid()], targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendBatch({ user: 'opus', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(403);
       expect(sendMail).not.toHaveBeenCalled();
     });
 
     it('sends to every approved venue and reports the summary', async () => {
       asApprover();
-      await c.sendBatch({ user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', bookingPeriod: 'August' } }, resStub);
+      await c.sendBatch(
+        { user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, bookingPeriod: 'August' } },
+        resStub,
+      );
       expect(status).toBe(200);
       expect(sendMail).toHaveBeenCalledTimes(2);
       expect(payload).toMatchObject({ requested: 2, sent: 2 });
@@ -376,7 +473,7 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('skips an invalid id but still sends the valid one', async () => {
       asApprover();
-      await c.sendBatch({ user: 'josh', body: { venueIds: ['bad', oid()], targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendBatch({ user: 'josh', body: { venueIds: ['bad', oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(payload.sent).toBe(1);
       expect(payload.skipped).toEqual([{ venueId: 'bad', reason: 'invalid id' }]);
     });
@@ -386,7 +483,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       (venueModel as any).findById = vi.fn()
         .mockResolvedValueOnce(validVenue())
         .mockResolvedValueOnce(validVenue({ outreachEligible: false }));
-      await c.sendBatch({ user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendBatch({ user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(payload.sent).toBe(1);
       expect(payload.skipped).toHaveLength(1);
       expect(payload.skipped[0].reason).toContain('not outreach-eligible');
@@ -395,7 +492,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('skips a venue whose send fails', async () => {
       asApprover();
       sendMail.mockRejectedValueOnce(new Error('smtp down'));
-      await c.sendBatch({ user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendBatch({ user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(payload.sent).toBe(0);
       expect(payload.skipped).toHaveLength(1);
       expect(payload.skipped[0].reason).toContain('email send failed');
@@ -403,7 +500,7 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('lets an agent batch-send when auto-approve is ON', async () => {
       (configModel as any).findOne = vi.fn(() => Promise.resolve({ autoApprove: true }));
-      await c.sendBatch({ user: 'opus', body: { venueIds: [oid()], targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendBatch({ user: 'opus', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(200);
       expect(payload.sent).toBe(1);
     });
@@ -424,10 +521,20 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect((venueModel as any).find).toHaveBeenCalledWith(expect.objectContaining({ outreachEligible: true }));
     });
 
+    // #923 — doNotContact is a permanent global exclusion, on top of the
+    // existing outreachEligible gate; the query itself excludes it (the venue
+    // never comes back from Mongo in the first place).
+    it('excludes doNotContact venues from the query (#923)', async () => {
+      (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+      await c.getCandidates({ user: 'a', query: {} }, resStub);
+      expect(status).toBe(200);
+      expect((venueModel as any).find).toHaveBeenCalledWith(expect.objectContaining({ doNotContact: { $ne: true } }));
+    });
+
     it('excludes venues already pitched for the target dates', async () => {
       (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }, { _id: 'b' }]));
       c.model.find = vi.fn(() => Promise.resolve([{ venueId: 'a' }]));
-      await c.getCandidates({ user: 'a', query: { targetDates: 'Aug 14-16' } }, resStub);
+      await c.getCandidates({ user: 'a', query: { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(payload).toHaveLength(1);
       expect(payload[0]._id).toBe('b');
     });
@@ -441,14 +548,14 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('500s when the active-outreach query throws', async () => {
       (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
       c.model.find = vi.fn(() => Promise.reject(new Error('db down')));
-      await c.getCandidates({ user: 'a', query: { targetDates: 'Aug 14-16' } }, resStub);
+      await c.getCandidates({ user: 'a', query: { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(500);
     });
   });
 
   describe('previewByVenue (#844)', () => {
     it('renders the exact email without sending', async () => {
-      await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(200);
       expect(sendMail).not.toHaveBeenCalled();
       expect(payload.subject).toContain('The Spot on Kirk');
@@ -515,7 +622,7 @@ describe('Outreach Controller (#844 batch model)', () => {
   });
 
   describe('customIntro + customBody (#903, supersedes #900)', () => {
-    const body = () => ({ venueId: oid(), targetDates: 'Aug 14-16', bookingPeriod: 'August' });
+    const body = () => ({ venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, bookingPeriod: 'August' });
 
     it('sendPitch: both absent leaves the rendered html byte-for-byte unchanged (un-migrated template, no marker)', async () => {
       asApprover();
@@ -662,7 +769,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         {
           user: 'josh',
           body: {
-            venueIds: [oid(), oid()], targetDates: 'Aug 14-16',
+            venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND,
             customIntro: 'Hey again!', customBody: 'Loved your open mic last week!',
           },
         },
@@ -677,7 +784,7 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('sendBatch: both absent leaves batch sends unchanged', async () => {
       asApprover();
-      await c.sendBatch({ user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16' } }, resStub);
+      await c.sendBatch({ user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect((sendMail as any).mock.calls[0][0].html.startsWith('<p>Hi Pat')).toBe(true);
     });
 
@@ -717,7 +824,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
 
     it('previewByVenue: both absent leaves preview unchanged', async () => {
-      await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16' } }, resStub);
+      await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(payload.html.startsWith('<p>Hi Pat')).toBe(true);
     });
   });

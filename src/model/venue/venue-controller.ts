@@ -56,6 +56,11 @@ interface VenueBody {
   travelBand?: string;
   priority?: number;
   lastContacted?: string;
+  // Global outcome standing (#923) — see venue-schema.ts. Written by the
+  // outcome-recording endpoint (#898); accepted here via the existing
+  // partial-update pass-through like every other venue field.
+  doNotContact?: boolean;
+  bookedDate?: string;
   actor?: string;
 }
 

@@ -78,6 +78,15 @@ const venueSchema = new Schema({
   travelBand: { type: String, required: false, enum: ['local', 'regional', 'far'] },
   priority: { type: Number, required: false, min: 0, max: 5 },
   lastContacted: { type: Date, required: false },
+  // Global outcome standing (#923). `doNotContact` is set by a `not-interested`
+  // outreach outcome — permanent, and excluded from /outreach/candidates
+  // FOREVER (in addition to the outreachEligible gate); nothing in this repo
+  // ever flips it back off automatically. `bookedDate` is the actual gig date
+  // once a booking outcome is recorded (bookingStatus:'booked' above already
+  // captures the coarse standing; this is the specific date). Both are written
+  // by the outcome-recording endpoint (#898) — this issue only adds the fields.
+  doNotContact: { type: Boolean, required: false, default: false },
+  bookedDate: { type: Date, required: false },
   // The AI agent or human that last wrote this record (#818 `actor` field — one
   // shared agent identity authenticates, but each write records who acted).
   lastModifiedBy: { type: String, required: false },
