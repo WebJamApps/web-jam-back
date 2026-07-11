@@ -175,6 +175,20 @@ describe('Venue Controller', () => {
       expect(status).toBe(200);
       expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ notes: 'called them', lastModifiedBy: 'agent' }));
     });
+
+    // #923 — global outcome standing: doNotContact (permanent exclusion) + the
+    // actual booked gig date, both written by the future outcome-recording
+    // endpoint (#898) but pass through updateVenue like any other field today.
+    it('accepts doNotContact + bookedDate (#923)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({
+        user: 'agent', params: { id }, body: { doNotContact: true, bookedDate: '2026-09-26' },
+      }, resStub);
+      expect(status).toBe(200);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ doNotContact: true, bookedDate: '2026-09-26' }));
+    });
   });
 
   describe('deleteVenue (soft-delete)', () => {

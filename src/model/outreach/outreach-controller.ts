@@ -21,8 +21,9 @@ import { MAX_STEP, nextTouchDueAfter, touchAt } from './cadence.js';
 const PITCH_CC = ['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com'];
 
 // An active campaign blocks a new pitch for the same venue + window (no
-// double-pitching). sent / replied are active; declined / no-response / booked
-// are terminal and don't block.
+// double-pitching). sent / replied are active; every outcome status
+// (no-response / interested / not-interested / booked / target-filled) is
+// terminal-for-this-window and doesn't block.
 const ACTIVE_STATUSES = ['sent', 'replied'];
 
 const ALLOWED_ROLES = ['JaM-admin', 'Developer'];
@@ -42,10 +43,18 @@ interface PitchContext { error?: AuthzError; venue?: VenueDoc; template?: Templa
 interface ResolveOpts { skipDedup?: boolean; requireEligible?: boolean }
 type SendResult = { ok: true; record: unknown } | { ok: false; status: number; message: string };
 
+// #923 — the canonical target-weekend identity a pitch is sent against. Raw
+// wire shape (strings from JSON); parseTargetWeekend below validates + turns
+// it into real Dates. Required on every NEW send (sendPitch/sendBatch) going
+// forward — enforced at the controller layer so legacy records (schema field
+// left optional) are unaffected.
+interface RawTargetWeekend { start?: string | Date; end?: string | Date }
+
 interface SendBody {
   venueId?: string;
   templateType?: string;
   targetDates?: string;
+  targetWeekend?: RawTargetWeekend;
   bookingPeriod?: string;
   actor?: string;
   cc?: string | string[];
@@ -67,6 +76,7 @@ interface BatchBody {
   venueIds?: string[];
   templateType?: string;
   targetDates?: string;
+  targetWeekend?: RawTargetWeekend;
   bookingPeriod?: string;
   actor?: string;
   cc?: string | string[];
@@ -94,7 +104,10 @@ interface OutreachDoc {
   status?: string; templateUsed?: string; bookingPeriod?: string;
 }
 
-const OUTREACH_STATUSES = ['sent', 'replied', 'declined', 'booked', 'no-response'];
+// #923 — extends the enum with the outcome values a human (or #898's
+// auto-flip) records against a pitch: interested/not-interested/booked/
+// target-filled, alongside the existing sent/replied/no-response lifecycle.
+const OUTREACH_STATUSES = ['sent', 'replied', 'no-response', 'interested', 'not-interested', 'booked', 'target-filled'];
 // Valid venue bookingStatus values (mirror the venue schema enum) — validated
 // when applySuggestion writes one onto a venue.
 const OUTREACH_BOOKING_STATUSES = ['booking', 'not-booking', 'booked'];
@@ -103,6 +116,20 @@ const OUTREACH_BOOKING_STATUSES = ['booking', 'not-booking', 'booked'];
 // back to the authenticated token subject.
 function resolveActor(req: AuthRequest, body: { actor?: string }): string {
   return (body.actor || '').trim() || req.user || '';
+}
+
+interface TargetWeekend { start: Date; end: Date }
+
+// #923 — validate + parse the wire-shape targetWeekend into real Dates. Returns
+// null for anything malformed (missing either bound, unparseable, or an
+// inverted range) so the caller can 400 with one consistent check.
+function parseTargetWeekend(raw: RawTargetWeekend | undefined): TargetWeekend | null {
+  if (!raw || !raw.start || !raw.end) return null;
+  const start = new Date(raw.start);
+  const end = new Date(raw.end);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  if (start.getTime() > end.getTime()) return null;
+  return { start, end };
 }
 
 function checkAccess(user: AuthedUser, required: string[]): AuthzResult {
@@ -282,7 +309,7 @@ function buildCallScript(venue: VenueDoc, outreach: OutreachDoc): string {
     '- If full: ask about a later window or being kept on file.',
     '- If voicemail: leave the above + 540-494-8035 and joshandmariamusic.com.',
     '',
-    'After the call, mark the outreach replied/declined/booked in the admin (PUT /outreach/:id).',
+    'After the call, mark the outreach replied/not-interested/booked in the admin (PUT /outreach/:id).',
   ].join('\n');
 }
 
@@ -348,8 +375,11 @@ class OutreachController extends Controller {
   }
 
   // PUT /outreach/:id — update campaign lifecycle (status) or backfill the
-  // gmailThreadId. Used to mark replied/declined/booked by hand or by the
-  // reply-detection job (#825).
+  // gmailThreadId. Used to mark replied/interested/not-interested/booked by
+  // hand or by the reply-detection job (#825). #923 note: this is a generic
+  // status/thread update, NOT the outcome-recording endpoint — it does not
+  // stamp outcomeAt/outcomeBy/bookedDate or run the target-filled auto-flip;
+  // that single choke point lands with #898.
   async updateOutreach(req: AuthIdRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['outreach:edit']);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -364,8 +394,11 @@ class OutreachController extends Controller {
     if (body.status !== undefined) update.status = body.status;
     // Halting a campaign must clear any pending cadence touch so a halted record
     // can NEVER fire a follow-up (#850). The cadence engine only advances `sent`
-    // records, so moving to any other status (replied/declined/booked/no-response)
-    // means there is no next touch — null it out rather than leave a stale date.
+    // records, so moving to ANY other status — replied/no-response, or (#923)
+    // any of the new outcome values interested/not-interested/booked/
+    // target-filled — means there is no next touch; the `!== 'sent'` check
+    // below is intentionally generic so it covers every future status too,
+    // never a hardcoded list.
     if (body.status !== undefined && body.status !== 'sent') update.nextTouchDue = null;
     if (body.gmailThreadId !== undefined) update.gmailThreadId = body.gmailThreadId;
     let doc;
@@ -416,6 +449,29 @@ class OutreachController extends Controller {
     return await templateModel.findOne(coldMatch) as unknown as TemplateDoc | null;
   }
 
+  // Dedup guard (#923): 409 when an active (sent/replied) record exists for
+  // this venue with an OVERLAPPING targetWeekend range — rekeyed off the
+  // structured date range instead of targetDates string equality, the root
+  // cause of the 7/5 duplicate-cadence incident (three free-text spellings of
+  // the same weekend never string-matched). sendPitch/sendBatch already
+  // require + validate targetWeekend before calling resolvePitch, so `tw` is
+  // always present here when skipDedup is false. A legacy record with no
+  // targetWeekend can never match (both clauses require the field to exist) —
+  // legacy records don't block. Returns the error envelope to relay, or null.
+  async dedupGuard(venueId: string | undefined, tw: TargetWeekend | null): Promise<AuthzError | null> {
+    const query: Record<string, unknown> = { venueId, status: { $in: ACTIVE_STATUSES } };
+    if (tw) {
+      query['targetWeekend.start'] = { $exists: true, $lte: tw.end };
+      query['targetWeekend.end'] = { $exists: true, $gte: tw.start };
+    }
+    let dupe;
+    try {
+      dupe = await this.model.findOne(query);
+    } catch (e) { return { status: 500, message: (e as Error).message }; }
+    if (!dupe) return null;
+    return { status: 409, message: 'an active outreach already exists for this venue and an overlapping target weekend', outreach: dupe };
+  }
+
   // Load + validate the venue and template for a send and run the dedup guard.
   // Returns a ready context, or an error envelope for the caller to relay.
   // requireEligible (default true): the venue must be VETTED (outreachEligible) —
@@ -436,13 +492,8 @@ class OutreachController extends Controller {
 
     // Dedup guard first — refuse a duplicate before doing template work.
     if (!skipDedup) {
-      let dupe;
-      try {
-        dupe = await this.model.findOne({ venueId: body.venueId, targetDates: body.targetDates, status: { $in: ACTIVE_STATUSES } });
-      } catch (e) { return { error: { status: 500, message: (e as Error).message } }; }
-      if (dupe) {
-        return { error: { status: 409, message: 'an active outreach already exists for this venue and target dates', outreach: dupe } };
-      }
+      const dupeErr = await this.dedupGuard(body.venueId, parseTargetWeekend(body.targetWeekend));
+      if (dupeErr) return { error: dupeErr };
     }
 
     // Template type: explicit caller value > per-venue override > venue's type (#848).
@@ -474,6 +525,8 @@ class OutreachController extends Controller {
     const sentAt = new Date();
     const fields = {
       venueId: String(venue._id), templateUsed: type, targetDates: body.targetDates, bookingPeriod: body.bookingPeriod,
+      // #923 — canonical target identity; validated required by sendPitch/sendBatch before this ever runs.
+      targetWeekend: parseTargetWeekend(body.targetWeekend) || undefined,
       sentAt, status: 'sent', messageId: sent.messageId, sentBy: actor, lastModifiedBy: actor,
       step: 1, nextTouchDue: nextTouchDueAfter(1, sentAt),
     };
@@ -501,6 +554,11 @@ class OutreachController extends Controller {
     if (!body.targetDates || !body.targetDates.trim()) {
       return res.status(400).json({ message: 'targetDates is required' });
     }
+    // #923 — every NEW send carries the structured targetWeekend (dedup +
+    // eventual target-filled logic key on it); targetDates stays display-only.
+    if (!parseTargetWeekend(body.targetWeekend)) {
+      return res.status(400).json({ message: 'targetWeekend {start, end} is required' });
+    }
     const sendErr = await this.canSend(req);
     if (sendErr) return res.status(sendErr.status).json({ message: sendErr.message });
 
@@ -526,6 +584,10 @@ class OutreachController extends Controller {
     if (!body.targetDates || !body.targetDates.trim()) {
       return res.status(400).json({ message: 'targetDates is required' });
     }
+    // #923 — same requirement as sendPitch: one targetWeekend covers the whole batch.
+    if (!parseTargetWeekend(body.targetWeekend)) {
+      return res.status(400).json({ message: 'targetWeekend {start, end} is required' });
+    }
     const sendErr = await this.canSend(req);
     if (sendErr) return res.status(sendErr.status).json({ message: sendErr.message });
 
@@ -536,7 +598,7 @@ class OutreachController extends Controller {
     for (const venueId of body.venueIds) {
       if (!mongoose.Types.ObjectId.isValid(venueId)) { result.skipped.push({ venueId, reason: 'invalid id' }); continue; }
       const sendBody = {
-        targetDates: body.targetDates, bookingPeriod: body.bookingPeriod, cc: body.cc,
+        targetDates: body.targetDates, targetWeekend: body.targetWeekend, bookingPeriod: body.bookingPeriod, cc: body.cc,
         customIntro: body.customIntro, customBody: body.customBody,
       };
       // eslint-disable-next-line no-await-in-loop
@@ -560,7 +622,11 @@ class OutreachController extends Controller {
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     let venues: { _id?: unknown }[];
     try {
-      venues = await venueModel.find({ outreachEligible: true, status: { $ne: 'archived' }, email: { $nin: [null, ''] } });
+      // #923 — doNotContact is a permanent global exclusion (set by a
+      // not-interested outcome), on top of the existing outreachEligible gate.
+      venues = await venueModel.find({
+        outreachEligible: true, status: { $ne: 'archived' }, email: { $nin: [null, ''] }, doNotContact: { $ne: true },
+      });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
 
     const targetDates = typeof (req.query || {}).targetDates === 'string' ? (req.query as { targetDates: string }).targetDates : undefined;
