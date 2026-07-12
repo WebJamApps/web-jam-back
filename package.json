@@ -34,9 +34,9 @@
     "smoketest": "npm run cleanup && npm install --omit=dev",
     "node:debug": "node --inspect-brk index.js",
     "jscpd": "jscpd src",
-    "test": "eslint ./src && npm run jscpd && rimraf coverage && npm run test:unit",
+    "test": "eslint ./src && npm run jscpd && npm run typecheck && rimraf coverage && npm run test:unit",
     "test:lint": "eslint ./src --fix",
-    "test:local": "npm run test:lint && rimraf coverage && npm run test:unit",
+    "test:local": "npm run test:lint && npm run typecheck && rimraf coverage && npm run test:unit",
     "test:unit": "vitest run --coverage",
     "test:all": "npm run test:local"
   },
