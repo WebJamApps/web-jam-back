@@ -250,6 +250,19 @@ function fillCustomBodyMarker(bodyHtml: string, customBody?: string): string {
   return custom ? `${bodyHtml}\n${custom}` : bodyHtml;
 }
 
+// #917 — Josh's CC copy of every outreach email is otherwise indistinguishable
+// from every other one, so the subject must always name the target venue. A
+// template author may already wire the [Venue Name] token into their subject
+// (personalize() fills it same as it does in the body) — in that case the
+// name is already present and nothing further is needed. When it isn't
+// (an un-tokenized subject, or the hardcoded fallback below), append it. This
+// is the single choke point every send path's subject passes through so the
+// guarantee holds everywhere without string-concatenating in each caller.
+function ensureVenueInSubject(subject: string, venueName: string): string {
+  if (!venueName || subject.indexOf(venueName) !== -1) return subject;
+  return `${subject} — ${venueName}`;
+}
+
 // Render a template into a ready-to-send email: token-filled subject + intro +
 // body, with the footer photo appended as an inline-CID attachment when the
 // template names one (and the asset is on disk).
@@ -260,7 +273,10 @@ function fillCustomBodyMarker(bodyHtml: string, customBody?: string): string {
 function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody): {
   subject: string; html: string; attachments: { filename: string; path: string; cid: string }[];
 } {
-  const subject = personalize(template.subject || 'Performance Inquiry: Josh and Maria', venue, body);
+  const subject = ensureVenueInSubject(
+    personalize(template.subject || 'Performance Inquiry: Josh and Maria', venue, body),
+    venue.name || 'your venue',
+  );
   const introHtml = resolveIntroHtml(template, venue, body);
   const bodyHtml = fillCustomBodyMarker(personalize(template.bodyHtml || '', venue, body), body.customBody);
   let html = introHtml + bodyHtml;
@@ -287,7 +303,10 @@ function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
   const venueName = venue.name || 'your venue';
   const dates = outreach.targetDates || 'an upcoming date';
   const orig = outreach.sentAt ? fmtDate(new Date(outreach.sentAt)) : 'earlier this season';
-  const subject = `Following up — Josh & Maria at ${venueName}`;
+  // #917 — routed through the same choke point as buildPitchEmail; this
+  // literal already names the venue, so it's a no-op here, but keeping both
+  // paths on one guarantee means a future subject rewrite can't drop it.
+  const subject = ensureVenueInSubject(`Following up — Josh & Maria at ${venueName}`, venueName);
   let html = [
     `<p>Hi ${contact},</p>`,
     `<p>Just following up on my note from ${orig} about Josh &amp; Maria — my wife and I are a husband-wife `
