@@ -647,6 +647,84 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
+  // #917 — Josh's CC copy of every outreach send is otherwise indistinguishable
+  // from every other one; the subject must always name the target venue,
+  // whether or not the template author wired the [Venue Name] token into it.
+  describe('subject includes the target venue (#917)', () => {
+    it('sendPitch: appends " — <Venue Name>" when the template subject carries no token', async () => {
+      asApprover();
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ subject: 'Performance Inquiry: Josh and Maria' })));
+      await c.sendPitch(
+        { user: 'josh', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } },
+        resStub,
+      );
+      expect(status).toBe(201);
+      const sentSubject = (sendMail as any).mock.calls[0][0].subject;
+      expect(sentSubject).toBe('Performance Inquiry: Josh and Maria — The Spot on Kirk');
+    });
+
+    it('sendPitch: does not duplicate the venue name when the template subject already tokenizes it', async () => {
+      asApprover();
+      // validTemplate()'s subject is 'Performance Inquiry for [Venue Name]' — personalize() already fills it.
+      await c.sendPitch(
+        { user: 'josh', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } },
+        resStub,
+      );
+      expect(status).toBe(201);
+      const sentSubject = (sendMail as any).mock.calls[0][0].subject;
+      expect(sentSubject).toBe('Performance Inquiry for The Spot on Kirk');
+      expect(sentSubject.split('The Spot on Kirk')).toHaveLength(2); // exactly one occurrence
+    });
+
+    it('sendBatch: every sent email\'s subject names its own venue', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn()
+        .mockResolvedValueOnce(validVenue({ name: 'Venue One' }))
+        .mockResolvedValueOnce(validVenue({ name: 'Venue Two' }));
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ subject: 'Performance Inquiry: Josh and Maria' })));
+      await c.sendBatch(
+        { user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } },
+        resStub,
+      );
+      expect(status).toBe(200);
+      expect(sendMail).toHaveBeenCalledTimes(2);
+      expect((sendMail as any).mock.calls[0][0].subject).toBe('Performance Inquiry: Josh and Maria — Venue One');
+      expect((sendMail as any).mock.calls[1][0].subject).toBe('Performance Inquiry: Josh and Maria — Venue Two');
+    });
+
+    it('previewByVenue (single form): appends the venue name when the template subject has no token', async () => {
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ subject: 'Performance Inquiry: Josh and Maria' })));
+      await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+      expect(status).toBe(200);
+      expect(payload.subject).toBe('Performance Inquiry: Josh and Maria — The Spot on Kirk');
+    });
+
+    it('previewByVenue (batch form): each preview names its own venue in the subject', async () => {
+      const id1 = oid();
+      const id2 = oid();
+      (venueModel as any).findById = vi.fn()
+        .mockResolvedValueOnce(validVenue({ name: 'Venue One' }))
+        .mockResolvedValueOnce(validVenue({ name: 'Venue Two' }));
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ subject: 'Performance Inquiry: Josh and Maria' })));
+      await c.previewByVenue({ user: 'a', query: { venueIds: `${id1},${id2}`, targetDates: 'Sept 25-27' } }, resStub);
+      expect(status).toBe(200);
+      expect(payload[0].subject).toBe('Performance Inquiry: Josh and Maria — Venue One');
+      expect(payload[1].subject).toBe('Performance Inquiry: Josh and Maria — Venue Two');
+    });
+
+    it('advanceCadence: a due EMAIL follow-up names the venue in the subject', async () => {
+      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({}));
+      c.model.find = vi.fn(() => Promise.resolve([{
+        _id: 'o1', venueId: oid(), sentAt: new Date('2026-06-01T12:00:00Z'), step: 1, targetDates: 'Aug 14-16', followUps: [],
+      }]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(status).toBe(200);
+      expect(sendMail).toHaveBeenCalledTimes(1);
+      const sentSubject = (sendMail as any).mock.calls[0][0].subject;
+      expect(sentSubject).toContain('The Spot on Kirk');
+    });
+  });
+
   describe('customIntro + customBody (#903, supersedes #900)', () => {
     const body = () => ({ venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, bookingPeriod: 'August' });
 
