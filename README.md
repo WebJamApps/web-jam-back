@@ -187,7 +187,7 @@ Powers timshermanmusic.com login and booking integrations. All four must be set 
 
 | Env var | Purpose | Example |
 |---------|---------|---------|
-| `ArtistAdmins` | JSON map of lower-cased login email → artist slug. A matching email is provisioned at login as an artist-scoped admin (`userType: artist-admin`). Unmatched emails are untouched. | `{"tim@example.com":"tim"}` |
+| `ArtistAdmins` | JSON map of lower-cased login email → artist slug. A matching email is provisioned at login as an artist-scoped admin with a slug-derived `userType` (`<slug>-admin`, e.g. `tim-admin` — same convention as the existing `clc-admin`). Unmatched emails are untouched. | `{"tim@example.com":"tim"}` |
 | `InquiryRecipients` | JSON map of artist slug → booking email. Routes contact/booking inquiries for that artist; unmapped artists fall back to the default JaMmusic recipients. | `{"tim":"booking@example.com"}` |
 | `TimGoogleClientId` | Google OAuth client ID for timshermanmusic.com login (its own GCP project). | (obtain from GCP Console) |
 | `TimGoogleClientSecret` | Google OAuth client secret for timshermanmusic.com login. **Secret — server-side only.** | (obtain from GCP Console) |
