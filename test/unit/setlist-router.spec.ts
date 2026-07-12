@@ -1,6 +1,5 @@
 import app from '#src/index.js';
 import SetlistModel from '#src/model/setlist/setlist-facade.js';
-import SetlistSchema from '#src/model/setlist/setlist-schema.js';
 import SongModel from '#src/model/song/song-facade.js';
 import userModel from '#src/model/user/user-facade.js';
 import authUtils from '#src/auth/authUtils.js';
@@ -49,6 +48,11 @@ describe('The Setlist API', () => {
     expect(r.status).toBe(400);
   });
 
+  it('returns 400 for a well-formed id that does not exist', async () => {
+    r = await request(app).get('/setlist/6a53da5b8c4f9aa55d290d99').set({ origin: allowedUrl });
+    expect(r.status).toBe(400);
+  });
+
   it('creates a setlist with the admin JWT', async () => {
     r = await request(app)
       .post('/setlist')
@@ -77,13 +81,30 @@ describe('The Setlist API', () => {
     expect(r.status).toBe(500);
   });
 
-  it('rejects a create whose item is missing the required title (validation)', async () => {
+  it('rejects a create whose item is missing both songId and title (validation)', async () => {
     r = await request(app)
       .post('/setlist')
       .set({ origin: allowedUrl })
       .set('Authorization', auth())
       .send({ name: 'Bad Item Set', items: [{ order: 1 }] });
     expect(r.status).toBe(500);
+  });
+
+  it('accepts a create whose item has ONLY a songId — no inline title required', async () => {
+    await SongModel.deleteMany({ title: 'Songid Only Validation Song' });
+    const song = await SongModel.create({
+      title: 'Songid Only Validation Song',
+      artist: 'Some Artist',
+      category: 'pub',
+      url: `https://youtu.be/songid-only-${Date.now()}`,
+    }) as unknown as { _id: string };
+    r = await request(app)
+      .post('/setlist')
+      .set({ origin: allowedUrl })
+      .set('Authorization', auth())
+      .send({ name: 'SongId Only Set', items: [{ order: 1, songId: song._id }] });
+    expect(r.status).toBe(201);
+    await SongModel.deleteMany({ title: 'Songid Only Validation Song' });
   });
 
   it('updates a setlist, replacing its items', async () => {
@@ -131,37 +152,61 @@ describe('The Setlist API', () => {
     expect(r.status).toBe(200);
   });
 
-  describe('title/link resolution rules', () => {
-    it('effectiveTitle is the item title', () => {
-      const doc = new SetlistSchema({ name: 'S', items: [{ order: 1, title: 'My Title' }] });
-      expect(doc.items[0].effectiveTitle).toBe('My Title');
-    });
+  describe('hybrid songId resolution (web-jam-back#946)', () => {
+    let song: { _id: string; url: string };
 
-    it('effectivePlayLink uses the item playLink when present', () => {
-      const doc = new SetlistSchema({ name: 'S', items: [{ order: 1, title: 'T', playLink: 'https://item.link' }] });
-      expect(doc.items[0].effectivePlayLink).toBe('https://item.link');
-    });
-
-    it('effectivePlayLink is undefined when neither playLink nor song is present', () => {
-      const doc = new SetlistSchema({ name: 'S', items: [{ order: 1, title: 'T' }] });
-      expect(doc.items[0].effectivePlayLink).toBeUndefined();
-    });
-
-    it('effectivePlayLink falls back to the referenced Song url when populated and no playLink', async () => {
+    beforeAll(async () => {
       await SongModel.deleteMany({ title: 'Setlist Ref Song' });
-      const song = await SongModel.create({
+      song = await SongModel.create({
         title: 'Setlist Ref Song',
-        artist: 'The Band',
+        artist: 'The Reference Band',
         category: 'pub',
-        url: `https://youtu.be/song-${Date.now()}`,
+        url: 'https://dl.dropboxusercontent.com/s/abc123/song.mp3?rlkey=xyz789&dl=1',
       }) as unknown as { _id: string; url: string };
+    });
+
+    afterAll(async () => {
+      await SongModel.deleteMany({ title: 'Setlist Ref Song' });
+    });
+
+    it('resolves a referenced item to the Song title/artist and a converted (player-form) playLink on GET /setlist/:id', async () => {
       const created = await SetlistModel.create({
         name: 'Ref Set',
-        items: [{ order: 1, songId: song._id, title: 'Setlist Ref Song' }],
+        items: [{ order: 1, songId: song._id, notes: 'watch the bridge' }],
       }) as unknown as { _id: string };
-      const populated = await SetlistSchema.findById(created._id).populate('items.songId');
-      expect(populated.items[0].effectivePlayLink).toBe(song.url);
-      await SongModel.deleteMany({ title: 'Setlist Ref Song' });
+      r = await request(app).get(`/setlist/${created._id}`).set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      const [item] = r.body.items;
+      expect(item.title).toBe('Setlist Ref Song');
+      expect(item.artist).toBe('The Reference Band');
+      expect(item.playLink).toBe('https://www.dropbox.com/s/abc123/song.mp3?rlkey=xyz789&dl=0');
+      expect(item.notes).toBe('watch the bridge');
+      expect(item.songId).toBe(song._id.toString());
+    });
+
+    it('resolves a mixed setlist (referenced + inline) on GET /setlist and GET /setlist/:id', async () => {
+      const created = await SetlistModel.create({
+        name: 'Mixed Set',
+        items: [
+          { order: 1, songId: song._id },
+          {
+            order: 2, title: 'Uncatalogued Cover', artist: 'Cover Band', playLink: 'https://youtu.be/cover',
+          },
+        ],
+      }) as unknown as { _id: string };
+
+      const byId = await request(app).get(`/setlist/${created._id}`).set({ origin: allowedUrl });
+      expect(byId.status).toBe(200);
+      expect(byId.body.items[0].title).toBe('Setlist Ref Song');
+      expect(byId.body.items[0].artist).toBe('The Reference Band');
+      expect(byId.body.items[1].title).toBe('Uncatalogued Cover');
+      expect(byId.body.items[1].artist).toBe('Cover Band');
+      expect(byId.body.items[1].playLink).toBe('https://youtu.be/cover');
+
+      const list = await request(app).get('/setlist').set({ origin: allowedUrl });
+      expect(list.status).toBe(200);
+      const found = (list.body as Array<{ _id: string }>).find((s) => s._id === created._id.toString());
+      expect(found).toBeDefined();
     });
   });
 
