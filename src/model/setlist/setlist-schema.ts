@@ -2,39 +2,32 @@ import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
 
-// An ordered item in a setlist. Either references an existing Song (reusing its
-// link/metadata) or carries its own inline title + play link for covers that
-// aren't catalogued — web-jam-back#937.
+// An ordered item in a setlist. Either REFERENCES an existing Song via songId
+// (source of truth — title/artist/link are resolved from the Song at read
+// time, never duplicated here) or carries its own inline title/artist/playLink
+// for a cover that isn't catalogued — web-jam-back#937, hybrid fix #946.
 const setlistItemSchema = new Schema({
   order: { type: Number, required: true },
   songId: { type: Schema.Types.ObjectId, ref: 'Song', required: false },
-  title: { type: String, required: true },
+  // Required only for uncatalogued items — when songId is set, title/artist/
+  // playLink are derived from the referenced Song (see setlist-resolve.ts) and
+  // must not be relied on or required here.
+  title: {
+    type: String,
+    required: [
+      function requiredWhenNoSongId(this: { songId?: unknown }): boolean { return !this.songId; },
+      'title is required when songId is not set',
+    ],
+  },
+  artist: { type: String, required: false },
   playLink: { type: String, required: false },
   notes: { type: String, required: false },
-}, { toJSON: { virtuals: true }, toObject: { virtuals: true } });
-
-// Effective title is always the denormalized copy on the item (seeded from the
-// referenced Song at create time) so listing never needs a join.
-setlistItemSchema.virtual('effectiveTitle').get(function effectiveTitle(this: { title: string }): string {
-  return this.title;
-});
-
-// Effective play link = the item's own playLink when set, else the referenced
-// Song's url (resolvable only when songId is populated). Neither present →
-// undefined, which is a valid item (e.g. a song still being learned).
-setlistItemSchema.virtual('effectivePlayLink').get(function effectivePlayLink(this: {
-  playLink?: string; songId?: unknown;
-}): string | undefined {
-  if (this.playLink) return this.playLink;
-  const song = this.songId as { url?: string } | null | undefined;
-  if (song && typeof song === 'object' && typeof song.url === 'string') return song.url;
-  return undefined;
 });
 
 const setlistSchema = new Schema({
   name: { type: String, required: true },
   description: { type: String, required: false },
   items: { type: [setlistItemSchema], default: [] },
-}, { toJSON: { virtuals: true }, toObject: { virtuals: true } });
+});
 
 export default mongoose.models.Setlist || mongoose.model('Setlist', setlistSchema);
