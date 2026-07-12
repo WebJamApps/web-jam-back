@@ -38,7 +38,7 @@ describe('User Controller', () => {
     await controller.google({ body: {} } as any, resStub);
     expect(status).toBe(201);
   });
-  it('stamps the artist-admin grant for a configured email on login (#885)', async () => {
+  it('stamps the slug-derived artist-admin grant for a configured email on login (#885)', async () => {
     const prev = process.env.ArtistAdmins;
     process.env.ArtistAdmins = JSON.stringify({ 'tim@sherman.com': 'tim' });
     const update = vi.fn(() => Promise.resolve({ email: 'tim@sherman.com' }));
@@ -46,7 +46,7 @@ describe('User Controller', () => {
     const authMock:any = vi.fn(() => Promise.resolve({ names: [{ displayName: 'Tim' }], emailAddresses: [{ value: 'tim@sherman.com' }] }));
     authGoogle.authenticate = authMock;
     await controller.google({ body: {} } as any, resStub);
-    expect((update.mock.calls[0] as unknown[])[1]).toMatchObject({ userType: 'artist-admin', artist: 'tim' });
+    expect((update.mock.calls[0] as unknown[])[1]).toMatchObject({ userType: 'tim-admin', artist: 'tim' });
     process.env.ArtistAdmins = prev;
     testObj = {};
   });

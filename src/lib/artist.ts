@@ -33,16 +33,18 @@ export function artistListFilter(query: Record<string, unknown>): Record<string,
 
 // Login-time role grant driven by the `ArtistAdmins` env var — a JSON map of
 // lower-cased email -> artist slug, e.g. {"tim@example.com":"tim"}. A matched
-// email is provisioned as an artist-scoped admin (userType `artist-admin`,
-// `artist` = the slug). Josh sets Tim's real email here; unmatched emails (incl.
-// Josh's own Developer account) get no grant and are left untouched.
+// email is provisioned as an artist-scoped admin with a slug-derived userType
+// (`<slug>-admin`, e.g. `tim-admin`), `artist` = the slug. This keeps per-tenant
+// role names (like the pre-existing `clc-admin`) without hand-maintaining one
+// per artist. Josh sets Tim's real email here; unmatched emails (incl. Josh's
+// own Developer account) get no grant and are left untouched.
 export function artistGrantForEmail(email: string): { userType: string; artist: string } | null {
   let map: Record<string, string>;
   try { map = JSON.parse(process.env.ArtistAdmins || '{}') as Record<string, string>; } catch { return null; }
   const key = (email || '').toLowerCase();
   // eslint-disable-next-line security/detect-object-injection
   const slug = map[key];
-  return typeof slug === 'string' && slug ? { userType: 'artist-admin', artist: slug } : null;
+  return typeof slug === 'string' && slug ? { userType: `${slug}-admin`, artist: slug } : null;
 }
 
 export default {
