@@ -32,9 +32,9 @@ describe('lib/artist', () => {
     expect(artistListFilter({ artist: 'jammusic' }).$or).toBeDefined();
   });
 
-  it('artistGrantForEmail returns a grant for a configured email (case-insensitive)', () => {
+  it('artistGrantForEmail returns a slug-derived grant for a configured email (case-insensitive)', () => {
     process.env.ArtistAdmins = JSON.stringify({ 'tim@example.com': 'tim' });
-    expect(artistGrantForEmail('Tim@Example.com')).toEqual({ userType: 'artist-admin', artist: 'tim' });
+    expect(artistGrantForEmail('Tim@Example.com')).toEqual({ userType: 'tim-admin', artist: 'tim' });
   });
 
   it('artistGrantForEmail returns null for an unlisted email', () => {
