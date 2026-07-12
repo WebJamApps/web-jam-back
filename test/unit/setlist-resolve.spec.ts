@@ -1,5 +1,5 @@
 import {
-  toSetlistPlayerLink, resolveSetlistItem, resolveSetlistDoc,
+  toSetlistPlayerLink, resolveSetlistItem, resolveSetlistDoc, type SetlistItemLean,
 } from '#src/model/setlist/setlist-resolve.js';
 
 describe('setlist-resolve', () => {
@@ -104,12 +104,12 @@ describe('setlist-resolve', () => {
     });
 
     it('passes through a doc with no items array unchanged', () => {
-      const doc = { name: 'Empty' } as { name: string; items?: unknown[] };
+      const doc = { name: 'Empty' } as { name: string; items?: SetlistItemLean[] };
       expect(resolveSetlistDoc(doc)).toBe(doc);
     });
 
     it('passes through a null/undefined doc unchanged', () => {
-      expect(resolveSetlistDoc(null as unknown as { items?: unknown[] })).toBeNull();
+      expect(resolveSetlistDoc(null as unknown as { items?: SetlistItemLean[] })).toBeNull();
     });
   });
 });
