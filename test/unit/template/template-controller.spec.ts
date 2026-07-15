@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
+import fs from 'fs';
 import controller from '#src/model/template/template-controller.js';
 import userModel from '#src/model/user/user-facade.js';
 
@@ -123,11 +124,27 @@ describe('Template Controller', () => {
 
     it('updates a valid record', async () => {
       const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, footerPhotoRef: 'some-photo' }));
       const upd = vi.fn(() => Promise.resolve({ _id: id }));
       c.model.findByIdAndUpdate = upd;
       await c.updateTemplate({ user: 'agent', params: { id }, body: { subject: 'Updated' } }, resStub);
       expect(status).toBe(200);
       expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ subject: 'Updated', lastModifiedBy: 'agent' }));
+    });
+
+    it('500s when the existing-record lookup errors', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.reject(new Error('boom')));
+      await c.updateTemplate({ user: 'agent', params: { id }, body: { subject: 'Updated' } }, resStub);
+      expect(status).toBe(500);
+    });
+
+    it('400s when the id does not match an existing record', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve(null));
+      await c.updateTemplate({ user: 'agent', params: { id }, body: { subject: 'Updated' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('Id Not Found');
     });
   });
 
@@ -180,6 +197,133 @@ describe('Template Controller', () => {
     it('honors type and active', () => {
       const f = (controller as any).constructor.buildListFilter({ type: 'Originals', active: 'true' });
       expect(f).toEqual({ type: 'Originals', active: true });
+    });
+  });
+
+  // JaMmusic#1116 — AdminTemplates editing UI: photo upload on create/update
+  // + a preview endpoint (web-jam-back#943).
+  describe('photo upload and asset serving', () => {
+    let existsSpy: any;
+    let writeSpy: any;
+
+    beforeEach(() => {
+      existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      writeSpy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {});
+      vi.spyOn(fs, 'mkdirSync').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('creates a template with photoData and writes the asset', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const create = vi.fn((doc) => Promise.resolve({ _id: doc._id, ...doc }));
+      c.model.create = create;
+
+      await c.createTemplate({
+        user: 'agent',
+        body: { type: 'Originals', subject: 'Subject', photoData: 'data:image/jpeg;base64,YWJjZA==' },
+      }, resStub);
+
+      expect(status).toBe(201);
+      expect(payload.footerPhotoRef).toContain('template-');
+      expect(payload.photoData).toBeUndefined();
+      expect(writeSpy).toHaveBeenCalled();
+    });
+
+    it('upserts onto an existing template with photoData, reusing its ref', async () => {
+      const dupId = new mongoose.Types.ObjectId().toString();
+      c.model.findOne = vi.fn(() => Promise.resolve({ _id: dupId, footerPhotoRef: 'existing-photo' }));
+      const upd = vi.fn((id, body) => Promise.resolve({ _id: dupId, ...body }));
+      c.model.findByIdAndUpdate = upd;
+
+      await c.createTemplate({
+        user: 'agent',
+        body: { type: 'Originals', subject: 'Subject', photoData: 'data:image/jpeg;base64,YWJjZA==' },
+      }, resStub);
+
+      expect(status).toBe(200);
+      expect(upd).toHaveBeenCalledWith(dupId, expect.objectContaining({ footerPhotoRef: 'existing-photo' }));
+      expect(writeSpy).toHaveBeenCalled();
+    });
+
+    it('updates a template with photoData', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, footerPhotoRef: 'some-photo' }));
+      const upd = vi.fn((targetId, body) => Promise.resolve({ _id: targetId, ...body }));
+      c.model.findByIdAndUpdate = upd;
+
+      await c.updateTemplate({
+        user: 'agent',
+        params: { id },
+        body: { photoData: 'data:image/jpeg;base64,YWJjZA==' },
+      }, resStub);
+
+      expect(status).toBe(200);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ footerPhotoRef: 'some-photo' }));
+      expect(writeSpy).toHaveBeenCalled();
+    });
+
+    it('clears footerPhotoRef when photoData is empty string (remove photo)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, footerPhotoRef: 'some-photo' }));
+      const upd = vi.fn((targetId, body) => Promise.resolve({ _id: targetId, ...body }));
+      c.model.findByIdAndUpdate = upd;
+
+      await c.updateTemplate({
+        user: 'agent',
+        params: { id },
+        body: { photoData: '' },
+      }, resStub);
+
+      expect(status).toBe(200);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ footerPhotoRef: '' }));
+      expect(writeSpy).not.toHaveBeenCalled();
+    });
+
+    it('leaves footerPhotoRef untouched when photoData is omitted', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, footerPhotoRef: 'some-photo' }));
+      const upd = vi.fn((targetId, body) => Promise.resolve({ _id: targetId, ...body }));
+      c.model.findByIdAndUpdate = upd;
+
+      await c.updateTemplate({ user: 'agent', params: { id }, body: { subject: 'No photo change' } }, resStub);
+
+      expect(status).toBe(200);
+      const arg = (upd.mock.calls[0] as unknown[])[1] as any;
+      expect(arg.footerPhotoRef).toBeUndefined();
+      expect(writeSpy).not.toHaveBeenCalled();
+    });
+
+    it('serves a template asset with 200 via sendFile', async () => {
+      const sendFile = vi.fn();
+      const customRes = { ...resStub, sendFile };
+
+      await c.getTemplateAsset({ user: 'agent', params: { ref: 'template-photo' } }, customRes);
+
+      expect(sendFile).toHaveBeenCalled();
+    });
+
+    it('404s for a non-existent template asset', async () => {
+      existsSpy.mockReturnValue(false);
+
+      await c.getTemplateAsset({ user: 'agent', params: { ref: 'non-existent' } }, resStub);
+
+      expect(status).toBe(404);
+      expect(payload.message).toContain('asset not found');
+    });
+
+    it('400s when ref is missing', async () => {
+      await c.getTemplateAsset({ user: 'agent', params: {} }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('ref is required');
+    });
+
+    it('403s when the capability is missing', async () => {
+      (userModel as any).findById = vi.fn(() => Promise.resolve({ privileges: ['unrelated:cap'] }));
+      await c.getTemplateAsset({ user: 'agent', params: { ref: 'template-photo' } }, resStub);
+      expect(status).toBe(403);
     });
   });
 });
