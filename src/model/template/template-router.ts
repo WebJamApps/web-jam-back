@@ -19,6 +19,12 @@ router.route('/')
     void action();
   });
 
+router.route('/assets/:ref')
+  .get((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'getTemplateAsset', controller, authUtils);
+    void action();
+  });
+
 router.route('/:id')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'getTemplate', controller, authUtils);
