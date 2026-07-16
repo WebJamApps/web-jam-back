@@ -5,6 +5,9 @@ import { Icontroller } from '#src/lib/routeUtils.js';
 import venueModel from './venue-facade.js';
 import userModel from '../user/user-facade.js';
 import gigModel from '../gig/gig-facade.js';
+import {
+  JOSH_GIGS_FILTER, groupGigsByVenue, type LinkableGig, type LinkableVenue,
+} from '#src/lib/gig-venue-link.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s.@]+$/;
 const VENUE_TYPES = ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'];
@@ -277,6 +280,42 @@ class VenueController extends Controller {
     });
   }
 
+  // #958 — attach computed lastGig/nextGig + locationFallback onto each venue
+  // via ONE extra gig query for the whole batch (never a per-venue query — no
+  // N+1), scoped to Josh's gigs like filterEligible above. Resolution is the
+  // shared venueId-first/exact-normalized-name-fallback rule (never fuzzy —
+  // see src/lib/gig-venue-link.ts). lastGig = the most recent linked gig with
+  // datetime in the past; nextGig = the earliest linked gig with datetime >=
+  // now. locationFallback is display-only (city/usState off whichever of
+  // those two gigs is more relevant — lastGig if there is one, else nextGig,
+  // so a venue with only a FUTURE booked gig, like Durty Bull's Nov 16, still
+  // gets a location — never written back to the venue record).
+  static async attachGigLinks(venues: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+    let gigs: LinkableGig[];
+    try {
+      gigs = await gigModel.find(JOSH_GIGS_FILTER) as unknown as LinkableGig[];
+    } catch (e) { return Promise.reject(e); }
+    const groups = groupGigsByVenue(gigs, venues as unknown as LinkableVenue[]);
+    const now = Date.now();
+    return venues.map((v) => {
+      const linked = (groups.get(String(v._id)) || [])
+        .filter((g) => g.datetime && !Number.isNaN(new Date(g.datetime as string).getTime()))
+        .slice()
+        .sort((a, b) => new Date(a.datetime as string).getTime() - new Date(b.datetime as string).getTime());
+      const past = linked.filter((g) => new Date(g.datetime as string).getTime() < now);
+      const future = linked.filter((g) => new Date(g.datetime as string).getTime() >= now);
+      const lastGig = past.length ? past[past.length - 1] : null;
+      const nextGig = future.length ? future[0] : null;
+      const fallbackGig = lastGig || nextGig;
+      const locationFallback = fallbackGig && (fallbackGig.city || fallbackGig.usState)
+        ? { city: fallbackGig.city, usState: fallbackGig.usState }
+        : null;
+      return {
+        ...v, lastGig, nextGig, locationFallback,
+      };
+    });
+  }
+
   // GET /venue — list venues (filters: status, venueType, eligibleFor=<date>).
   async listVenues(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, VENUE_WRITE_CAPS);
@@ -293,6 +332,9 @@ class VenueController extends Controller {
         return res.status(500).json({ message: (e as Error).message });
       }
     }
+    try { venues = await VenueController.attachGigLinks(venues); } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
     return res.status(200).json(venues);
   }
 
@@ -301,10 +343,12 @@ class VenueController extends Controller {
     const guardErr = await this.authorize(req, VENUE_WRITE_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Find id is invalid' });
-    let doc;
+    let doc: Record<string, unknown> | null;
     try { doc = await this.model.findById(req.params.id); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     if (!doc) return res.status(400).json({ message: 'nothing found with id provided' });
-    return res.status(200).json(doc);
+    let withLinks: Record<string, unknown>[];
+    try { withLinks = await VenueController.attachGigLinks([doc]); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    return res.status(200).json(withLinks[0]);
   }
 
   // Find an existing venue for dedupe: by email when given (strongest key),
