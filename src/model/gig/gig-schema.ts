@@ -27,6 +27,14 @@ const gigSchema = new Schema({
   // Artist/tenant slug (#885). Absent on all pre-#885 records, which read as
   // the default (JaMmusic) artist.
   artist: { type: String, required: false },
+  // Venue linkage (#958). Optional: resolution everywhere is venueId FIRST,
+  // else an EXACT normalized-name match against venue.name (never fuzzy) — see
+  // src/lib/gig-venue-link.ts, the single shared implementation of that rule.
+  // Backfilled onto existing gigs by the idempotent, dry-run-default migration
+  // at src/scripts/migrate-gig-venue-id.ts; new gigs may set it directly.
+  venueId: {
+    type: Schema.Types.ObjectId, ref: 'Venue', required: false,
+  },
 }, options);
 
 export default mongoose.models.Gig || mongoose.model('Gig', gigSchema, 'gigs');

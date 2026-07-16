@@ -30,6 +30,7 @@ const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
 const { default: templateModel } = await import('#src/model/template/template-facade.js');
 const { default: configModel } = await import('#src/model/outreach/outreach-config-facade.js');
+const { default: gigModel } = await import('#src/model/gig/gig-facade.js');
 
 const c = controller as any;
 const oid = () => new mongoose.Types.ObjectId().toString();
@@ -107,6 +108,10 @@ describe('Outreach Controller (#844 batch model)', () => {
     c.model.find = vi.fn(() => Promise.resolve([]));
     c.model.create = vi.fn((doc: any) => Promise.resolve({ _id: 'o1', ...doc }));
     c.model.findByIdAndUpdate = vi.fn((id: string, f: any) => Promise.resolve({ _id: id, ...f }));
+    // #958 — getCandidates now always calls gigModel.find once (safety
+    // exclusion + weekend surfacing); default to empty so unrelated tests
+    // never hit the real DB. Tests exercising the linkage override this.
+    (gigModel as any).find = vi.fn(() => Promise.resolve([]));
   });
 
   describe('authorize', () => {
@@ -531,18 +536,88 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect((venueModel as any).find).toHaveBeenCalledWith(expect.objectContaining({ doNotContact: { $ne: true } }));
     });
 
+    // #958 — a targetWeekend request wraps the response in { candidates,
+    // weekendGigs } (weekendGigs added below); no targetWeekend keeps the
+    // plain array (see 'does not filter...' below).
     it('excludes venues already pitched for an overlapping target weekend (#898)', async () => {
       (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }, { _id: 'b' }]));
       const findMock = vi.fn(() => Promise.resolve([{ venueId: 'a' }]));
       c.model.find = findMock;
       await c.getCandidates({ user: 'a', query: { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
-      expect(payload).toHaveLength(1);
-      expect(payload[0]._id).toBe('b');
+      expect(payload.candidates).toHaveLength(1);
+      expect(payload.candidates[0]._id).toBe('b');
+      expect(payload.weekendGigs).toEqual([]);
       expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
         status: { $in: ['sent', 'replied'] },
         'targetWeekend.start': { $exists: true, $lte: new Date(VALID_WEEKEND.end) },
         'targetWeekend.end': { $exists: true, $gte: new Date(VALID_WEEKEND.start) },
       }));
+    });
+
+    // #958 SAFETY — the core motivation for this issue: a venue booked
+    // outside the pitch flow (phone/in-person) must never be re-suggested.
+    describe('excludes venues with an upcoming linked gig (#958 SAFETY)', () => {
+      it('drops a venue matched by venueId with a future gig', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }, { _id: 'b' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toHaveLength(1);
+        expect(payload[0]._id).toBe('b');
+      });
+
+      it('drops a venue matched by exact normalized name with a future gig', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', name: 'Durty Bull' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venue: 'DURTY, BULL!', datetime: new Date(Date.now() + 86400000).toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toHaveLength(0);
+      });
+
+      it('does NOT drop a venue whose linked gig is in the past', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: new Date(Date.now() - 86400000).toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toHaveLength(1);
+      });
+
+      it('500s when the gig query throws', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db down')));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(500);
+      });
+    });
+
+    // #958 — weekend awareness: surfaces Josh's whole gig schedule for the
+    // requested weekend (any venue), independent of the per-venue safety
+    // exclusion above.
+    describe('weekendGigs surfacing (#958)', () => {
+      it('includes gigs inside the requested target weekend', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venue: 'Some Other Venue', datetime: '2026-09-26T00:00:00.000Z' },
+          { venue: 'Out Of Range', datetime: '2026-10-10T00:00:00.000Z' },
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.weekendGigs).toHaveLength(1);
+        expect(payload.weekendGigs[0].venue).toBe('Some Other Venue');
+      });
+
+      it('omits weekendGigs entirely when no targetWeekend is requested', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(Array.isArray(payload)).toBe(true);
+      });
     });
 
     // #898 — targetDates is display-only per #923; a bare targetDates with no
