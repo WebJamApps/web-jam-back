@@ -96,15 +96,18 @@ const venueSchema = new Schema({
   // Vetting/disqualification tags (#843) — the data a human uses to decide
   // outreachEligible, and that the selection logic (#844) checks. Derived from
   // the criteria review of the 5 mis-sent venues:
-  // - inScope: is this a gig-booking venue at all? false = anthem/other (Salem
-  //   Red Sox, ODAC Tournament) — never a target.
   // - bookingStatus: `booking` = open to booking; `not-booking` = closed / new
   //   management that stopped (Radford); `booked` = currently full (Olde Salem).
   // - interested: false = not worth pursuing (pay too low / declined — Harrisonburg).
   // - payTier: free-text pay note. lastVerified: when the info was last checked
   //   (stale venues get re-verified). contactVerified: is the contact confirmed
   //   correct (Olde Salem went to the wrong person).
-  inScope: { type: Boolean, required: false, default: true },
+  //
+  // `inScope` (was: is this a gig-booking venue at all?) was dropped (#954,
+  // 2026-07-16) — it read as a duplicate of `outreachEligible` and Josh only
+  // ever used Eligible. A venue that was `inScope: false` is permanently
+  // excluded via `doNotContact` instead (see below) — see migrate-drop-in-
+  // scope.ts for the one-time backfill.
   bookingStatus: {
     type: String, required: false, enum: ['booking', 'not-booking', 'booked'], default: 'booking',
   },
