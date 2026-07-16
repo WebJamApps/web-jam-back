@@ -35,6 +35,10 @@ const gigSchema = new Schema({
   venueId: {
     type: Schema.Types.ObjectId, ref: 'Venue', required: false,
   },
+  // Stamped by POST /gig/:id/announce (#962) on any Instagram/Facebook leg
+  // success. Re-announcing later just overwrites the stamp — this is a "last
+  // announced" marker, not a history log.
+  announcedAt: { type: Date, required: false },
 }, options);
 
 export default mongoose.models.Gig || mongoose.model('Gig', gigSchema, 'gigs');

@@ -11,6 +11,10 @@
 // prior --apply only touches what's still unlinked. Read-only DRY RUN by
 // default — prints exactly what it would change; pass --apply to write.
 //
+// Archived (soft-deleted) venues are excluded from the venue set entirely
+// (#964 follow-up) — an archived venue must never link a gig, nor be able to
+// make an otherwise-unambiguous active-venue name collide.
+//
 // SAFETY GUARD (mirrors scripts/restore-backup.mjs): this migration writes
 // venueId onto real gig history, so — unlike migrate-target-weekend.ts (which
 // is explicitly meant to eventually run against prod, protected only by its
@@ -71,7 +75,11 @@ async function run(): Promise<void> {
   console.log(`Connected to "${mongoose.connection.name}" (${maskedUri})`);
   console.log(apply ? 'Mode: APPLY — writes will happen.' : 'Mode: DRY RUN — no writes (pass --apply to write).');
 
-  const venues = (await venueModel.find({})) as unknown as LinkableVenue[];
+  // Exclude archived (soft-deleted) venues from matching (#964 follow-up):
+  // an archived venue must never link a gig, nor create an ambiguous
+  // same-name collision against an active venue that should have matched
+  // cleanly.
+  const venues = (await venueModel.find({ status: { $ne: 'archived' } })) as unknown as LinkableVenue[];
   const nameIndex = buildUnambiguousNameIndex(venues);
 
   const candidates = (await gigModel.find({
