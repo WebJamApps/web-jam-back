@@ -59,7 +59,10 @@ const NAMED_ENTITY_RE = /&([a-zA-Z]+);/g;
 const NUMERIC_ENTITY_RE = /&#(\d+);/g;
 const HEX_ENTITY_RE = /&#x([0-9a-fA-F]+);/g;
 
-function decodeHtmlEntities(text: string): string {
+// Exported (web-jam-back#962) — the gig-announce caption HTML->text converter
+// (src/lib/caption-text.ts) needs the exact same TinyMCE-entity-decoding as
+// this module's name matching, so it reuses this rather than duplicating it.
+export function decodeHtmlEntities(text: string): string {
   return text
     .replace(HEX_ENTITY_RE, (_m, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
     .replace(NUMERIC_ENTITY_RE, (_m, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
