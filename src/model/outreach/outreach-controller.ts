@@ -14,6 +14,10 @@ import outreachConfigModel from './outreach-config-facade.js';
 import venueModel from '../venue/venue-facade.js';
 import templateModel from '../template/template-facade.js';
 import userModel from '../user/user-facade.js';
+import gigModel from '../gig/gig-facade.js';
+import {
+  JOSH_GIGS_FILTER, groupGigsByVenue, type LinkableGig, type LinkableVenue,
+} from '#src/lib/gig-venue-link.js';
 import { MAX_STEP, nextTouchDueAfter, touchAt } from './cadence.js';
 
 // Every gig pitch CCs Josh + Maria so they see each send land (mirrors the
@@ -792,15 +796,51 @@ class OutreachController extends Controller {
     return res.status(200).json(result);
   }
 
+  // #958 SAFETY — a venue with an upcoming (datetime >= now) linked gig must
+  // never be offered as an outreach candidate: it's already booked (by phone,
+  // in person, whatever route), so pitching it again is the same failure
+  // class as the 2026-07-08 incident (Durty Bull: booked Nov 16 as a gig
+  // record, yet invisible to venue data and Batch Outreach). Resolution uses
+  // the shared venueId-first/exact-normalized-name rule (never fuzzy — see
+  // src/lib/gig-venue-link.ts). `gigs` is fetched ONCE by the caller (no
+  // per-venue query/N+1).
+  static excludeUpcomingGigVenues(venues: LinkableVenue[], gigs: LinkableGig[]): LinkableVenue[] {
+    const groups = groupGigsByVenue(gigs, venues);
+    const now = Date.now();
+    return venues.filter((v) => {
+      const linked = groups.get(String(v._id)) || [];
+      return !linked.some((g) => g.datetime && new Date(g.datetime as string).getTime() >= now);
+    });
+  }
+
+  // #958 — weekend awareness: every linked-or-unlinked gig (any venue) whose
+  // datetime falls inside the requested target weekend, so the UI can warn
+  // "you already have a gig that weekend" while curating a candidate list for
+  // it. Independent of excludeUpcomingGigVenues above, which only hides the
+  // SPECIFIC venue that's already booked — this surfaces Josh's whole
+  // schedule for the window regardless of which venue.
+  static gigsInWeekend(gigs: LinkableGig[], tw: TargetWeekend): LinkableGig[] {
+    return gigs.filter((g) => {
+      if (!g.datetime) return false;
+      const t = new Date(g.datetime as string).getTime();
+      return t >= tw.start.getTime() && t <= tw.end.getTime();
+    });
+  }
+
   // GET /outreach/candidates — propose the target list (#844): vetted
   // (outreachEligible), non-archived venues with an email, minus any that
-  // already have an active outreach with an OVERLAPPING targetWeekend. #898:
-  // this filter is now targetWeekend/date-range aware (matching the dedup
-  // guard's overlap semantics) rather than the old targetDates string filter —
-  // the note in PR #933 deferred this rekey to this issue, since #923 already
-  // established targetDates no longer participates in any logic. Read-only.
+  // already have an active outreach with an OVERLAPPING targetWeekend, AND
+  // (#958) minus any venue with an upcoming linked gig — see
+  // excludeUpcomingGigVenues. #898: the targetWeekend filter is date-range
+  // aware (matching the dedup guard's overlap semantics) rather than the old
+  // targetDates string filter — the note in PR #933 deferred this rekey to
+  // this issue, since #923 already established targetDates no longer
+  // participates in any logic. Read-only.
   // Optional query: targetWeekend {start, end} (bracket-notation query params
-  // over HTTP, e.g. ?targetWeekend[start]=...&targetWeekend[end]=...).
+  // over HTTP, e.g. ?targetWeekend[start]=...&targetWeekend[end]=...). When
+  // given, the response is `{ candidates, weekendGigs }` (weekendGigs = #958's
+  // weekend-awareness surfacing); when omitted, the response stays the plain
+  // candidates array (unchanged, back-compat with existing callers).
   async getCandidates(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -829,8 +869,20 @@ class OutreachController extends Controller {
       }
       handled = new Set(active.map((a) => String(a.venueId)));
     }
-    const candidates = venues.filter((v) => !handled.has(String(v._id)));
-    return res.status(200).json(candidates);
+    let candidates = venues.filter((v) => !handled.has(String(v._id)));
+
+    // #958 — one extra gig query total (not per-venue): feeds both the SAFETY
+    // exclusion (always applied) and, when a targetWeekend was requested, the
+    // weekendGigs surfacing below.
+    let gigs: LinkableGig[];
+    try {
+      gigs = await gigModel.find(JOSH_GIGS_FILTER) as unknown as LinkableGig[];
+    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    candidates = OutreachController.excludeUpcomingGigVenues(candidates as unknown as LinkableVenue[], gigs) as unknown as { _id?: unknown }[];
+
+    if (!tw) return res.status(200).json(candidates);
+    const weekendGigs = OutreachController.gigsInWeekend(gigs, tw);
+    return res.status(200).json({ candidates, weekendGigs });
   }
 
   // GET /outreach/preview — render the exact email a venue would get, WITHOUT

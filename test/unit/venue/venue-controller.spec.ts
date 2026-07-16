@@ -25,6 +25,10 @@ describe('Venue Controller', () => {
     status = 0;
     payload = undefined;
     asAgent();
+    // #958 — listVenues/getVenue now always call gigModel.find once (for
+    // attachGigLinks); default it to empty so tests that don't care about gig
+    // linkage never hit the real DB. Tests exercising the linkage override this.
+    (gigModel as any).find = vi.fn(() => Promise.resolve([]));
   });
 
   describe('authorize', () => {
@@ -221,6 +225,31 @@ describe('Venue Controller', () => {
       expect(status).toBe(200);
       expect(payload.name).toBe('The Spot');
     });
+
+    // #958 — GET /venue/:id gets the same computed lastGig/nextGig/
+    // locationFallback as the list route (see attachGigLinks tests below).
+    it('attaches lastGig/nextGig/locationFallback (#958)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, name: 'The Spot' }));
+      (gigModel as any).find = vi.fn(() => Promise.resolve([
+        {
+          venueId: id, datetime: new Date(Date.now() + 86400000).toISOString(), city: 'Roanoke', usState: 'Virginia',
+        },
+      ]));
+      await c.getVenue({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(200);
+      expect(payload.nextGig).toBeTruthy();
+      expect(payload.lastGig).toBeNull();
+      expect(payload.locationFallback).toEqual({ city: 'Roanoke', usState: 'Virginia' });
+    });
+
+    it('500s when the gig-link query throws', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, name: 'The Spot' }));
+      (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db down')));
+      await c.getVenue({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(500);
+    });
   });
 
   describe('listVenues', () => {
@@ -269,6 +298,77 @@ describe('Venue Controller', () => {
       await c.listVenues({ user: 'a', query: { eligibleFor: '2026-07-01' } }, resStub);
       expect(status).toBe(200);
       expect(payload.map((v: any) => v.name)).toEqual(['Venue X']);
+    });
+
+    // #958 — computed lastGig/nextGig/locationFallback, resolved via
+    // venueId-first / exact-normalized-name fallback (src/lib/gig-venue-link.ts).
+    describe('attachGigLinks (#958)', () => {
+      it('resolves lastGig (past) and nextGig (future) via venueId', async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'The Spot' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: idA, datetime: '2026-01-01T00:00:00.000Z' }, // past
+          { venueId: idA, datetime: '2099-01-01T00:00:00.000Z' }, // future
+        ]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload[0].lastGig.datetime).toBe('2026-01-01T00:00:00.000Z');
+        expect(payload[0].nextGig.datetime).toBe('2099-01-01T00:00:00.000Z');
+      });
+
+      it('resolves via exact normalized-name match when venueId is absent', async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'Durty Bull' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venue: 'DURTY, BULL!', datetime: '2099-01-01T00:00:00.000Z' },
+        ]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload[0].nextGig).toBeTruthy();
+      });
+
+      it('never fuzzy-matches: an ambiguous name (2+ venues) resolves nothing', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([
+          { _id: new mongoose.Types.ObjectId().toString(), name: 'The Spot' },
+          { _id: new mongoose.Types.ObjectId().toString(), name: 'the spot' },
+        ]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venue: 'The Spot', datetime: '2099-01-01T00:00:00.000Z' },
+        ]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload.every((v: any) => v.nextGig === null)).toBe(true);
+      });
+
+      it('prefers lastGig for locationFallback, falling back to nextGig when there is no past gig (Durty Bull case)', async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'Durty Bull', city: '', usState: '' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          {
+            venueId: idA, datetime: '2099-11-16T00:00:00.000Z', city: 'Roanoke', usState: 'Virginia',
+          },
+        ]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload[0].lastGig).toBeNull();
+        expect(payload[0].locationFallback).toEqual({ city: 'Roanoke', usState: 'Virginia' });
+      });
+
+      it('locationFallback is null when there is no linked gig', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: new mongoose.Types.ObjectId().toString(), name: 'No Gigs Here' }]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload[0].locationFallback).toBeNull();
+        expect(payload[0].lastGig).toBeNull();
+        expect(payload[0].nextGig).toBeNull();
+      });
+
+      it('500s when the gig-link query throws', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: new mongoose.Types.ObjectId().toString(), name: 'X' }]));
+        (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db down')));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(500);
+      });
     });
   });
 
