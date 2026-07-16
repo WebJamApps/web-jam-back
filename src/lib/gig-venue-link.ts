@@ -31,14 +31,49 @@ export interface LinkableVenue {
   name?: string;
 }
 
-// Lowercase + strip punctuation (keep letters/numbers/whitespace) + collapse
-// whitespace. `[^\p{L}\p{N}\s]` is a negated Unicode-property class — linear,
-// no nested quantifiers, safe from catastrophic backtracking despite the
-// generic slow-regex lint warning.
+// Prod `gig.venue` values come from a TinyMCE rich-text field, e.g.
+// `<p><a href="https://x.com/" target="_blank" rel="noopener">Slow Play
+// Brewing</a></p>` — sometimes with HTML entities (`&amp;`). Both must be
+// stripped/decoded BEFORE the punctuation/case normalization below, or the
+// exact-match never fires (web-jam-back#964: 0/135 prod gigs matched).
+// `<[^>]*>` is a negated-class quantifier — linear, no nested quantifiers,
+// safe from catastrophic backtracking despite the generic slow-regex lint
+// warning.
+// eslint-disable-next-line sonarjs/slow-regex
+const HTML_TAG_RE = /<[^>]*>/g;
+
+// Common named entities TinyMCE/browsers emit, plus numeric/hex entities
+// (&#39; / &#x27;). Decode named entities via a lookup table (no regex
+// alternation blowup); numeric entities via two small linear regexes, applied
+// first so a decoded `&#38;` doesn't get re-interpreted as the start of
+// another entity.
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+};
+const NAMED_ENTITY_RE = /&([a-zA-Z]+);/g;
+const NUMERIC_ENTITY_RE = /&#(\d+);/g;
+const HEX_ENTITY_RE = /&#x([0-9a-fA-F]+);/g;
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(HEX_ENTITY_RE, (_m, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(NUMERIC_ENTITY_RE, (_m, dec: string) => String.fromCodePoint(parseInt(dec, 10)))
+    .replace(NAMED_ENTITY_RE, (m, name: string) => NAMED_ENTITIES[name] ?? m);
+}
+
+// Strip HTML tags, decode entities, then lowercase + strip punctuation (keep
+// letters/numbers/whitespace) + collapse whitespace. `[^\p{L}\p{N}\s]` is a
+// negated Unicode-property class — linear, no nested quantifiers, safe from
+// catastrophic backtracking despite the generic slow-regex lint warning.
 // eslint-disable-next-line sonarjs/slow-regex
 const PUNCTUATION_RE = /[^\p{L}\p{N}\s]/gu;
 export function normalizeVenueName(name: string | undefined | null): string {
-  return (name || '')
+  return decodeHtmlEntities((name || '').replace(HTML_TAG_RE, ' '))
     .toLowerCase()
     .replace(PUNCTUATION_RE, '')
     .replace(/\s+/g, ' ')
