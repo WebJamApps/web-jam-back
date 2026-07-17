@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
