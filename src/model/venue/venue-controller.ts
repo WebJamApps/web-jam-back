@@ -10,6 +10,9 @@ import {
 } from '#src/lib/gig-venue-link.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s.@]+$/;
+// #972 — country is a 2-letter code (ISO 3166-1 alpha-2 style, e.g. 'US',
+// 'CA'); case-insensitive here since the schema uppercase-normalizes on save.
+const COUNTRY_RE = /^[A-Za-z]{2}$/;
 const VENUE_TYPES = ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'];
 const STATUS_OPTIONS = ['active', 'archived'];
 const BOOKING_STATUSES = ['booking', 'not-booking', 'booked'];
@@ -42,6 +45,11 @@ interface VenueBody {
   name?: string;
   city?: string;
   usState?: string;
+  // #972 — country (2-letter code, default 'US' at the schema level) + region
+  // (free-text state/province, for non-US venues). usState is kept as-is for
+  // US venues; region is its non-US counterpart.
+  country?: string;
+  region?: string;
   venueType?: string;
   contactName?: string;
   email?: string;
@@ -202,6 +210,9 @@ function validateBody(body: VenueBody, partial: boolean): string {
   if (invalidPriority(body.priority)) return 'priority must be a number 0-5';
   if (body.email !== undefined && body.email !== '' && !EMAIL_RE.test(String(body.email).trim().toLowerCase())) {
     return 'A valid email is required';
+  }
+  if (body.country !== undefined && body.country !== '' && !COUNTRY_RE.test(String(body.country).trim())) {
+    return 'country must be a 2-letter code';
   }
   return '';
 }
