@@ -73,6 +73,14 @@ const venueSchema = new Schema({
   name: { type: String, required: true, trim: true },
   city: { type: String, required: false, trim: true },
   usState: { type: String, required: false, trim: true },
+  // #972 — 2-letter country code (validated in venue-controller.ts), defaulting
+  // to 'US' since every venue on record today is US-based. `region` is optional
+  // free-text state/province for non-US venues; US venues keep using `usState`
+  // as-is (no migration of existing records — they all default cleanly).
+  country: {
+    type: String, required: false, trim: true, uppercase: true, default: 'US',
+  },
+  region: { type: String, required: false, trim: true },
   venueType: {
     type: String,
     required: false,

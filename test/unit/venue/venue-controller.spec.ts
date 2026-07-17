@@ -125,6 +125,30 @@ describe('Venue Controller', () => {
       expect(payload.message).toContain('valid email');
     });
 
+    // #972 — country (2-letter code, default 'US' at the schema level) + region
+    // (free-text, non-US state/province).
+    it('rejects an invalid country', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', country: 'USA' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('country');
+      await c.createVenue({ user: 'a', body: { name: 'X', country: '1' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('country');
+    });
+
+    it('accepts + passes through country + region (#972)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n2' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a', body: { name: 'The North Spot', country: 'ca', region: 'Ontario' },
+      }, resStub);
+      expect(status).toBe(201);
+      const arg = (create.mock.calls[0] as unknown[])[0] as any;
+      expect(arg.country).toBe('ca');
+      expect(arg.region).toBe('Ontario');
+    });
+
     it('creates a new venue when there is no duplicate', async () => {
       c.model.findOne = vi.fn(() => Promise.resolve(null));
       const create = vi.fn(() => Promise.resolve({ _id: 'new' }));
@@ -178,6 +202,25 @@ describe('Venue Controller', () => {
       await c.updateVenue({ user: 'agent', params: { id }, body: { notes: 'called them' } }, resStub);
       expect(status).toBe(200);
       expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ notes: 'called them', lastModifiedBy: 'agent' }));
+    });
+
+    // #972 — country/region accepted through the partial-merge PUT path too.
+    it('rejects an invalid country on update', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.updateVenue({ user: 'a', params: { id }, body: { country: 'usa' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('country');
+    });
+
+    it('accepts country + region on update (#972)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({
+        user: 'agent', params: { id }, body: { country: 'CA', region: 'Quebec' },
+      }, resStub);
+      expect(status).toBe(200);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ country: 'CA', region: 'Quebec' }));
     });
 
     // #923 — global outcome standing: doNotContact (permanent exclusion) + the
