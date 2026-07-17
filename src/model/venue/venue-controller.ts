@@ -49,7 +49,6 @@ interface VenueBody {
   website?: string;
   status?: string;
   outreachEligible?: boolean;
-  inScope?: boolean;
   bookingStatus?: string;
   interested?: boolean;
   payTier?: string;
@@ -244,11 +243,10 @@ class VenueController extends Controller {
     if (typeof query.venueType === 'string') filter.venueType = query.venueType;
     // Outreach targeting (#843): ?outreachEligible=true returns only vetted
     // venues — the pool #844's approval flow proposes from. The vetting tags
-    // below filter the candidate set further (in-scope, still booking, interested).
+    // below filter the candidate set further (still booking, interested).
+    // (`inScope` filter support was dropped with the field itself — #954.)
     if (query.outreachEligible === 'true') filter.outreachEligible = true;
     else if (query.outreachEligible === 'false') filter.outreachEligible = false;
-    if (query.inScope === 'true') filter.inScope = true;
-    else if (query.inScope === 'false') filter.inScope = false;
     if (typeof query.bookingStatus === 'string') filter.bookingStatus = query.bookingStatus;
     if (query.interested === 'true') filter.interested = true;
     else if (query.interested === 'false') filter.interested = false;

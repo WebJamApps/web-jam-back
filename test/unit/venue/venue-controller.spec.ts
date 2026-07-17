@@ -389,11 +389,18 @@ describe('Venue Controller', () => {
       expect(g).toMatchObject({ outreachEligible: false });
     });
 
-    it('filters by the vetting tags inScope / bookingStatus / interested (#843)', () => {
-      const f = (controller as any).constructor.buildListFilter({ inScope: 'true', bookingStatus: 'booking', interested: 'true' });
-      expect(f).toMatchObject({ inScope: true, bookingStatus: 'booking', interested: true });
-      const g = (controller as any).constructor.buildListFilter({ inScope: 'false', interested: 'false' });
-      expect(g).toMatchObject({ inScope: false, interested: false });
+    it('filters by the vetting tags bookingStatus / interested (#843)', () => {
+      const f = (controller as any).constructor.buildListFilter({ bookingStatus: 'booking', interested: 'true' });
+      expect(f).toMatchObject({ bookingStatus: 'booking', interested: true });
+      const g = (controller as any).constructor.buildListFilter({ interested: 'false' });
+      expect(g).toMatchObject({ interested: false });
+    });
+
+    // #954 — inScope was dropped entirely; ?inScope=... must no longer surface
+    // in the built filter (it's just an unrecognized query param now).
+    it('no longer supports an inScope filter (#954)', () => {
+      const f = (controller as any).constructor.buildListFilter({ inScope: 'true' });
+      expect(f).not.toHaveProperty('inScope');
     });
   });
 
@@ -411,11 +418,11 @@ describe('Venue Controller', () => {
       await c.createVenue({
         user: 'a',
         body: {
-          name: 'Olde Salem', inScope: true, bookingStatus: 'booked', interested: false, payTier: 'low', contactVerified: true,
+          name: 'Olde Salem', bookingStatus: 'booked', interested: false, payTier: 'low', contactVerified: true,
         },
       }, resStub);
       expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({
-        inScope: true, bookingStatus: 'booked', interested: false, payTier: 'low', contactVerified: true,
+        bookingStatus: 'booked', interested: false, payTier: 'low', contactVerified: true,
       });
     });
 
@@ -423,8 +430,8 @@ describe('Venue Controller', () => {
       const id = new mongoose.Types.ObjectId().toString();
       const upd = vi.fn(() => Promise.resolve({ _id: id }));
       c.model.findByIdAndUpdate = upd;
-      await c.updateVenue({ user: 'a', params: { id }, body: { inScope: false, interested: false } }, resStub);
-      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ inScope: false, interested: false }));
+      await c.updateVenue({ user: 'a', params: { id }, body: { interested: false } }, resStub);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ interested: false }));
     });
   });
 
