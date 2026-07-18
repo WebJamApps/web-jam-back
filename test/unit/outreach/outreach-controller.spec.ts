@@ -273,32 +273,49 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(rec.nextTouchDue).toBeInstanceOf(Date);
     });
 
-    // #974 — send-to-both: a venue with a secondaryEmail on file gets ONE
-    // send whose `to` covers both addresses, not two separate sends.
-    it('sends to BOTH primary and secondaryEmail when the venue has one (#974)', async () => {
+    // #974 (reshaped 2026-07-18 per Josh — secondary rides in Cc, not To): a
+    // venue with a secondaryEmail on file still gets ONE send, `to` is the
+    // primary ONLY, and the secondary is appended to the Cc list.
+    it('CCs secondaryEmail (never To) when the venue has one (#974)', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ secondaryEmail: 'chelsea@slowplaybrewing.com' })));
       await c.sendPitch({ user: 'josh', body: body() }, resStub);
       expect(status).toBe(201);
       expect(sendMail).toHaveBeenCalledTimes(1);
-      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com, chelsea@slowplaybrewing.com');
+      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com');
+      expect((sendMail as any).mock.calls[0][0].cc).toEqual([
+        'joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com', 'chelsea@slowplaybrewing.com',
+      ]);
     });
 
     // #974 — a malformed secondaryEmail (shouldn't happen given write-path
     // validation, but defense-in-depth) never blocks the send to the valid
-    // primary — it's just dropped from `to`.
-    it('falls back to just the primary when secondaryEmail is present but not a valid format (#974)', async () => {
+    // primary — it's just dropped from Cc, leaving the base Cc unchanged.
+    it('falls back to the base Cc (unchanged) when secondaryEmail is present but not a valid format (#974)', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ secondaryEmail: 'not-an-email' })));
       await c.sendPitch({ user: 'josh', body: body() }, resStub);
       expect(status).toBe(201);
       expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com');
+      expect((sendMail as any).mock.calls[0][0].cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
     });
 
-    it('sends to just the primary when there is no secondaryEmail', async () => {
+    it('sends to just the primary with the plain PITCH_CC when there is no secondaryEmail', async () => {
       asApprover();
       await c.sendPitch({ user: 'josh', body: body() }, resStub);
       expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com');
+      expect((sendMail as any).mock.calls[0][0].cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
+    });
+
+    // #974 — performSend honors a caller-supplied body.cc override; the
+    // secondary is appended to THAT base, not to PITCH_CC underneath it.
+    it('appends secondaryEmail to a caller-supplied body.cc override, not PITCH_CC (#974)', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ secondaryEmail: 'chelsea@slowplaybrewing.com' })));
+      await c.sendPitch({ user: 'josh', body: { ...body(), cc: ['someone-else@example.com'] } }, resStub);
+      expect(status).toBe(201);
+      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com');
+      expect((sendMail as any).mock.calls[0][0].cc).toEqual(['someone-else@example.com', 'chelsea@slowplaybrewing.com']);
     });
 
     it('an agent sends when auto-approve is ON', async () => {
@@ -1330,13 +1347,17 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(sendMail).not.toHaveBeenCalled();
     });
 
-    // #974 — send-to-both applies to follow-up touches too.
-    it('sends a follow-up to BOTH primary and secondaryEmail when the venue has one (#974)', async () => {
+    // #974 (reshaped 2026-07-18 — secondary rides in Cc, not To) — applies to
+    // follow-up touches too.
+    it('CCs secondaryEmail (never To) on a follow-up when the venue has one (#974)', async () => {
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ secondaryEmail: 'chelsea@slowplaybrewing.com' })));
       c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
       await c.advanceCadence({ user: 'a' }, resStub);
       expect(payload).toMatchObject({ processed: 1, sent: 1 });
-      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com, chelsea@slowplaybrewing.com');
+      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com');
+      expect((sendMail as any).mock.calls[0][0].cc).toEqual([
+        'joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com', 'chelsea@slowplaybrewing.com',
+      ]);
     });
 
     it('skips a record when its follow-up send fails', async () => {

@@ -295,17 +295,20 @@ function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody)
   return { subject, html, attachments };
 }
 
-// #974 — send-to-both: when a venue carries a secondaryEmail (and it looks
-// like a real address), every outreach email — pitch, batch, or follow-up
-// cadence touch — goes to BOTH the primary and secondary address in one send
-// (a comma-joined `to`, same message, not two separate sends). Falls back to
-// just the primary when there's no secondary, or when the secondary on file
-// doesn't validate (defense-in-depth; the venue write path already validates
-// format at save time). The caller is expected to have already confirmed the
-// PRIMARY is valid (the #974 sendability guard, see resolvePitch/doEmailTouch)
-// before this ever runs.
-function resolveRecipients(venue: VenueDoc): string {
-  return [venue.email, venue.secondaryEmail].filter((e) => isValidEmail(e)).join(', ');
+// #974 (reshaped 2026-07-18 per Josh — secondary goes in Cc, not To): every
+// outreach email — pitch, batch, or follow-up cadence touch — addresses `To`
+// to the primary `email` ONLY. When a venue carries a secondaryEmail (and it
+// looks like a real address), it's APPENDED to the Cc list instead — the base
+// Cc (either the caller's own `body.cc` override, or the default PITCH_CC) is
+// otherwise unchanged. Falls back to the base Cc unmodified when there's no
+// secondary, or when the secondary on file doesn't validate (defense-in-depth
+// — the venue write path already validates format at save time). The caller
+// is expected to have already confirmed the PRIMARY is valid (the #974
+// sendability guard, see resolvePitch/doEmailTouch) before this ever runs.
+function resolveCc(venue: VenueDoc, baseCc: string | string[]): string | string[] {
+  if (!isValidEmail(venue.secondaryEmail)) return baseCc;
+  const base = Array.isArray(baseCc) ? baseCc : [baseCc];
+  return [...base, venue.secondaryEmail as string];
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -715,7 +718,9 @@ class OutreachController extends Controller {
     const { subject, html, attachments } = buildPitchEmail(venue, template, body);
     let sent: { messageId: string };
     try {
-      sent = await sendMail({ to: resolveRecipients(venue), cc: body.cc || PITCH_CC, subject, html, attachments });
+      sent = await sendMail({
+        to: venue.email || '', cc: resolveCc(venue, body.cc || PITCH_CC), subject, html, attachments,
+      });
     } catch (e) { return { ok: false, status: 502, message: `email send failed: ${(e as Error).message}` }; }
 
     const sentAt = new Date();
@@ -1015,13 +1020,17 @@ class OutreachController extends Controller {
 
   // EMAIL touch: send the follow-up nudge and record it. Skips a venue with no
   // VALID primary address (#974 sendability guard — the pitch needs a real
-  // inbox; a call touch does not). Sends to secondaryEmail too when present
-  // (#974 send-to-both, resolveRecipients).
+  // inbox; a call touch does not). CCs secondaryEmail too when present (#974,
+  // resolveCc — reshaped 2026-07-18: secondary rides in Cc, never To).
   async doEmailTouch(o: OutreachDoc, venue: VenueDoc, touchNum: number): Promise<'sent' | 'skipped'> {
     if (!isValidEmail(venue.email)) return 'skipped';
     const { subject, html, attachments } = buildFollowUpEmail(venue, o);
     let sent: { messageId: string };
-    try { sent = await sendMail({ to: resolveRecipients(venue), cc: PITCH_CC, subject, html, attachments }); } catch { return 'skipped'; }
+    try {
+      sent = await sendMail({
+        to: venue.email || '', cc: resolveCc(venue, PITCH_CC), subject, html, attachments,
+      });
+    } catch { return 'skipped'; }
     const ok = await this.recordTouch(o, touchNum, { sentAt: new Date(), type: 'email', messageId: sent.messageId, step: touchNum });
     return ok ? 'sent' : 'skipped';
   }
