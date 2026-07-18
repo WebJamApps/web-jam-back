@@ -125,6 +125,35 @@ describe('Venue Controller', () => {
       expect(payload.message).toContain('valid email');
     });
 
+    // #974 — secondaryEmail: optional second booking contact, validated the
+    // same way as the primary when present.
+    it('rejects an invalid secondaryEmail', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', email: 'a@b.com', secondaryEmail: 'nope' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('valid secondary email');
+    });
+
+    it('accepts + passes through a valid secondaryEmail alongside the primary (#974)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n3' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a', body: { name: 'Slow Play Brewing', email: 'info@slowplaybrewing.com', secondaryEmail: 'chelsea@slowplaybrewing.com' },
+      }, resStub);
+      expect(status).toBe(201);
+      const arg = (create.mock.calls[0] as unknown[])[0] as any;
+      expect(arg.email).toBe('info@slowplaybrewing.com');
+      expect(arg.secondaryEmail).toBe('chelsea@slowplaybrewing.com');
+    });
+
+    it('allows an empty-string secondaryEmail (unset, not an error)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n4' }));
+      c.model.create = create;
+      await c.createVenue({ user: 'a', body: { name: 'X', secondaryEmail: '' } }, resStub);
+      expect(status).toBe(201);
+    });
+
     // #972 — country (2-letter code, default 'US' at the schema level) + region
     // (free-text, non-US state/province).
     it('rejects an invalid country', async () => {
@@ -461,11 +490,11 @@ describe('Venue Controller', () => {
       await c.createVenue({
         user: 'a',
         body: {
-          name: 'Olde Salem', bookingStatus: 'booked', interested: false, payTier: 'low', contactVerified: true,
+          name: 'Olde Salem', bookingStatus: 'booked', interested: false, payTier: 'low',
         },
       }, resStub);
       expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({
-        bookingStatus: 'booked', interested: false, payTier: 'low', contactVerified: true,
+        bookingStatus: 'booked', interested: false, payTier: 'low',
       });
     });
 

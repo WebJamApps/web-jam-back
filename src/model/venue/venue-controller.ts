@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import Controller from '#src/lib/controller.js';
 import { Icontroller } from '#src/lib/routeUtils.js';
+import { isValidEmail } from '#src/lib/email.js';
 import venueModel from './venue-facade.js';
 import userModel from '../user/user-facade.js';
 import gigModel from '../gig/gig-facade.js';
@@ -9,7 +10,6 @@ import {
   JOSH_GIGS_FILTER, groupGigsByVenue, type LinkableGig, type LinkableVenue,
 } from '#src/lib/gig-venue-link.js';
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s.@]+$/;
 // #972 — country is a 2-letter code (ISO 3166-1 alpha-2 style, e.g. 'US',
 // 'CA'); case-insensitive here since the schema uppercase-normalizes on save.
 const COUNTRY_RE = /^[A-Za-z]{2}$/;
@@ -52,7 +52,11 @@ interface VenueBody {
   region?: string;
   venueType?: string;
   contactName?: string;
+  // #974 — email is the primary/canonical contact address; secondaryEmail is
+  // an optional second booking contact (some venues have two — e.g. Slow Play
+  // Brewing). Both validated as proper emails (validateBody below).
   email?: string;
+  secondaryEmail?: string;
   phone?: string;
   website?: string;
   status?: string;
@@ -61,7 +65,6 @@ interface VenueBody {
   interested?: boolean;
   payTier?: string;
   lastVerified?: string;
-  contactVerified?: boolean;
   notes?: string;
   relationshipStage?: string;
   templateOverride?: string;
@@ -208,8 +211,13 @@ function validateBody(body: VenueBody, partial: boolean): string {
   const enumErr = invalidEnum(body);
   if (enumErr) return enumErr;
   if (invalidPriority(body.priority)) return 'priority must be a number 0-5';
-  if (body.email !== undefined && body.email !== '' && !EMAIL_RE.test(String(body.email).trim().toLowerCase())) {
+  if (body.email !== undefined && body.email !== '' && !isValidEmail(body.email)) {
     return 'A valid email is required';
+  }
+  // #974 — secondaryEmail is optional, but when present must be a proper
+  // email too (same rule as the primary).
+  if (body.secondaryEmail !== undefined && body.secondaryEmail !== '' && !isValidEmail(body.secondaryEmail)) {
+    return 'A valid secondary email is required';
   }
   if (body.country !== undefined && body.country !== '' && !COUNTRY_RE.test(String(body.country).trim())) {
     return 'country must be a 2-letter code';
