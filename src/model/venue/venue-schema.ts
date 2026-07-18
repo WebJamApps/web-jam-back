@@ -87,7 +87,19 @@ const venueSchema = new Schema({
     enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'],
   },
   contactName: { type: String, required: false, trim: true },
+  // Primary/canonical booking contact address (#974). Existing records already
+  // populate this — no data move on the #974 rename-in-place. Format is
+  // validated in venue-controller.ts (EMAIL_RE, shared with secondaryEmail
+  // below via src/lib/email.ts), same convention as before #974.
   email: {
+    type: String, required: false, lowercase: true, trim: true,
+  },
+  // Second booking contact address (#974) — some venues have two contacts
+  // (e.g. Slow Play Brewing: info@ + chelsea@). Optional; when present, every
+  // outreach send (pitch/batch/follow-up) goes to BOTH `email` and
+  // `secondaryEmail`, never secondaryEmail alone. Same format validation as
+  // `email`.
+  secondaryEmail: {
     type: String, required: false, lowercase: true, trim: true,
   },
   phone: { type: String, required: false, trim: true },
@@ -108,8 +120,14 @@ const venueSchema = new Schema({
   //   management that stopped (Radford); `booked` = currently full (Olde Salem).
   // - interested: false = not worth pursuing (pay too low / declined — Harrisonburg).
   // - payTier: free-text pay note. lastVerified: when the info was last checked
-  //   (stale venues get re-verified). contactVerified: is the contact confirmed
-  //   correct (Olde Salem went to the wrong person).
+  //   (stale venues get re-verified; its own fate is still open, unresolved by
+  //   #974).
+  //
+  // `contactVerified` (was: has a human confirmed this contact is correct?)
+  // was dropped (#974, 2026-07-18) — a valid, present primary `email` IS the
+  // verification now (see the #974 sendability guard in outreach-controller.ts),
+  // so the separate manual flag was redundant. See migrate-drop-contact-
+  // verified.ts for the one-time backfill.
   //
   // `inScope` (was: is this a gig-booking venue at all?) was dropped (#954,
   // 2026-07-16) — it read as a duplicate of `outreachEligible` and Josh only
@@ -122,7 +140,6 @@ const venueSchema = new Schema({
   interested: { type: Boolean, required: false, default: true },
   payTier: { type: String, required: false, trim: true },
   lastVerified: { type: Date, required: false },
-  contactVerified: { type: Boolean, required: false, default: false },
   notes: { type: String, required: false },
   // Template-selection inputs (#848). `relationshipStage` overrides the
   // auto-derived cold/returning stage when set; left unset = auto-derive
