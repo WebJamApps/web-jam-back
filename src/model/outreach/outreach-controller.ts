@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import Controller from '#src/lib/controller.js';
 import { Icontroller } from '#src/lib/routeUtils.js';
 import { sendMail } from '#src/lib/mailer.js';
+import { EMAIL_RE, isValidEmail } from '#src/lib/email.js';
 import { createCallTaskEvent } from '#src/lib/calendar.js';
 import { findReplies } from '#src/lib/imap-replies.js';
 import { classifyReply } from '#src/lib/classify-reply.js';
@@ -93,8 +94,8 @@ interface ConfigBody { autoApprove?: boolean; actor?: string }
 interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 
 interface VenueDoc {
-  _id?: unknown; name?: string; email?: string; contactName?: string; phone?: string;
-  venueType?: string; status?: string; outreachEligible?: boolean; contactVerified?: boolean;
+  _id?: unknown; name?: string; email?: string; secondaryEmail?: string; contactName?: string; phone?: string;
+  venueType?: string; status?: string; outreachEligible?: boolean;
   bookingStatus?: string; relationshipStage?: string; templateOverride?: string;
 }
 // introHtml (#903) is the template's addressable intro (greeting + opening
@@ -292,6 +293,19 @@ function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody)
     attachments.push({ filename: 'josh-maria.jpg', path: assetPath, cid: 'footerphoto' });
   }
   return { subject, html, attachments };
+}
+
+// #974 — send-to-both: when a venue carries a secondaryEmail (and it looks
+// like a real address), every outreach email — pitch, batch, or follow-up
+// cadence touch — goes to BOTH the primary and secondary address in one send
+// (a comma-joined `to`, same message, not two separate sends). Falls back to
+// just the primary when there's no secondary, or when the secondary on file
+// doesn't validate (defense-in-depth; the venue write path already validates
+// format at save time). The caller is expected to have already confirmed the
+// PRIMARY is valid (the #974 sendability guard, see resolvePitch/doEmailTouch)
+// before this ever runs.
+function resolveRecipients(venue: VenueDoc): string {
+  return [venue.email, venue.secondaryEmail].filter((e) => isValidEmail(e)).join(', ');
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -665,7 +679,12 @@ class OutreachController extends Controller {
     if (requireEligible && !venue.outreachEligible) {
       return { error: { status: 400, message: 'venue is not outreach-eligible (not vetted)' } };
     }
-    if (!venue.email) return { error: { status: 400, message: 'venue has no email to pitch' } };
+    // #974 — sendability precondition, ADDITIONAL to (never a replacement for)
+    // the outreachEligible vetting gate just above: a venue with no VALID
+    // primary email is never sendable. Format-checked, not just presence —
+    // `contactVerified` is gone; a real, present primary email IS the
+    // verification now.
+    if (!isValidEmail(venue.email)) return { error: { status: 400, message: 'venue has no valid primary email to pitch' } };
 
     // Dedup guard first — refuse a duplicate before doing template work.
     if (!skipDedup) {
@@ -696,7 +715,7 @@ class OutreachController extends Controller {
     const { subject, html, attachments } = buildPitchEmail(venue, template, body);
     let sent: { messageId: string };
     try {
-      sent = await sendMail({ to: venue.email || '', cc: body.cc || PITCH_CC, subject, html, attachments });
+      sent = await sendMail({ to: resolveRecipients(venue), cc: body.cc || PITCH_CC, subject, html, attachments });
     } catch (e) { return { ok: false, status: 502, message: `email send failed: ${(e as Error).message}` }; }
 
     const sentAt = new Date();
@@ -848,8 +867,15 @@ class OutreachController extends Controller {
     try {
       // #923 — doNotContact is a permanent global exclusion (set by a
       // not-interested outcome), on top of the existing outreachEligible gate.
+      // #974 — the email clause is now format-checked ($regex EMAIL_RE), not
+      // just non-empty ($nin): a venue with no VALID primary email is not
+      // sendable, so it must never be offered as a candidate either. This is
+      // ADDITIONAL to (never a replacement for) outreachEligible above.
       venues = await venueModel.find({
-        outreachEligible: true, status: { $ne: 'archived' }, email: { $nin: [null, ''] }, doNotContact: { $ne: true },
+        outreachEligible: true,
+        status: { $ne: 'archived' },
+        email: { $nin: [null, ''], $regex: EMAIL_RE },
+        doNotContact: { $ne: true },
       });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
 
@@ -988,12 +1014,14 @@ class OutreachController extends Controller {
   }
 
   // EMAIL touch: send the follow-up nudge and record it. Skips a venue with no
-  // address (the pitch needs an inbox; a call touch does not).
+  // VALID primary address (#974 sendability guard — the pitch needs a real
+  // inbox; a call touch does not). Sends to secondaryEmail too when present
+  // (#974 send-to-both, resolveRecipients).
   async doEmailTouch(o: OutreachDoc, venue: VenueDoc, touchNum: number): Promise<'sent' | 'skipped'> {
-    if (!venue.email) return 'skipped';
+    if (!isValidEmail(venue.email)) return 'skipped';
     const { subject, html, attachments } = buildFollowUpEmail(venue, o);
     let sent: { messageId: string };
-    try { sent = await sendMail({ to: venue.email, cc: PITCH_CC, subject, html, attachments }); } catch { return 'skipped'; }
+    try { sent = await sendMail({ to: resolveRecipients(venue), cc: PITCH_CC, subject, html, attachments }); } catch { return 'skipped'; }
     const ok = await this.recordTouch(o, touchNum, { sentAt: new Date(), type: 'email', messageId: sent.messageId, step: touchNum });
     return ok ? 'sent' : 'skipped';
   }
@@ -1081,8 +1109,8 @@ class OutreachController extends Controller {
   }
 
   // Action one matched BOUNCE (#825 auto-flag): the venue's address is dead, so
-  // auto-flag the venue (contactVerified: false, outreachEligible: false — it can
-  // never be selected for a future batch) and halt this outreach record
+  // auto-flag the venue (outreachEligible: false — it can never be selected for
+  // a future batch until a human re-vets it) and halt this outreach record
   // (no-response, nextTouchDue: null — cadence never follows up on a dead
   // address). Entirely deterministic (the caller only reaches here off
   // isAutoOrBounce/isBounce, no AI judgment): unlike recordReply, this NEVER
@@ -1090,10 +1118,16 @@ class OutreachController extends Controller {
   // no apply-suggestion review step for a bounce. The venue write is best-effort
   // (swallowed) so a venue-write hiccup can't stop the more critical cadence
   // halt below.
+  //
+  // #974 — this used to also set `contactVerified: false` (the manual flag
+  // dropped by #974). It didn't need replacing here: outreachEligible:false
+  // already disqualifies the venue from every send path immediately, and
+  // isBounceStillPending below now keys its auto-clear off outreachEligible
+  // instead of contactVerified (see that function's comment).
   async recordBounce(o: OutreachDoc, match: { repliedAt: Date; snippet: string; gmailThreadId?: string }): Promise<void> {
     try {
       await venueModel.findByIdAndUpdate(String(o.venueId), {
-        contactVerified: false, outreachEligible: false, lastModifiedBy: 'reply-detection',
+        outreachEligible: false, lastModifiedBy: 'reply-detection',
       });
     } catch { /* best-effort: the outreach halt below is the critical write */ }
     const update: Record<string, unknown> = {
@@ -1146,14 +1180,23 @@ class OutreachController extends Controller {
   // Is a bounce item still pending? (#825 option B, decision 2026-07-02 — bounce
   // items AUTO-CLEAR from venue state; there is no dismiss button.) A bounce
   // stays in the queue only while its venue still needs attention: it drops out
-  // once the venue is archived, re-verified (contactVerified true — Josh fixed
-  // the address), or deleted. A venue-lookup failure keeps the item pending —
-  // never hide an unresolved bounce because of a transient read error.
+  // once the venue is archived, re-vetted, or deleted. A venue-lookup failure
+  // keeps the item pending — never hide an unresolved bounce because of a
+  // transient read error.
+  //
+  // #974 — "re-vetted" used to mean `contactVerified: true` (a dedicated
+  // manual flag, now dropped — a valid present email IS the verification).
+  // recordBounce above already flips outreachEligible:false the moment a
+  // bounce lands, and Josh (or an agent) already has to flip it back true to
+  // put the venue back in the outreach pool at all (the outreachEligible
+  // gate) — so reusing that existing signal here means fixing the address and
+  // re-vetting the venue is the SAME action that clears the bounce item, with
+  // no new field needed.
   async isBounceStillPending(venueId: string): Promise<boolean> { // eslint-disable-line class-methods-use-this
     let venue: VenueDoc | null;
     try { venue = await venueModel.findById(venueId) as unknown as VenueDoc | null; } catch { return true; }
     if (!venue || venue.status === 'archived') return false;
-    return !venue.contactVerified;
+    return !venue.outreachEligible;
   }
 
   // GET /outreach/replies/pending — the AdminVenues "replies to review" queue:

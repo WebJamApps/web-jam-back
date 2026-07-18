@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
+import { EMAIL_RE } from '#src/lib/email.js';
 
 const sendMail = vi.fn(() => Promise.resolve({ messageId: 'mid-123' }));
 vi.mock('#src/lib/mailer.js', () => ({
@@ -178,7 +179,20 @@ describe('Outreach Controller (#844 batch model)', () => {
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ email: '' })));
       await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(400);
-      expect(payload.message).toContain('no email');
+      expect(payload.message).toContain('no valid primary email');
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    // #974 — sendability precondition is FORMAT-checked, not just presence: a
+    // venue with a garbage-looking primary email is just as unsendable as one
+    // with none at all. Additional to (not a replacement for) outreachEligible.
+    it('400s when the venue email is present but not a valid format (#974)', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ email: 'not-an-email' })));
+      await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('no valid primary email');
+      expect(sendMail).not.toHaveBeenCalled();
     });
 
     it('400s when no template type can be resolved', async () => {
@@ -257,6 +271,34 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(rec.status).toBe('sent');
       expect(rec.step).toBe(1);
       expect(rec.nextTouchDue).toBeInstanceOf(Date);
+    });
+
+    // #974 — send-to-both: a venue with a secondaryEmail on file gets ONE
+    // send whose `to` covers both addresses, not two separate sends.
+    it('sends to BOTH primary and secondaryEmail when the venue has one (#974)', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ secondaryEmail: 'chelsea@slowplaybrewing.com' })));
+      await c.sendPitch({ user: 'josh', body: body() }, resStub);
+      expect(status).toBe(201);
+      expect(sendMail).toHaveBeenCalledTimes(1);
+      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com, chelsea@slowplaybrewing.com');
+    });
+
+    // #974 — a malformed secondaryEmail (shouldn't happen given write-path
+    // validation, but defense-in-depth) never blocks the send to the valid
+    // primary — it's just dropped from `to`.
+    it('falls back to just the primary when secondaryEmail is present but not a valid format (#974)', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ secondaryEmail: 'not-an-email' })));
+      await c.sendPitch({ user: 'josh', body: body() }, resStub);
+      expect(status).toBe(201);
+      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com');
+    });
+
+    it('sends to just the primary when there is no secondaryEmail', async () => {
+      asApprover();
+      await c.sendPitch({ user: 'josh', body: body() }, resStub);
+      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com');
     });
 
     it('an agent sends when auto-approve is ON', async () => {
@@ -534,6 +576,20 @@ describe('Outreach Controller (#844 batch model)', () => {
       await c.getCandidates({ user: 'a', query: {} }, resStub);
       expect(status).toBe(200);
       expect((venueModel as any).find).toHaveBeenCalledWith(expect.objectContaining({ doNotContact: { $ne: true } }));
+    });
+
+    // #974 — the sendability precondition (no VALID primary email = not
+    // sendable) is enforced at the query level too, ADDITIONAL to (not a
+    // replacement for) the outreachEligible clause asserted above: not just
+    // "has an email" ($nin) but "looks like a real one" ($regex EMAIL_RE).
+    it('requires a format-valid primary email in the query, not just non-empty (#974)', async () => {
+      (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+      await c.getCandidates({ user: 'a', query: {} }, resStub);
+      expect(status).toBe(200);
+      const callArg = (venueModel as any).find.mock.calls[0][0];
+      expect(callArg.email).toEqual({ $nin: [null, ''], $regex: EMAIL_RE });
+      // still gated on outreachEligible too — this is additive, not a swap.
+      expect(callArg.outreachEligible).toBe(true);
     });
 
     // #958 — a targetWeekend request wraps the response in { candidates,
@@ -1264,6 +1320,25 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(sendMail).not.toHaveBeenCalled();
     });
 
+    // #974 — the sendability guard applies to the cadence too: an
+    // invalid-format primary (not just an empty one) skips the touch.
+    it('skips an EMAIL touch when its venue primary email is not a valid format (#974)', async () => {
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ email: 'not-an-email' })));
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, skipped: 1, sent: 0 });
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    // #974 — send-to-both applies to follow-up touches too.
+    it('sends a follow-up to BOTH primary and secondaryEmail when the venue has one (#974)', async () => {
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ secondaryEmail: 'chelsea@slowplaybrewing.com' })));
+      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
+      await c.advanceCadence({ user: 'a' }, resStub);
+      expect(payload).toMatchObject({ processed: 1, sent: 1 });
+      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com, chelsea@slowplaybrewing.com');
+    });
+
     it('skips a record when its follow-up send fails', async () => {
       sendMail.mockRejectedValueOnce(new Error('smtp down'));
       c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
@@ -1374,9 +1449,13 @@ describe('Outreach Controller (#844 batch model)', () => {
         await c.checkReplies({ user: 'a' }, resStub);
         expect(payload).toEqual({ checked: 1, matched: 1, classified: 0, bounced: 1 });
         expect(classifyReply).not.toHaveBeenCalled();
+        // #974 — contactVerified is gone; the bounce auto-flag now relies
+        // solely on outreachEligible:false (also asserts the dropped field is
+        // no longer written at all).
         expect(venueModel.findByIdAndUpdate).toHaveBeenCalledWith('v1', expect.objectContaining({
-          contactVerified: false, outreachEligible: false,
+          outreachEligible: false,
         }));
+        expect((venueModel.findByIdAndUpdate as any).mock.calls[0][1]).not.toHaveProperty('contactVerified');
         expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith('o1', expect.objectContaining({
           status: 'no-response', nextTouchDue: null, replyKind: 'bounce',
           replySnippet: 'Delivery failure notice.', gmailThreadId: 't9',
@@ -1427,10 +1506,13 @@ describe('Outreach Controller (#844 batch model)', () => {
         });
       });
 
-      it('surfaces a bounce record while its venue still needs attention (active, not re-verified)', async () => {
+      // #974 — "not re-verified" now means outreachEligible is still false
+      // (contactVerified is gone); recordBounce flips it false the moment a
+      // bounce lands, so a venue that hasn't been re-vetted since stays pending.
+      it('surfaces a bounce record while its venue still needs attention (active, not re-vetted)', async () => {
         const recs = [{ _id: 'o1', venueId: 'v1', status: 'no-response', replyKind: 'bounce' }];
         c.model.find = vi.fn(() => Promise.resolve(recs));
-        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ contactVerified: false })));
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ outreachEligible: false })));
         await c.listPendingReplies({ user: 'a' }, resStub);
         expect(status).toBe(200);
         expect(payload).toEqual(recs);
@@ -1446,9 +1528,13 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(payload).toEqual([]);
       });
 
-      it('auto-clears a bounce item once its venue is re-verified (contactVerified true)', async () => {
+      // #974 — "re-verified" is now "re-vetted" (outreachEligible flipped back
+      // true) since contactVerified is gone; fixing the address and re-vetting
+      // the venue is the SAME action Josh already has to take to put it back
+      // in the outreach pool at all.
+      it('auto-clears a bounce item once its venue is re-vetted (outreachEligible true again, #974)', async () => {
         c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', replyKind: 'bounce' }]));
-        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ contactVerified: true })));
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ outreachEligible: true })));
         await c.listPendingReplies({ user: 'a' }, resStub);
         expect(status).toBe(200);
         expect(payload).toEqual([]);
