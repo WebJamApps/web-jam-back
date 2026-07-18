@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import controller from '#src/model/venue/venue-controller.js';
 import userModel from '#src/model/user/user-facade.js';
 import gigModel from '#src/model/gig/gig-facade.js';
+import venueModel from '#src/model/venue/venue-facade.js';
 
 const c = controller as any;
 
@@ -252,18 +253,91 @@ describe('Venue Controller', () => {
       expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ country: 'CA', region: 'Quebec' }));
     });
 
-    // #923 — global outcome standing: doNotContact (permanent exclusion) + the
-    // actual booked gig date, both written by the future outcome-recording
-    // endpoint (#898) but pass through updateVenue like any other field today.
-    it('accepts doNotContact + bookedDate (#923)', async () => {
+    // #923 — bookedDate (the actual booked gig date, written by the outcome-
+    // recording endpoint #898) passes through updateVenue like any other field.
+    it('accepts bookedDate (#923)', async () => {
       const id = new mongoose.Types.ObjectId().toString();
       const upd = vi.fn(() => Promise.resolve({ _id: id }));
       c.model.findByIdAndUpdate = upd;
       await c.updateVenue({
-        user: 'agent', params: { id }, body: { doNotContact: true, bookedDate: '2026-09-26' },
+        user: 'agent', params: { id }, body: { bookedDate: '2026-09-26' },
       }, resStub);
       expect(status).toBe(200);
-      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ doNotContact: true, bookedDate: '2026-09-26' }));
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ bookedDate: '2026-09-26' }));
+    });
+
+    // #980 — doNotContact was deleted entirely (folded into outreachEligible).
+    // A stale client that still sends it must not error and must not have it
+    // written — silently stripped, like _id.
+    it('strips a stray doNotContact from the body instead of writing or erroring (#980)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({
+        user: 'agent', params: { id }, body: { doNotContact: true, outreachEligible: false },
+      }, resStub);
+      expect(status).toBe(200);
+      const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+      expect(written).not.toHaveProperty('doNotContact');
+      expect(written).toMatchObject({ outreachEligible: false });
+    });
+
+    // #980 — bookingStatus is derived/read-only now: a stray value in the
+    // body must be stripped (never written, never validated/rejected).
+    it('strips a stray bookingStatus from the body instead of writing or erroring (#980)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({
+        user: 'agent', params: { id }, body: { bookingStatus: 'booked', notes: 'x' },
+      }, resStub);
+      expect(status).toBe(200);
+      const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+      expect(written).not.toHaveProperty('bookingStatus');
+      expect(written).toMatchObject({ notes: 'x' });
+    });
+
+    // #980 — gigInterval (spacing, months) + resumeBooking (cooldown date).
+    describe('gigInterval / resumeBooking (#980)', () => {
+      it('accepts gigInterval + resumeBooking on update', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({
+          user: 'agent', params: { id }, body: { gigInterval: 4, resumeBooking: '2026-11-01' },
+        }, resStub);
+        expect(status).toBe(200);
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ gigInterval: 4, resumeBooking: '2026-11-01' }));
+      });
+
+      it('rejects a negative gigInterval', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        await c.updateVenue({ user: 'agent', params: { id }, body: { gigInterval: -1 } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('gigInterval');
+      });
+
+      it('rejects a non-integer gigInterval', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        await c.updateVenue({ user: 'agent', params: { id }, body: { gigInterval: 2.5 } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('gigInterval');
+      });
+
+      it('accepts gigInterval: 0 (spacing off, the default)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { gigInterval: 0 } }, resStub);
+        expect(status).toBe(200);
+      });
+
+      it('rejects an invalid resumeBooking date', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        await c.updateVenue({ user: 'agent', params: { id }, body: { resumeBooking: 'not-a-date' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('resumeBooking');
+      });
     });
   });
 
@@ -442,6 +516,110 @@ describe('Venue Controller', () => {
         expect(status).toBe(500);
       });
     });
+
+    // #980 — derived, read-only bookingStatus: booked (upcoming linked gig) >
+    // not-booking (active resumeBooking cooldown) > booking (otherwise).
+    // Unit-tests the static helper directly (each branch + the precedence),
+    // then confirms it's actually wired into the listVenues/getVenue payload.
+    describe('computeBookingStatus (#980)', () => {
+      const compute = (venue: any, hasUpcomingGig: boolean, now: number) => (
+        (controller as any).constructor.computeBookingStatus(venue, hasUpcomingGig, now));
+
+      it('booked — has an upcoming linked gig, regardless of anything else', () => {
+        const now = Date.now();
+        expect(compute({ resumeBooking: new Date(now + 1e9) }, true, now)).toBe('booked');
+      });
+
+      it('not-booking — an active (future) resumeBooking cooldown, no upcoming gig', () => {
+        const now = Date.now();
+        expect(compute({ resumeBooking: new Date(now + 1e9).toISOString() }, false, now)).toBe('not-booking');
+      });
+
+      it('booking — no upcoming gig, no active cooldown (default/open)', () => {
+        const now = Date.now();
+        expect(compute({}, false, now)).toBe('booking');
+      });
+
+      it('booking — resumeBooking already in the past does not count as active', () => {
+        const now = Date.now();
+        expect(compute({ resumeBooking: new Date(now - 1e9).toISOString() }, false, now)).toBe('booking');
+      });
+
+      it('booking — an invalid resumeBooking value is ignored, not treated as active', () => {
+        const now = Date.now();
+        expect(compute({ resumeBooking: 'not-a-date' }, false, now)).toBe('booking');
+      });
+
+      it('precedence: booked wins over an active resumeBooking cooldown', () => {
+        const now = Date.now();
+        expect(compute({ resumeBooking: new Date(now + 1e9) }, true, now)).toBe('booked');
+      });
+
+      it('is wired into listVenues: booked when there is an upcoming linked gig', async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'Booked Venue' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: idA, datetime: new Date(Date.now() + 86400000).toISOString() },
+        ]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(payload[0].bookingStatus).toBe('booked');
+      });
+
+      it('is wired into listVenues: not-booking with an active resumeBooking, no upcoming gig', async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([
+          { _id: idA, name: 'Paused Venue', resumeBooking: new Date(Date.now() + 1e10).toISOString() },
+        ]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(payload[0].bookingStatus).toBe('not-booking');
+      });
+
+      it('is wired into listVenues: booking otherwise', async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'Open Venue' }]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(payload[0].bookingStatus).toBe('booking');
+      });
+
+      it('overrides a stale stored bookingStatus with the computed value', async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'Stale Venue', bookingStatus: 'booked' }]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(payload[0].bookingStatus).toBe('booking');
+      });
+    });
+  });
+
+  describe('listCities — GET /venue/cities (#980)', () => {
+    // Reassign just `Schema.distinct` (not the whole Schema object — the
+    // real Model also carries `.collection`, which the migration scripts'
+    // tests rely on and which this repo's other spec files share via the
+    // same facade singleton, fileParallelism:false) and restore it after
+    // each test so nothing leaks into other spec files.
+    let originalDistinct: typeof venueModel.Schema.distinct;
+    beforeEach(() => { originalDistinct = venueModel.Schema.distinct; });
+    afterEach(() => { venueModel.Schema.distinct = originalDistinct; });
+
+    it('403s without a venue capability', async () => {
+      asAgent([]);
+      await c.listCities({ user: 'a', query: {} }, resStub);
+      expect(status).toBe(403);
+    });
+
+    it('returns distinct non-empty cities, sorted', async () => {
+      const distinctSpy = vi.fn(() => Promise.resolve(['Roanoke', '', 'Salem', null, 'Blacksburg']));
+      (venueModel.Schema as any).distinct = distinctSpy;
+      await c.listCities({ user: 'a', query: {} }, resStub);
+      expect(status).toBe(200);
+      expect(distinctSpy).toHaveBeenCalledWith('city', { city: { $nin: [null, ''] } });
+      expect(payload).toEqual(['Blacksburg', 'Roanoke', 'Salem']);
+    });
+
+    it('500s when the distinct query throws', async () => {
+      (venueModel.Schema as any).distinct = vi.fn(() => Promise.reject(new Error('db down')));
+      await c.listCities({ user: 'a', query: {} }, resStub);
+      expect(status).toBe(500);
+    });
   });
 
   describe('buildListFilter', () => {
@@ -461,9 +639,9 @@ describe('Venue Controller', () => {
       expect(g).toMatchObject({ outreachEligible: false });
     });
 
-    it('filters by the vetting tags bookingStatus / interested (#843)', () => {
-      const f = (controller as any).constructor.buildListFilter({ bookingStatus: 'booking', interested: 'true' });
-      expect(f).toMatchObject({ bookingStatus: 'booking', interested: true });
+    it('filters by the vetting tag interested (#843)', () => {
+      const f = (controller as any).constructor.buildListFilter({ interested: 'true' });
+      expect(f).toMatchObject({ interested: true });
       const g = (controller as any).constructor.buildListFilter({ interested: 'false' });
       expect(g).toMatchObject({ interested: false });
     });
@@ -474,13 +652,26 @@ describe('Venue Controller', () => {
       const f = (controller as any).constructor.buildListFilter({ inScope: 'true' });
       expect(f).not.toHaveProperty('inScope');
     });
+
+    // #980 — bookingStatus is derived/read-only now; a stored-field Mongo
+    // filter is no longer reliable, so it's no longer built into the query.
+    it('no longer supports a bookingStatus filter (#980)', () => {
+      const f = (controller as any).constructor.buildListFilter({ bookingStatus: 'booking' });
+      expect(f).not.toHaveProperty('bookingStatus');
+    });
   });
 
   describe('vetting tags (#843)', () => {
-    it('rejects an invalid bookingStatus', async () => {
+    // #980 — bookingStatus is no longer validated (it's derived/read-only —
+    // stripped before validateBody ever sees it), so an invalid value is
+    // silently ignored rather than rejected.
+    it('silently strips an invalid bookingStatus instead of rejecting it (#980)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const create = vi.fn(() => Promise.resolve({ _id: 'v11' }));
+      c.model.create = create;
       await c.createVenue({ user: 'a', body: { name: 'X', bookingStatus: 'bogus' } }, resStub);
-      expect(status).toBe(400);
-      expect(payload.message).toContain('bookingStatus');
+      expect(status).toBe(201);
+      expect((create.mock.calls[0] as unknown[])[0]).not.toHaveProperty('bookingStatus');
     });
 
     it('persists the vetting tags on create', async () => {
@@ -490,11 +681,11 @@ describe('Venue Controller', () => {
       await c.createVenue({
         user: 'a',
         body: {
-          name: 'Olde Salem', bookingStatus: 'booked', interested: false, payTier: 'low',
+          name: 'Olde Salem', interested: false, payTier: 'low',
         },
       }, resStub);
       expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({
-        bookingStatus: 'booked', interested: false, payTier: 'low',
+        interested: false, payTier: 'low',
       });
     });
 

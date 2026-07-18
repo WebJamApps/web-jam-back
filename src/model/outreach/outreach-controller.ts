@@ -483,6 +483,33 @@ class OutreachController extends Controller {
     } catch { /* best-effort */ }
   }
 
+  // #980 — append a dated, human-readable line to the venue's free-text
+  // `notes` field (the field the AdminVenues UI's "Notes" textarea reads/
+  // writes — see JaMmusic EditVenueDialog.tsx). APPEND, never overwrite: a
+  // single atomic pipeline update referencing the document's OWN existing
+  // `notes` (no separate read-then-write — same technique as
+  // migrate-drop-do-not-contact.ts's note append) so there's no race with a
+  // concurrent write. Best-effort, same pattern as appendVenueTouch above —
+  // a notes-write hiccup must never fail the outreach status change that's
+  // already committed by the caller.
+  async appendVenueNote(venueId: unknown, line: string): Promise<void> {
+    try {
+      await venueModel.findByIdAndUpdate(String(venueId), [
+        {
+          $set: {
+            notes: {
+              $cond: [
+                { $and: [{ $ne: ['$notes', null] }, { $ne: ['$notes', ''] }] },
+                { $concat: ['$notes', '\n', line] },
+                line,
+              ],
+            },
+          },
+        },
+      ] as unknown as Record<string, unknown>);
+    } catch { /* best-effort */ }
+  }
+
   // Auto-flip every OTHER active (`sent`) record whose targetWeekend overlaps
   // the just-booked record's targetWeekend to `target-filled` (#898/#923): not
   // a rejection, the venue returns to the pool for a future target. Runs ONLY
@@ -532,10 +559,16 @@ class OutreachController extends Controller {
   // (mirrors recordBounce elsewhere in this file): the outreach status change
   // already committed by the caller is the critical write; a venue hiccup
   // here shouldn't undo it.
-  //   - not-interested → venue.doNotContact = true (PERMANENT, per #923).
-  //   - booked → bookedDate + bookingStatus:'booked' on the venue (a judgment
-  //     call: the venue's coarse booking standing should track the specific
-  //     gig date recorded here), plus the target-filled auto-flip.
+  //   - not-interested → venue.outreachEligible = false (PERMANENT — #980
+  //     folded the old doNotContact flag into outreachEligible, now the SOLE
+  //     stop/go gate) + a dated line appended to the venue's notes (never
+  //     overwritten — see appendVenueNote).
+  //   - booked → bookedDate on the venue (the actual gig date this outcome
+  //     recorded). #980: bookingStatus is no longer written here — it's now
+  //     DERIVED purely from actual linked-gig data (computeBookingStatus in
+  //     venue-controller.ts), so a recorded outcome alone no longer flips the
+  //     display badge; the badge only reflects a real gig once one exists.
+  //     The target-filled auto-flip is unaffected by that change.
   // Every outcome also gets a matching timeline touch on the venue.
   async applyOutcomeSideEffects(
     existing: OutreachDoc,
@@ -547,13 +580,15 @@ class OutreachController extends Controller {
   ): Promise<void> {
     const tw = (existing as unknown as { targetWeekend?: TargetWeekend }).targetWeekend;
     if (status === 'not-interested') {
-      try { await venueModel.findByIdAndUpdate(String(existing.venueId), { doNotContact: true, lastModifiedBy: actor }); } catch { /* best-effort */ }
+      try {
+        await venueModel.findByIdAndUpdate(String(existing.venueId), { outreachEligible: false, lastModifiedBy: actor });
+      } catch { /* best-effort */ }
+      const dateStr = outcomeAt.toISOString().slice(0, 10);
+      await this.appendVenueNote(existing.venueId, `[${dateStr}] Marked not-interested via outreach outcome — outreachEligible set to false.`);
     }
     if (status === 'booked') {
       try {
-        await venueModel.findByIdAndUpdate(String(existing.venueId), {
-          bookedDate, bookingStatus: 'booked', lastModifiedBy: actor,
-        });
+        await venueModel.findByIdAndUpdate(String(existing.venueId), { bookedDate, lastModifiedBy: actor });
       } catch { /* best-effort */ }
     }
     await this.appendVenueTouch(existing.venueId, {
@@ -820,20 +855,44 @@ class OutreachController extends Controller {
     return res.status(200).json(result);
   }
 
-  // #958 SAFETY — a venue with an upcoming (datetime >= now) linked gig must
-  // never be offered as an outreach candidate: it's already booked (by phone,
-  // in person, whatever route), so pitching it again is the same failure
-  // class as the 2026-07-08 incident (Durty Bull: booked Nov 16 as a gig
-  // record, yet invisible to venue data and Batch Outreach). Resolution uses
-  // the shared venueId-first/exact-normalized-name rule (never fuzzy — see
-  // src/lib/gig-venue-link.ts). `gigs` is fetched ONCE by the caller (no
-  // per-venue query/N+1).
-  static excludeUpcomingGigVenues(venues: LinkableVenue[], gigs: LinkableGig[]): LinkableVenue[] {
+  // #980 — is `gigDate` within `gigIntervalMonths` of `w` (on EITHER side —
+  // the nearest gig, past or future, is what matters, not just upcoming
+  // ones)? The boundary is inclusive of "exactly gigIntervalMonths away is
+  // fine" (the issue's "≥ gigInterval months from W"), so the excluded
+  // window is OPEN (strictly between the bounds, not touching them).
+  static isTooCloseToWindow(gigDate: Date, w: Date, gigIntervalMonths: number): boolean {
+    const lower = new Date(w); lower.setMonth(lower.getMonth() - gigIntervalMonths);
+    const upper = new Date(w); upper.setMonth(upper.getMonth() + gigIntervalMonths);
+    const t = gigDate.getTime();
+    return t > lower.getTime() && t < upper.getTime();
+  }
+
+  // #980 — generalizes the old #958 SAFETY exclusion (a venue with ANY
+  // upcoming linked gig was dropped forever) into a configurable spacing
+  // rule: `gigInterval` (months on the venue, default 0) is the minimum gap
+  // Josh wants between gigs at that venue. For target window `w`, a venue is
+  // excluded when ANY of its linked gigs (past or future) falls within
+  // `gigInterval` months of `w`. `gigInterval = 0` (every venue's default,
+  // and every venue's value before this migration) disables the check
+  // entirely — BY DESIGN this removes the old blanket exclusion (the
+  // "repeat-venue trap" #980 exists to fix): a venue only gets spaced out
+  // once Josh explicitly opts it in by setting gigInterval > 0. Resolution
+  // uses the shared venueId-first/exact-normalized-name rule (never fuzzy —
+  // see src/lib/gig-venue-link.ts). `gigs` is fetched ONCE by the caller (no
+  // per-venue query/N+1) and the spacing math runs in memory over that one
+  // fetched set, grouped by venueId.
+  static excludeUpcomingGigVenues(
+    venues: (LinkableVenue & { gigInterval?: number })[],
+    gigs: LinkableGig[],
+    w: Date,
+  ): LinkableVenue[] {
     const groups = groupGigsByVenue(gigs, venues);
-    const now = Date.now();
     return venues.filter((v) => {
+      const gigIntervalMonths = Number(v.gigInterval) || 0;
+      if (!gigIntervalMonths) return true;
       const linked = groups.get(String(v._id)) || [];
-      return !linked.some((g) => g.datetime && new Date(g.datetime as string).getTime() >= now);
+      return !linked.some((g) => g.datetime && !Number.isNaN(new Date(g.datetime as string).getTime())
+        && OutreachController.isTooCloseToWindow(new Date(g.datetime as string), w, gigIntervalMonths));
     });
   }
 
@@ -851,45 +910,65 @@ class OutreachController extends Controller {
     });
   }
 
-  // GET /outreach/candidates — propose the target list (#844): vetted
-  // (outreachEligible), non-archived venues with an email, minus any that
-  // already have an active outreach with an OVERLAPPING targetWeekend, AND
-  // (#958) minus any venue with an upcoming linked gig — see
-  // excludeUpcomingGigVenues. #898: the targetWeekend filter is date-range
-  // aware (matching the dedup guard's overlap semantics) rather than the old
-  // targetDates string filter — the note in PR #933 deferred this rekey to
-  // this issue, since #923 already established targetDates no longer
-  // participates in any logic. Read-only.
-  // Optional query: targetWeekend {start, end} (bracket-notation query params
-  // over HTTP, e.g. ?targetWeekend[start]=...&targetWeekend[end]=...). When
-  // given, the response is `{ candidates, weekendGigs }` (weekendGigs = #958's
-  // weekend-awareness surfacing); when omitted, the response stays the plain
-  // candidates array (unchanged, back-compat with existing callers).
+  // GET /outreach/candidates — propose the target list (#844/#980): a venue
+  // is a candidate for target window W iff `outreachEligible = GO` AND a
+  // valid primary email AND not archived AND no active `resumeBooking`
+  // cooldown (unset, or a date already in the past) AND — the
+  // excludeUpcomingGigVenues spacing check below — (`gigInterval = 0` OR
+  // every linked gig at that venue is ≥ `gigInterval` months from W), minus
+  // any venue that already has an active outreach with an OVERLAPPING
+  // targetWeekend. #898: the targetWeekend filter is date-range aware
+  // (matching the dedup guard's overlap semantics) rather than the old
+  // targetDates string filter. Read-only.
+  // Optional query:
+  //   • targetWeekend {start, end} (bracket-notation query params, e.g.
+  //     ?targetWeekend[start]=...&targetWeekend[end]=...) — W for both the
+  //     dedup-overlap check and the gigInterval spacing check. When omitted,
+  //     W defaults to "now" for spacing purposes (matching the pre-#980
+  //     behavior for every venue, since gigInterval=0 is every venue's
+  //     default and disables the check regardless of W) and the response
+  //     stays the plain candidates array (back-compat); when given, the
+  //     response is `{ candidates, weekendGigs }` (weekendGigs = #958's
+  //     weekend-awareness surfacing).
+  //   • cities=City1,City2,... (comma-separated, #980) — AND'd with every
+  //     other criterion; omitted/empty = all cities (back-compat).
   async getCandidates(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
-    let venues: { _id?: unknown }[];
-    try {
-      // #923 — doNotContact is a permanent global exclusion (set by a
-      // not-interested outcome), on top of the existing outreachEligible gate.
-      // #974 — the email clause is now format-checked ($regex EMAIL_RE), not
-      // just non-empty ($nin): a venue with no VALID primary email is not
-      // sendable, so it must never be offered as a candidate either. This is
-      // ADDITIONAL to (never a replacement for) outreachEligible above.
-      venues = await venueModel.find({
-        outreachEligible: true,
-        status: { $ne: 'archived' },
-        email: { $nin: [null, ''], $regex: EMAIL_RE },
-        doNotContact: { $ne: true },
-      });
-    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
 
-    const query = (req.query || {}) as { targetWeekend?: RawTargetWeekend };
+    const query = (req.query || {}) as { targetWeekend?: RawTargetWeekend; cities?: string };
     let tw: TargetWeekend | null = null;
     if (query.targetWeekend !== undefined) {
       tw = parseTargetWeekend(query.targetWeekend);
       if (!tw) return res.status(400).json({ message: 'targetWeekend must include valid start and end' });
     }
+    const now = new Date();
+    const w = tw ? tw.start : now;
+    const cities = (query.cities || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+    let venues: { _id?: unknown }[];
+    try {
+      // #980 — doNotContact is gone (folded into outreachEligible, the SOLE
+      // permanent stop/go gate). #974 — the email clause is format-checked
+      // ($regex EMAIL_RE), not just non-empty ($nin): a venue with no VALID
+      // primary email is not sendable, so it must never be offered as a
+      // candidate. #980 — resumeBooking is an active cooldown only when set
+      // to a date strictly in the future; unset or in the past never blocks.
+      const filter: Record<string, unknown> = {
+        outreachEligible: true,
+        status: { $ne: 'archived' },
+        email: { $nin: [null, ''], $regex: EMAIL_RE },
+        $or: [
+          { resumeBooking: { $exists: false } },
+          { resumeBooking: null },
+          { resumeBooking: { $lte: now } },
+        ],
+      };
+      // #980 — optional city filter, AND'd with everything above.
+      if (cities.length) filter.city = { $in: cities };
+      venues = await venueModel.find(filter);
+    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+
     let handled = new Set<string>();
     if (tw) {
       let active: { venueId?: unknown }[];
@@ -902,14 +981,18 @@ class OutreachController extends Controller {
     }
     let candidates = venues.filter((v) => !handled.has(String(v._id)));
 
-    // #958 — one extra gig query total (not per-venue): feeds both the SAFETY
-    // exclusion (always applied) and, when a targetWeekend was requested, the
-    // weekendGigs surfacing below.
+    // #958/#980 — one extra gig query total (not per-venue): feeds both the
+    // gigInterval spacing check (always applied) and, when a targetWeekend
+    // was requested, the weekendGigs surfacing below.
     let gigs: LinkableGig[];
     try {
       gigs = await gigModel.find(JOSH_GIGS_FILTER) as unknown as LinkableGig[];
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
-    candidates = OutreachController.excludeUpcomingGigVenues(candidates as unknown as LinkableVenue[], gigs) as unknown as { _id?: unknown }[];
+    candidates = OutreachController.excludeUpcomingGigVenues(
+      candidates as unknown as (LinkableVenue & { gigInterval?: number })[],
+      gigs,
+      w,
+    ) as unknown as { _id?: unknown }[];
 
     if (!tw) return res.status(200).json(candidates);
     const weekendGigs = OutreachController.gigsInWeekend(gigs, tw);

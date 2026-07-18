@@ -77,9 +77,11 @@ const outreachSchema = new Schema({
   // #923 outcome data model: `interested`/`not-interested`/`booked`/
   // `target-filled` are the new outcome values a human (or, later, #898's
   // auto-flip) records against a pitch. `not-interested` is the permanent
-  // decline (pairs with the venue's `doNotContact` flag); `target-filled`
-  // means a DIFFERENT record for the same weekend got booked, so this one
-  // returns to the pool for a future target rather than being a rejection.
+  // decline (pairs with the venue's `outreachEligible` gate — #980 folded the
+  // old `doNotContact` flag into it, the SOLE permanent stop/go standing
+  // now); `target-filled` means a DIFFERENT record for the same weekend got
+  // booked, so this one returns to the pool for a future target rather than
+  // being a rejection.
   status: {
     type: String,
     required: false,
