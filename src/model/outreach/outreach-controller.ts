@@ -55,6 +55,20 @@ type SendResult = { ok: true; record: unknown } | { ok: false; status: number; m
 // left optional) are unaffected.
 interface RawTargetWeekend { start?: string | Date; end?: string | Date }
 
+// #980 — per-candidate qualifying context, attached to every GET
+// /outreach/candidates result so JaMmusic#1238's Find-Eligible UI can show
+// "why did this venue qualify" without re-deriving eligibility client-side.
+// Every returned candidate already passed the outreachEligible/email/
+// archived/resumeBooking query filter and the gigInterval spacing check —
+// this is display context, not a second eligibility test.
+interface CandidateReason {
+  lastGigDate: string | null;
+  gigIntervalMonths: number;
+  nearestGigMonthsAway: number | null;
+  spacingNote: string;
+  resumeBookingExpired: boolean;
+}
+
 interface SendBody {
   venueId?: string;
   templateType?: string;
@@ -896,6 +910,51 @@ class OutreachController extends Controller {
     });
   }
 
+  // #980 — average days/month, used only for the display-only
+  // nearestGigMonthsAway figure in buildCandidateReason below (never for the
+  // isTooCloseToWindow eligibility math above, which uses real
+  // calendar-month arithmetic via setMonth).
+  static readonly MS_PER_MONTH = 30.4368 * 24 * 60 * 60 * 1000;
+
+  // #980 — build the per-venue "why did this qualify" context for JaM#1238.
+  // `linkedGigs` is this one venue's slice of the single batch-fetched gig
+  // set (already grouped by the caller — no extra query). Every candidate
+  // passed here already cleared the eligibility + spacing checks; this is
+  // display context only, never a second gate.
+  static buildCandidateReason(
+    venue: Record<string, unknown> & { gigInterval?: number; resumeBooking?: unknown },
+    linkedGigs: LinkableGig[],
+    w: Date,
+  ): CandidateReason {
+    const validGigs = linkedGigs.filter((g) => g.datetime && !Number.isNaN(new Date(g.datetime as string).getTime()));
+    const now = Date.now();
+    const pastGigs = validGigs.filter((g) => new Date(g.datetime as string).getTime() < now);
+    const lastGig = pastGigs.reduce<LinkableGig | null>((latest, g) => {
+      if (!latest) return g;
+      return new Date(g.datetime as string).getTime() > new Date(latest.datetime as string).getTime() ? g : latest;
+    }, null);
+    const gigIntervalMonths = Number(venue.gigInterval) || 0;
+    const distancesInMonths = validGigs.map(
+      (g) => Math.abs(new Date(g.datetime as string).getTime() - w.getTime()) / OutreachController.MS_PER_MONTH,
+    );
+    const nearestGigMonthsAway = distancesInMonths.length
+      ? Math.round(Math.min(...distancesInMonths) * 10) / 10
+      : null;
+    let spacingNote: string;
+    if (!gigIntervalMonths) spacingNote = 'spacing off (gigInterval=0)';
+    else if (nearestGigMonthsAway === null) spacingNote = 'no gigs yet';
+    else spacingNote = `clear — nearest gig ~${nearestGigMonthsAway} mo away`;
+    const resumeBooking = venue.resumeBooking ? new Date(venue.resumeBooking as string) : null;
+    const resumeBookingExpired = !!(resumeBooking && !Number.isNaN(resumeBooking.getTime()) && resumeBooking.getTime() <= now);
+    return {
+      lastGigDate: lastGig ? new Date(lastGig.datetime as string).toISOString() : null,
+      gigIntervalMonths,
+      nearestGigMonthsAway,
+      spacingNote,
+      resumeBookingExpired,
+    };
+  }
+
   // #958 — weekend awareness: every linked-or-unlinked gig (any venue) whose
   // datetime falls inside the requested target weekend, so the UI can warn
   // "you already have a gig that weekend" while curating a candidate list for
@@ -932,6 +991,11 @@ class OutreachController extends Controller {
   //     weekend-awareness surfacing).
   //   • cities=City1,City2,... (comma-separated, #980) — AND'd with every
   //     other criterion; omitted/empty = all cities (back-compat).
+  // Every returned candidate carries a `reason` object (buildCandidateReason,
+  // #980/JaMmusic#1238) — lastGigDate, gigIntervalMonths,
+  // nearestGigMonthsAway, a human-readable spacingNote, and
+  // resumeBookingExpired — so the Find-Eligible UI can show why each venue
+  // qualified without re-deriving eligibility client-side.
   async getCandidates(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -994,9 +1058,21 @@ class OutreachController extends Controller {
       w,
     ) as unknown as { _id?: unknown }[];
 
-    if (!tw) return res.status(200).json(candidates);
+    // #980 — attach the "why did this qualify" context (JaM#1238) per
+    // candidate, grouped from the same batch-fetched gig set (no extra query).
+    const gigGroups = groupGigsByVenue(gigs, candidates as unknown as LinkableVenue[]);
+    const withReason = candidates.map((v) => ({
+      ...v,
+      reason: OutreachController.buildCandidateReason(
+        v as Record<string, unknown>,
+        gigGroups.get(String(v._id)) || [],
+        w,
+      ),
+    }));
+
+    if (!tw) return res.status(200).json(withReason);
     const weekendGigs = OutreachController.gigsInWeekend(gigs, tw);
-    return res.status(200).json({ candidates, weekendGigs });
+    return res.status(200).json({ candidates: withReason, weekendGigs });
   }
 
   // GET /outreach/preview — render the exact email a venue would get, WITHOUT

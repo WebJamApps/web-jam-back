@@ -795,6 +795,68 @@ describe('Outreach Controller (#844 batch model)', () => {
       });
     });
 
+    // #980/JaMmusic#1238 — every candidate carries a `reason` object so the
+    // Find-Eligible UI can show why it qualified without re-deriving
+    // eligibility client-side (buildCandidateReason).
+    describe('candidate reason (#980)', () => {
+      it('reports spacing off when gigInterval is 0 (the default)', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason).toMatchObject({
+          gigIntervalMonths: 0, spacingNote: 'spacing off (gigInterval=0)', nearestGigMonthsAway: null, lastGigDate: null,
+        });
+      });
+
+      it('reports "no gigs yet" when gigInterval is set but the venue has no linked gigs', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 3 }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason).toMatchObject({ gigIntervalMonths: 3, spacingNote: 'no gigs yet', nearestGigMonthsAway: null });
+      });
+
+      it('reports the nearest-gig distance (months) when the venue clears spacing', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 2 }]));
+        const w = new Date(VALID_WEEKEND.start);
+        const sixMonthsOut = new Date(w); sixMonthsOut.setMonth(sixMonthsOut.getMonth() + 6);
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: sixMonthsOut.toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(payload.candidates[0].reason.gigIntervalMonths).toBe(2);
+        expect(payload.candidates[0].reason.nearestGigMonthsAway).toBeCloseTo(6, 0);
+        expect(payload.candidates[0].reason.spacingNote).toContain('clear — nearest gig');
+      });
+
+      it('reports lastGigDate as the most recent PAST linked gig, picking the latest among several', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
+        const older = new Date(Date.now() - 200 * 86400000).toISOString();
+        const mostRecent = new Date(Date.now() - 10 * 86400000).toISOString();
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: older },
+          { venueId: 'a', datetime: mostRecent },
+        ]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason.lastGigDate).toBe(new Date(mostRecent).toISOString());
+      });
+
+      it('reports resumeBookingExpired true for a past resumeBooking date', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([
+          { _id: 'a', resumeBooking: new Date(Date.now() - 86400000).toISOString() },
+        ]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason.resumeBookingExpired).toBe(true);
+      });
+
+      it('reports resumeBookingExpired false when resumeBooking is unset', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason.resumeBookingExpired).toBe(false);
+      });
+    });
+
     // #958 — weekend awareness: surfaces Josh's whole gig schedule for the
     // requested weekend (any venue), independent of the per-venue safety
     // exclusion above.

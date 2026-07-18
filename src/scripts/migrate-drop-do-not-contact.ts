@@ -43,28 +43,12 @@
 //   npm run migrate:drop-do-not-contact -- --apply          # writes, DEV/local only
 //   npm run migrate:drop-do-not-contact -- --force --apply  # writes for real (prod)
 
-import { fileURLToPath } from 'url';
 import { config } from 'dotenv';
 import mongoose from 'mongoose';
 import venueModel from '#src/model/venue/venue-facade.js';
+import { guardOrExit, isMainModule } from '#src/lib/migration-cli.js';
 
 config(); // load .env if present
-
-interface Args { apply: boolean; force: boolean }
-export function parseArgs(argv: string[]): Args {
-  return { apply: argv.includes('--apply'), force: argv.includes('--force') };
-}
-
-// ── SAFETY GUARD ─────────────────────────────────────────────────────────────
-// Mirrors the sibling migrations' guard exactly: only db names/hosts that
-// look local/DEV/TEST are allowed without --force. Pure predicate (no
-// process.exit) so it's unit-testable; run() below is what actually exits.
-export function isSafeToRun(uri: string, force: boolean): boolean {
-  const dbName = (uri.split('?')[0].split('/').pop() || '').toLowerCase();
-  const isLocal = uri.includes('localhost') || uri.includes('127.0.0.1');
-  const isDevOrTest = dbName.includes('dev') || dbName.includes('test');
-  return isLocal || isDevOrTest || force;
-}
 
 interface VenueDoc { _id: unknown; name?: string; doNotContact?: boolean; notes?: string }
 
@@ -78,22 +62,8 @@ export function buildNoteLine(now: Date): string {
   return `[${dateStr}] Previously doNotContact:true (permanent exclusion) — migrated to outreachEligible:false (#980).`;
 }
 
-function logSafetyBlock(uri: string, maskedUri: string): void {
-  const dbName = (uri.split('?')[0].split('/').pop() || '').toLowerCase();
-  console.error('ERROR: migrate-drop-do-not-contact only runs against a local, DEV, or TEST database by default — never release/production.');
-  console.error(`Target MONGO URI: ${maskedUri}`);
-  console.error(`Parsed database name: ${dbName || '(none)'}`);
-  console.error('Pass --force to run against a different database anyway (a deliberate, reviewed prod backfill).');
-}
-
 async function run(): Promise<void> {
-  const { apply, force } = parseArgs(process.argv.slice(2));
-  const uri = process.env.MONGO_DB_URI || '';
-  const maskedUri = uri.replace(/\/\/[^@]+@/, '//<credentials>@'); // eslint-disable-line sonarjs/slow-regex
-  if (!isSafeToRun(uri, force)) {
-    logSafetyBlock(uri, maskedUri);
-    process.exit(1);
-  }
+  const { apply, uri, maskedUri } = guardOrExit('migrate-drop-do-not-contact', 'migrate:drop-do-not-contact');
 
   await mongoose.connect(uri);
   console.log(`Connected to "${mongoose.connection.name}" (${maskedUri})`);
@@ -167,9 +137,8 @@ async function run(): Promise<void> {
 }
 
 // Only auto-execute when run directly — NOT when imported by a unit test.
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 /* istanbul ignore if -- exercised only when the script is executed directly, never under vitest */
-if (isMain) {
+if (isMainModule(import.meta.url)) {
   run().catch((err) => {
     console.error('Migration failed:', (err as Error).message);
     process.exit(1);

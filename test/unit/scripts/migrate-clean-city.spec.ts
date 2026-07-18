@@ -1,37 +1,19 @@
 // Unit tests for the #980 city-cleanup migration script's logic. Importing
 // the module must NOT touch Mongo or process.exit (no top-level side effects
 // beyond dotenv) — run()'s isMain guard is never true under vitest.
+//
+// parseArgs/isSafeToRun/logSafetyBlock are shared (src/lib/migration-cli.ts,
+// #980) and covered by their own test/unit/lib/migration-cli.spec.ts — not
+// re-tested here to avoid duplicating that coverage.
 import mongoose from 'mongoose';
 import {
-  isSafeToRun, parseArgs, run,
+  run,
   splitEmbeddedState, isTitleCased, resolveCanonicalCasing,
   buildSplitPlans, buildFinalPlans,
 } from '#src/scripts/migrate-clean-city.js';
 import venueModel from '#src/model/venue/venue-facade.js';
 
 describe('migrate-clean-city (#980)', () => {
-  describe('parseArgs', () => {
-    it('reads --apply and --force flags', () => {
-      expect(parseArgs([])).toEqual({ apply: false, force: false });
-      expect(parseArgs(['--apply'])).toEqual({ apply: true, force: false });
-      expect(parseArgs(['--force', '--apply'])).toEqual({ apply: true, force: true });
-    });
-  });
-
-  describe('isSafeToRun', () => {
-    it('allows a localhost URI', () => {
-      expect(isSafeToRun('mongodb://localhost:27017/web-jam-dev', false)).toBe(true);
-    });
-
-    it('blocks a prod-looking (release) db name without --force', () => {
-      expect(isSafeToRun('mongodb+srv://user:pass@cluster.mongodb.net/release', false)).toBe(false);
-    });
-
-    it('allows a prod-looking db name when --force is passed', () => {
-      expect(isSafeToRun('mongodb+srv://user:pass@cluster.mongodb.net/release', true)).toBe(true);
-    });
-  });
-
   describe('splitEmbeddedState', () => {
     it('no-change when there is no comma at all', () => {
       expect(splitEmbeddedState('Salem', undefined)).toEqual({ kind: 'no-change' });
