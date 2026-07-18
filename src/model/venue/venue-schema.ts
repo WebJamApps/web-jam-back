@@ -132,14 +132,40 @@ const venueSchema = new Schema({
   // `inScope` (was: is this a gig-booking venue at all?) was dropped (#954,
   // 2026-07-16) — it read as a duplicate of `outreachEligible` and Josh only
   // ever used Eligible. A venue that was `inScope: false` is permanently
-  // excluded via `doNotContact` instead (see below) — see migrate-drop-in-
-  // scope.ts for the one-time backfill.
+  // excluded via `outreachEligible: false` instead (the sole stop/go gate as
+  // of #980, below) — see migrate-drop-in-scope.ts for the one-time backfill.
+  //
+  // #980 (2026-07-18) — `bookingStatus` is now a DERIVED, READ-ONLY field:
+  // booked (has an upcoming linked gig) / not-booking (an active
+  // `resumeBooking` cooldown) / booking (otherwise) — computed fresh on every
+  // read (venue-controller.ts's attachGigLinks/computeBookingStatus), never
+  // hand-set. The stored field below is kept only so existing documents don't
+  // need a migration; the app never writes it anymore and every API response
+  // overwrites it with the computed value before the client ever sees it.
   bookingStatus: {
     type: String, required: false, enum: ['booking', 'not-booking', 'booked'], default: 'booking',
   },
   interested: { type: Boolean, required: false, default: true },
   payTier: { type: String, required: false, trim: true },
   lastVerified: { type: Date, required: false },
+  // #980 — minimum spacing (in months) Josh wants between gigs at this venue
+  // before it's offered as a candidate again for a new target window W (the
+  // gigInterval-aware generalization of the old #958 "never re-pitch an
+  // already-booked venue" safety net — see excludeUpcomingGigVenues in
+  // outreach-controller.ts). 0 (the default — every existing venue defaults
+  // here) turns the check off entirely: BY DESIGN this removes the old
+  // blanket "any upcoming linked gig excludes the venue forever" rule (the
+  // "repeat-venue trap" #980 was written to fix), so nothing changes for a
+  // venue until Josh explicitly opts it into spacing by setting this > 0.
+  gigInterval: {
+    type: Number, required: false, default: 0, min: 0,
+  },
+  // #980 — a manual "don't pitch until this date" cooldown, for soft-nos /
+  // deliberate holds (e.g. "nice, but not booking right now — try again in
+  // ~4 months"). Unset, or a date already in the past, means no active
+  // cooldown. Drives both the getCandidates exclusion (outreach-
+  // controller.ts) and the derived bookingStatus:'not-booking' readout above.
+  resumeBooking: { type: Date, required: false },
   notes: { type: String, required: false },
   // Template-selection inputs (#848). `relationshipStage` overrides the
   // auto-derived cold/returning stage when set; left unset = auto-derive
@@ -159,14 +185,19 @@ const venueSchema = new Schema({
   travelBand: { type: String, required: false, enum: ['local', 'regional', 'far'] },
   priority: { type: Number, required: false, min: 0, max: 5 },
   lastContacted: { type: Date, required: false },
-  // Global outcome standing (#923). `doNotContact` is set by a `not-interested`
-  // outreach outcome — permanent, and excluded from /outreach/candidates
-  // FOREVER (in addition to the outreachEligible gate); nothing in this repo
-  // ever flips it back off automatically. `bookedDate` is the actual gig date
-  // once a booking outcome is recorded (bookingStatus:'booked' above already
-  // captures the coarse standing; this is the specific date). Both are written
-  // by the outcome-recording endpoint (#898) — this issue only adds the fields.
-  doNotContact: { type: Boolean, required: false, default: false },
+  // #980 (2026-07-18) — `doNotContact` (#923's permanent global outcome
+  // standing, set by a `not-interested` outreach outcome) is DELETED: folded
+  // into `outreachEligible`, which is now the SOLE permanent stop/go gate (a
+  // `not-interested` outcome sets `outreachEligible=false` instead — see
+  // outreach-controller.ts's applyOutcomeSideEffects). Any venue that still
+  // has `doNotContact:true` in storage is backfilled by the one-time
+  // migrate-drop-do-not-contact.ts script (outreachEligible=false + a dated
+  // note recording the prior exclusion, then $unset doNotContact) — Josh runs
+  // that manually post-merge, same flow as #954/#974.
+  //
+  // `bookedDate` is the actual gig date once a `booked` outreach outcome is
+  // recorded — kept as-is (unrelated to the now-derived `bookingStatus`
+  // above, which only reflects actual linked-gig data, not this outcome log).
   bookedDate: { type: Date, required: false },
   // Per-venue contact timeline (#898) — see touchSchema above.
   touches: { type: [touchSchema], required: false, default: [] },

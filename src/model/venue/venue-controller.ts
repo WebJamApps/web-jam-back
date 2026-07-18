@@ -15,7 +15,10 @@ import {
 const COUNTRY_RE = /^[A-Za-z]{2}$/;
 const VENUE_TYPES = ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'];
 const STATUS_OPTIONS = ['active', 'archived'];
-const BOOKING_STATUSES = ['booking', 'not-booking', 'booked'];
+// #980 — the derived bookingStatus values, returned on every venue payload by
+// computeBookingStatus below (no settable BOOKING_STATUSES const anymore —
+// bookingStatus is never accepted in a request body).
+type DerivedBookingStatus = 'booked' | 'not-booking' | 'booking';
 // Prospect-ranking enums (#867) — drive the AdminVenues "Prospect Score" sort.
 const ORIGINALS_FIT = ['none', 'some', 'loves'];
 const TRAVEL_BANDS = ['local', 'regional', 'far'];
@@ -61,7 +64,6 @@ interface VenueBody {
   website?: string;
   status?: string;
   outreachEligible?: boolean;
-  bookingStatus?: string;
   interested?: boolean;
   payTier?: string;
   lastVerified?: string;
@@ -72,10 +74,13 @@ interface VenueBody {
   travelBand?: string;
   priority?: number;
   lastContacted?: string;
-  // Global outcome standing (#923) — see venue-schema.ts. Written by the
-  // outcome-recording endpoint (#898); accepted here via the existing
-  // partial-update pass-through like every other venue field.
-  doNotContact?: boolean;
+  // #980 — minimum gig-spacing (months, 0 = off) and the manual "pause until"
+  // cooldown date. See venue-schema.ts. `bookingStatus` is intentionally NOT
+  // in this interface anymore — it's derived/read-only (computeBookingStatus
+  // below); a stray `bookingStatus` in the request body is stripped, never
+  // written (see createVenue/updateVenue).
+  gigInterval?: number;
+  resumeBooking?: string;
   bookedDate?: string;
   actor?: string;
 }
@@ -118,12 +123,11 @@ function resolveActor(req: AuthRequest, body: { actor?: string }): string {
 // `partial` (PUT) only validates the fields that are present.
 // Enum-validated string fields ('' = unset, allowed). Data-driven so adding a
 // field doesn't grow validateBody's cognitive complexity (#867).
-type EnumKey = 'venueType' | 'status' | 'bookingStatus' | 'relationshipStage'
+type EnumKey = 'venueType' | 'status' | 'relationshipStage'
   | 'templateOverride' | 'originalsFit' | 'travelBand';
 const ENUM_FIELDS: { key: EnumKey; allowed: string[] }[] = [
   { key: 'venueType', allowed: VENUE_TYPES },
   { key: 'status', allowed: STATUS_OPTIONS },
-  { key: 'bookingStatus', allowed: BOOKING_STATUSES },
   { key: 'relationshipStage', allowed: ['cold', 'returning'] },
   { key: 'templateOverride', allowed: VENUE_TYPES },
   { key: 'originalsFit', allowed: ORIGINALS_FIT },
@@ -206,11 +210,22 @@ function invalidPriority(priority: number | undefined): boolean {
     && (typeof priority !== 'number' || priority < 0 || priority > 5);
 }
 
+// #980 — gigInterval is a non-negative integer count of months (0 = spacing
+// check off).
+function invalidGigInterval(gigInterval: number | undefined): boolean {
+  return gigInterval !== undefined && gigInterval !== null
+    && (typeof gigInterval !== 'number' || !Number.isInteger(gigInterval) || gigInterval < 0);
+}
+
 function validateBody(body: VenueBody, partial: boolean): string {
   if ((!partial || body.name !== undefined) && (!body.name || !body.name.trim())) return 'Name is required';
   const enumErr = invalidEnum(body);
   if (enumErr) return enumErr;
   if (invalidPriority(body.priority)) return 'priority must be a number 0-5';
+  if (invalidGigInterval(body.gigInterval)) return 'gigInterval must be a non-negative whole number of months';
+  if (body.resumeBooking !== undefined && body.resumeBooking !== '' && Number.isNaN(new Date(body.resumeBooking).getTime())) {
+    return 'resumeBooking must be a valid date';
+  }
   if (body.email !== undefined && body.email !== '' && !isValidEmail(body.email)) {
     return 'A valid email is required';
   }
@@ -223,6 +238,18 @@ function validateBody(body: VenueBody, partial: boolean): string {
     return 'country must be a 2-letter code';
   }
   return '';
+}
+
+// #980 — `bookingStatus` is derived/read-only (computeBookingStatus below)
+// and `doNotContact` was deleted entirely (folded into `outreachEligible`).
+// Neither is in the VenueBody type anymore, but an older/stale client could
+// still send them in the raw JSON body — silently drop both here (mirrors
+// the existing `delete body._id` pattern) rather than erroring, so a
+// round-tripped venue-edit form that still includes the old value is a
+// harmless no-op instead of a 400.
+function stripReadOnlyFields(body: Record<string, unknown>): void {
+  delete body.bookingStatus;
+  delete body.doNotContact;
 }
 
 // Privilege-first, role-fallback gate (mirrors PromoController). Reused for both
@@ -261,12 +288,16 @@ class VenueController extends Controller {
     else filter.status = { $ne: 'archived' };
     if (typeof query.venueType === 'string') filter.venueType = query.venueType;
     // Outreach targeting (#843): ?outreachEligible=true returns only vetted
-    // venues — the pool #844's approval flow proposes from. The vetting tags
-    // below filter the candidate set further (still booking, interested).
+    // venues — the pool #844's approval flow proposes from. The vetting tag
+    // below filters the candidate set further (interested).
     // (`inScope` filter support was dropped with the field itself — #954.)
+    // #980 — `bookingStatus` filter support was dropped with the field's
+    // settable meaning: it's now derived/computed on read (see
+    // computeBookingStatus), so the RAW stored value a Mongo query would
+    // filter on is no longer reliably maintained. Filter on the computed
+    // `bookingStatus` client-side after the list comes back instead.
     if (query.outreachEligible === 'true') filter.outreachEligible = true;
     else if (query.outreachEligible === 'false') filter.outreachEligible = false;
-    if (typeof query.bookingStatus === 'string') filter.bookingStatus = query.bookingStatus;
     if (query.interested === 'true') filter.interested = true;
     else if (query.interested === 'false') filter.interested = false;
     return filter;
@@ -297,6 +328,23 @@ class VenueController extends Controller {
     });
   }
 
+  // #980 — the derived, read-only bookingStatus readout (see venue-schema.ts).
+  // Display precedence when multiple conditions could apply, as decided
+  // during build: `booked` (has an upcoming linked gig) beats `not-booking`
+  // (an active resumeBooking cooldown) beats `booking` (the open/default
+  // state) — a venue can't be actively paused from booking AND already have
+  // a confirmed upcoming gig in any way that matters for the badge; the
+  // confirmed gig is the more useful signal to show. `resumeBooking` is
+  // "active" when set to a date strictly in the future, relative to `now` —
+  // the same instant the caller resolves everything else against (mirrors
+  // the exact wording of #980: "unset or in the past" = no active cooldown).
+  static computeBookingStatus(venue: Record<string, unknown>, hasUpcomingGig: boolean, now: number): DerivedBookingStatus {
+    if (hasUpcomingGig) return 'booked';
+    const resumeBooking = venue.resumeBooking ? new Date(venue.resumeBooking as string) : null;
+    if (resumeBooking && !Number.isNaN(resumeBooking.getTime()) && resumeBooking.getTime() > now) return 'not-booking';
+    return 'booking';
+  }
+
   // #958 — attach computed lastGig/nextGig + locationFallback onto each venue
   // via ONE extra gig query for the whole batch (never a per-venue query — no
   // N+1), scoped to Josh's gigs like filterEligible above. Resolution is the
@@ -307,6 +355,11 @@ class VenueController extends Controller {
   // those two gigs is more relevant — lastGig if there is one, else nextGig,
   // so a venue with only a FUTURE booked gig, like Durty Bull's Nov 16, still
   // gets a location — never written back to the venue record).
+  //
+  // #980 — also attaches the derived `bookingStatus` (computeBookingStatus
+  // above), computed fresh here and OVERWRITING whatever stale value is
+  // still stored on the raw venue doc, so bookingStatus can never go stale on
+  // any read (GET /venue and GET /venue/:id both go through this).
   static async attachGigLinks(venues: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
     let gigs: LinkableGig[];
     try {
@@ -327,10 +380,34 @@ class VenueController extends Controller {
       const locationFallback = fallbackGig && (fallbackGig.city || fallbackGig.usState)
         ? { city: fallbackGig.city, usState: fallbackGig.usState }
         : null;
+      const bookingStatus = VenueController.computeBookingStatus(v, future.length > 0, now);
       return {
-        ...v, lastGig, nextGig, locationFallback,
+        ...v, lastGig, nextGig, locationFallback, bookingStatus,
       };
     });
+  }
+
+  // GET /venue/cities — distinct non-empty `city` values (#980), so the
+  // AdminVenues city-targeting multi-select (JaMmusic#1238) can offer exactly
+  // the cities that exist in the DB rather than a hardcoded list. Chose a
+  // dedicated endpoint over "derive it client-side from the venues the page
+  // already loaded" because AdminVenues' venue list can be filtered
+  // (status/venueType/etc, see buildListFilter) — a distinct-cities source
+  // that only reflects whatever's currently on screen would silently drop
+  // options depending on which filter happens to be active; this endpoint
+  // always reflects every venue, independent of any list-page filter state.
+  async listCities(req: AuthRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, VENUE_WRITE_CAPS);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    let cities: unknown[];
+    try {
+      cities = await venueModel.Schema.distinct('city', { city: { $nin: [null, ''] } });
+    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    const distinctCities = (cities as string[])
+      .map((c) => (typeof c === 'string' ? c.trim() : ''))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    return res.status(200).json(distinctCities);
   }
 
   // GET /venue — list venues (filters: status, venueType, eligibleFor=<date>).
@@ -387,6 +464,7 @@ class VenueController extends Controller {
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     const body = (req.body || {}) as VenueBody;
     delete body._id;
+    stripReadOnlyFields(body as unknown as Record<string, unknown>);
     const invalid = validateBody(body, false);
     if (invalid) return res.status(400).json({ message: invalid });
 
@@ -416,6 +494,7 @@ class VenueController extends Controller {
     if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Update id is invalid' });
     const body = (req.body || {}) as VenueBody;
     delete body._id;
+    stripReadOnlyFields(body as unknown as Record<string, unknown>);
     const invalid = validateBody(body, true);
     if (invalid) return res.status(400).json({ message: invalid });
     let doc;
