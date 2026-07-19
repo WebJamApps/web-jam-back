@@ -72,6 +72,12 @@ const touchSchema = new Schema({
 const venueSchema = new Schema({
   name: { type: String, required: true, trim: true },
   city: { type: String, required: false, trim: true },
+  // #983 — street address, the disambiguator for same-name/same-city
+  // locations (e.g. two Macado's in Roanoke). Optional: not back-migrated
+  // onto existing records (see #983 non-goals) — it's filled in the next
+  // time a venue is created/edited. See venue-controller.ts's findDuplicate
+  // for how this refines the POST /venue dedup match.
+  address: { type: String, required: false, trim: true },
   usState: { type: String, required: false, trim: true },
   // #972 — 2-letter country code (validated in venue-controller.ts), defaulting
   // to 'US' since every venue on record today is US-based. `region` is optional

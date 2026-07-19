@@ -47,6 +47,10 @@ interface VenueBody {
   _id?: string;
   name?: string;
   city?: string;
+  // #983 — street address, the disambiguator for same-name/same-city
+  // locations. Optional; refines POST /venue dedup (see findDuplicate below)
+  // but is never required.
+  address?: string;
   usState?: string;
   // #972 — country (2-letter code, default 'US' at the schema level) + region
   // (free-text state/province, for non-US venues). usState is kept as-is for
@@ -445,14 +449,47 @@ class VenueController extends Controller {
     return res.status(200).json(withLinks[0]);
   }
 
-  // Find an existing venue for dedupe: by email when given (strongest key),
-  // otherwise by case-insensitive name (+ city when present).
+  // Find an existing venue for dedupe (#983). Email is NOT part of this
+  // match anymore — a shared chain inbox (e.g. Starr Hill's info@starrhill
+  // .com) is not unique per location, and matching on it silently overwrote
+  // a different venue's record (the Starr Hill incident this issue fixes).
+  //
+  // Match key is name + city (case-insensitive, as before #983), refined by
+  // `address` ONLY when BOTH the incoming body and a given candidate have a
+  // non-empty address — records without one keep falling back to name+city,
+  // same as before #983 (no back-migration; address fills in on next edit).
+  // When address IS supplied and matches a candidate's address exactly,
+  // that candidate wins outright (two Macado's in Roanoke, disambiguated).
+  // When address is supplied but matches no candidate, only fall back to
+  // name+city when there is exactly one address-less candidate to fall back
+  // to — never guess between two already address-differentiated locations.
   async findDuplicate(body: VenueBody): Promise<Record<string, unknown> | null> {
-    const email = (body.email || '').trim().toLowerCase();
-    if (email) return this.model.findOne({ email });
-    const query: Record<string, unknown> = { name: new RegExp(`^${escapeRegExp((body.name || '').trim())}$`, 'i') };
+    const name = (body.name || '').trim();
+    if (!name) return null;
+    const query: Record<string, unknown> = { name: new RegExp(`^${escapeRegExp(name)}$`, 'i') };
     const city = (body.city || '').trim();
     if (city) query.city = new RegExp(`^${escapeRegExp(city)}$`, 'i');
+    const candidates = await this.model.find(query) as unknown as Record<string, unknown>[];
+    if (!candidates.length) return null;
+    const incomingAddress = (body.address || '').trim().toLowerCase();
+    if (incomingAddress) {
+      const addressMatch = candidates.find(
+        (c) => String(c.address || '').trim().toLowerCase() === incomingAddress,
+      );
+      if (addressMatch) return addressMatch;
+    }
+    const noAddressCandidates = candidates.filter((c) => !String(c.address || '').trim());
+    return noAddressCandidates.length === 1 ? noAddressCandidates[0] : null;
+  }
+
+  // #983 — email is plain contact data now: the same address (a shared chain
+  // inbox) may legitimately exist on multiple venues, and finding it
+  // elsewhere must never block or overwrite a create. This is a cheap,
+  // best-effort, non-blocking lookup purely to log an informational notice;
+  // any failure here is swallowed so it can never fail the actual write.
+  async findEmailElsewhere(email: string, excludeId?: string): Promise<Record<string, unknown> | null> {
+    const query: Record<string, unknown> = { email };
+    if (excludeId) query._id = { $ne: excludeId };
     return this.model.findOne(query);
   }
 
@@ -471,6 +508,18 @@ class VenueController extends Controller {
     const actor = resolveActor(req, body);
     let existing: Record<string, unknown> | null;
     try { existing = await this.findDuplicate(body); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+
+    // #983 — non-blocking "email also on '<venueName>'" notice: never awaited
+    // in a way that could fail the create, and never used to find/overwrite
+    // a record (that's findDuplicate's job, above, and it never looks at email).
+    const email = (body.email || '').trim().toLowerCase();
+    if (email) {
+      try {
+        const elsewhere = await this.findEmailElsewhere(email, existing ? String(existing._id) : undefined);
+        if (elsewhere) console.log(`[venue] email '${email}' also on '${elsewhere.name}'`); // eslint-disable-line no-console
+      } catch { /* notice lookup is best-effort only — never blocks the write */ }
+    }
+
     if (existing) {
       let updated;
       try {
