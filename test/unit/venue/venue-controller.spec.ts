@@ -735,6 +735,39 @@ describe('Venue Controller', () => {
         expect(payload.message).toContain('resumeBooking');
       });
     });
+
+    // #995 — bookedThrough: a separate optional Date, validated identically
+    // to resumeBooking above.
+    describe('bookedThrough (#995)', () => {
+      it('accepts bookedThrough on update', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({
+          user: 'agent', params: { id }, body: { bookedThrough: '2026-12-31' },
+        }, resStub);
+        expect(status).toBe(200);
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ bookedThrough: '2026-12-31' }));
+      });
+
+      it('rejects an invalid bookedThrough date', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        await c.updateVenue({ user: 'agent', params: { id }, body: { bookedThrough: 'not-a-date' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('bookedThrough');
+      });
+
+      it('accepts bookedThrough on create alongside the required address', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([]));
+        const created = vi.fn(() => Promise.resolve({ _id: 'x' }));
+        c.model.create = created;
+        await c.createVenue({
+          user: 'agent', body: { name: 'Olde Salem Brewing', address: '1 Main St', bookedThrough: '2026-12-31' },
+        }, resStub);
+        expect(status).toBe(201);
+        expect(created).toHaveBeenCalledWith(expect.objectContaining({ bookedThrough: '2026-12-31' }));
+      });
+    });
   });
 
   describe('deleteVenue (soft-delete)', () => {
@@ -949,6 +982,63 @@ describe('Venue Controller', () => {
       it('precedence: booked wins over an active resumeBooking cooldown', () => {
         const now = Date.now();
         expect(compute({ resumeBooking: new Date(now + 1e9) }, true, now)).toBe('booked');
+      });
+
+      // #995 — bookedThrough >= now ALSO drives not-booking, independent of
+      // resumeBooking. Tested both sides of the >= now boundary.
+      it('not-booking — bookedThrough exactly at now (boundary, inclusive)', () => {
+        const now = Date.now();
+        expect(compute({ bookedThrough: new Date(now) }, false, now)).toBe('not-booking');
+      });
+
+      it('not-booking — bookedThrough in the future, no upcoming gig', () => {
+        const now = Date.now();
+        expect(compute({ bookedThrough: new Date(now + 1e9).toISOString() }, false, now)).toBe('not-booking');
+      });
+
+      it('booking — bookedThrough just in the past (one ms before now) does not count as active', () => {
+        const now = Date.now();
+        expect(compute({ bookedThrough: new Date(now - 1).toISOString() }, false, now)).toBe('booking');
+      });
+
+      it('booking — an invalid bookedThrough value is ignored, not treated as active', () => {
+        const now = Date.now();
+        expect(compute({ bookedThrough: 'not-a-date' }, false, now)).toBe('booking');
+      });
+
+      it('precedence: booked wins over an active bookedThrough', () => {
+        const now = Date.now();
+        expect(compute({ bookedThrough: new Date(now + 1e9) }, true, now)).toBe('booked');
+      });
+
+      it('not-booking — both resumeBooking (future) and bookedThrough (future) set', () => {
+        const now = Date.now();
+        expect(compute({
+          resumeBooking: new Date(now + 1e9), bookedThrough: new Date(now + 2e9),
+        }, false, now)).toBe('not-booking');
+      });
+
+      it('booking — both resumeBooking and bookedThrough unset', () => {
+        const now = Date.now();
+        expect(compute({}, false, now)).toBe('booking');
+      });
+
+      it('is wired into listVenues: not-booking with an active bookedThrough, no upcoming gig, no resumeBooking', async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([
+          { _id: idA, name: 'Booked-Up Venue', bookedThrough: new Date(Date.now() + 1e10).toISOString() },
+        ]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(payload[0].bookingStatus).toBe('not-booking');
+      });
+
+      it('is wired into listVenues: booking with a bookedThrough already in the past', async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([
+          { _id: idA, name: 'Reopened Venue', bookedThrough: new Date(Date.now() - 1e10).toISOString() },
+        ]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(payload[0].bookingStatus).toBe('booking');
       });
 
       it('is wired into listVenues: booked when there is an upcoming linked gig', async () => {

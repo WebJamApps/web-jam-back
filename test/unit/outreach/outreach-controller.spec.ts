@@ -611,6 +611,42 @@ describe('Outreach Controller (#844 batch model)', () => {
       ]));
     });
 
+    // #995 — bookedThrough is a SEPARATE fact from resumeBooking: "calendar
+    // full through" a date, compared against the target window's START (W),
+    // not `now`, and blocking is `bookedThrough >= W` (so the query only
+    // includes venues with `bookedThrough < W`, unset, or null). Enforced as
+    // its own $and clause so resumeBooking's own $or (asserted above) is
+    // never touched — mirrors the #980 non-goal that resumeBooking's
+    // semantics/comparisons must not change.
+    describe('bookedThrough (#995)', () => {
+      it('excludes an active bookedThrough via the query, compared against now when no targetWeekend is given', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        const callArg = (venueModel as any).find.mock.calls[0][0];
+        expect(callArg.$and).toEqual(expect.arrayContaining([
+          {
+            $or: [
+              { bookedThrough: { $exists: false } },
+              { bookedThrough: null },
+              { bookedThrough: { $lt: expect.any(Date) } },
+            ],
+          },
+        ]));
+        // resumeBooking's own $or is untouched by the addition — still
+        // exactly the three original clauses, never merged with bookedThrough.
+        expect(callArg.$or).toHaveLength(3);
+      });
+
+      it('compares bookedThrough against the targetWeekend START, not now, when a targetWeekend is given', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        const callArg = (venueModel as any).find.mock.calls[0][0];
+        expect(callArg.$and[0].$or).toContainEqual({ bookedThrough: { $lt: new Date(VALID_WEEKEND.start) } });
+      });
+    });
+
     // #980 — optional cities filter, AND'd with every other criterion;
     // omitted/empty = all cities (back-compat).
     describe('cities filter (#980)', () => {

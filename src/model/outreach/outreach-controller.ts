@@ -969,16 +969,18 @@ class OutreachController extends Controller {
     });
   }
 
-  // GET /outreach/candidates — propose the target list (#844/#980): a venue
-  // is a candidate for target window W iff `outreachEligible = GO` AND a
-  // valid primary email AND not archived AND no active `resumeBooking`
-  // cooldown (unset, or a date already in the past) AND — the
-  // excludeUpcomingGigVenues spacing check below — (`gigInterval = 0` OR
-  // every linked gig at that venue is ≥ `gigInterval` months from W), minus
-  // any venue that already has an active outreach with an OVERLAPPING
-  // targetWeekend. #898: the targetWeekend filter is date-range aware
-  // (matching the dedup guard's overlap semantics) rather than the old
-  // targetDates string filter. Read-only.
+  // GET /outreach/candidates — propose the target list (#844/#980/#995): a
+  // venue is a candidate for target window W iff `outreachEligible = GO` AND
+  // a valid primary email AND not archived AND no active `resumeBooking`
+  // cooldown (unset, or a date already in the past, relative to NOW) AND no
+  // active `bookedThrough` (unset, or already before W's START — #995: a
+  // "calendar full through" date is compared against the window being
+  // pitched, not today) AND — the excludeUpcomingGigVenues spacing check
+  // below — (`gigInterval = 0` OR every linked gig at that venue is ≥
+  // `gigInterval` months from W), minus any venue that already has an active
+  // outreach with an OVERLAPPING targetWeekend. #898: the targetWeekend
+  // filter is date-range aware (matching the dedup guard's overlap
+  // semantics) rather than the old targetDates string filter. Read-only.
   // Optional query:
   //   • targetWeekend {start, end} (bracket-notation query params, e.g.
   //     ?targetWeekend[start]=...&targetWeekend[end]=...) — W for both the
@@ -1017,7 +1019,8 @@ class OutreachController extends Controller {
       // ($regex EMAIL_RE), not just non-empty ($nin): a venue with no VALID
       // primary email is not sendable, so it must never be offered as a
       // candidate. #980 — resumeBooking is an active cooldown only when set
-      // to a date strictly in the future; unset or in the past never blocks.
+      // to a date strictly in the future; unset or in the past never blocks
+      // (compared against `now` — "don't contact until" is a today check).
       const filter: Record<string, unknown> = {
         outreachEligible: true,
         status: { $ne: 'archived' },
@@ -1026,6 +1029,27 @@ class OutreachController extends Controller {
           { resumeBooking: { $exists: false } },
           { resumeBooking: null },
           { resumeBooking: { $lte: now } },
+        ],
+        // #995 — bookedThrough is a SEPARATE fact from resumeBooking ("their
+        // calendar is full through this date", not "don't contact them"), so
+        // it blocks on its OWN condition rather than folding into the $or
+        // above, compared against `w` (the target window's START, not
+        // `now`) — a venue booked solid through 2026 is still a valid
+        // candidate for a Jan 2027 window pitched today. Kept as a separate
+        // top-level $and (rather than merging into the resumeBooking $or
+        // above) so this clause is independently testable/readable and
+        // resumeBooking's own query shape stays untouched (#980, non-goal:
+        // no change to resumeBooking semantics or comparisons). Unset or
+        // null never blocks; both fields unset/null reproduces today's
+        // exact behavior.
+        $and: [
+          {
+            $or: [
+              { bookedThrough: { $exists: false } },
+              { bookedThrough: null },
+              { bookedThrough: { $lt: w } },
+            ],
+          },
         ],
       };
       // #980 — optional city filter, AND'd with everything above.
