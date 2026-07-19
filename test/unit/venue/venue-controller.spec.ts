@@ -304,7 +304,7 @@ describe('Venue Controller', () => {
           user: 'a', body: { name: 'Starr Hill Pilot Brewery', city: 'Roanoke', email: 'info@starrhill.com' },
         }, resStub);
         expect(status).toBe(201);
-        expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("also on 'Starr Hill On Main'"));
+        expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("also used by venue 'Starr Hill On Main'"));
         logSpy.mockRestore();
       });
 
@@ -317,6 +317,70 @@ describe('Venue Controller', () => {
           user: 'a', body: { name: 'Some Venue', email: 'info@starrhill.com' },
         }, resStub);
         expect(status).toBe(201);
+      });
+
+      // #985 — persist the duplicate-email notice to the NEW venue's own
+      // notes field (append, never overwrite), since a server-log-only notice
+      // was never visible to a human in AdminVenues.
+      describe('duplicate-email note append (#985)', () => {
+        it('appends a dated note to the new venue when its email is found on another venue', async () => {
+          c.model.find = vi.fn(() => Promise.resolve([]));
+          c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'other-venue', name: 'Starr Hill Pilot Brewery' }));
+          const create = vi.fn(() => Promise.resolve({ _id: 'new-venue' }));
+          c.model.create = create;
+          await c.createVenue({
+            user: 'a', body: { name: 'Starr Hill On Main', city: 'Lynchburg', email: 'info@starrhill.com' },
+          }, resStub);
+          expect(status).toBe(201);
+          const arg = (create.mock.calls[0] as unknown[])[0] as any;
+          const today = new Date().toISOString().slice(0, 10);
+          expect(arg.notes).toBe(`[${today}] Email info@starrhill.com also used by venue 'Starr Hill Pilot Brewery'.`);
+        });
+
+        it('preserves pre-existing notes on the new venue (appended, not overwritten)', async () => {
+          c.model.find = vi.fn(() => Promise.resolve([]));
+          c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'other-venue', name: 'Starr Hill Pilot Brewery' }));
+          const create = vi.fn(() => Promise.resolve({ _id: 'new-venue' }));
+          c.model.create = create;
+          await c.createVenue({
+            user: 'a',
+            body: {
+              name: 'Starr Hill On Main', city: 'Lynchburg', email: 'info@starrhill.com', notes: 'Great patio.',
+            },
+          }, resStub);
+          expect(status).toBe(201);
+          const arg = (create.mock.calls[0] as unknown[])[0] as any;
+          expect(arg.notes).toMatch(/^Great patio\.\n\[\d{4}-\d{2}-\d{2}] Email info@starrhill\.com also used by venue 'Starr Hill Pilot Brewery'\.$/);
+        });
+
+        it('adds no note when the email is unique (not found elsewhere)', async () => {
+          c.model.find = vi.fn(() => Promise.resolve([]));
+          c.model.findOne = vi.fn(() => Promise.resolve(null));
+          const create = vi.fn(() => Promise.resolve({ _id: 'new-venue' }));
+          c.model.create = create;
+          await c.createVenue({
+            user: 'a', body: { name: 'Unique Venue', email: 'nobody-else@x.com' },
+          }, resStub);
+          expect(status).toBe(201);
+          const arg = (create.mock.calls[0] as unknown[])[0] as any;
+          expect(arg).not.toHaveProperty('notes');
+        });
+
+        it('does not annotate notes on the upsert-onto-existing-match path (only a newly-created record is annotated)', async () => {
+          c.model.find = vi.fn(() => Promise.resolve([{ _id: 'dup5', name: 'The Spot', city: 'Salem' }]));
+          c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'other-venue', name: 'Some Other Venue' }));
+          const upd = vi.fn(() => Promise.resolve({ _id: 'dup5' }));
+          c.model.findByIdAndUpdate = upd;
+          const create = vi.fn();
+          c.model.create = create;
+          await c.createVenue({
+            user: 'a', body: { name: 'The Spot', city: 'Salem', email: 'shared@x.com' },
+          }, resStub);
+          expect(status).toBe(200);
+          expect(create).not.toHaveBeenCalled();
+          const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+          expect(written).not.toHaveProperty('notes');
+        });
       });
 
       it('findDuplicate: no candidates at all resolves null', async () => {

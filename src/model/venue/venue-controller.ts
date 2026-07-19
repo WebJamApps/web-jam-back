@@ -485,12 +485,33 @@ class VenueController extends Controller {
   // #983 — email is plain contact data now: the same address (a shared chain
   // inbox) may legitimately exist on multiple venues, and finding it
   // elsewhere must never block or overwrite a create. This is a cheap,
-  // best-effort, non-blocking lookup purely to log an informational notice;
-  // any failure here is swallowed so it can never fail the actual write.
+  // best-effort, non-blocking lookup purely to surface an informational
+  // notice; any failure here is swallowed so it can never fail the actual
+  // write. #985 — when more than one other venue shares the email, only the
+  // FIRST match found is named (kept simple, per #985's own call-it-your-way
+  // acceptance criterion) rather than enumerating every match.
   async findEmailElsewhere(email: string, excludeId?: string): Promise<Record<string, unknown> | null> {
     const query: Record<string, unknown> = { email };
     if (excludeId) query._id = { $ne: excludeId };
     return this.model.findOne(query);
+  }
+
+  // #985 — build the dated notice line persisted to a newly-created venue's
+  // `notes` when its email is already on another venue (e.g. Starr Hill's
+  // shared info@starrhill.com). Same `[YYYY-MM-DD] ...` dated-line format as
+  // the not-interested outcome handler / #980 migration notes.
+  static buildEmailElsewhereNote(email: string, otherName: unknown): string {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    return `[${dateStr}] Email ${email} also used by venue '${String(otherName || '')}'.`;
+  }
+
+  // #985 — append (never overwrite) a note line onto a create payload's own
+  // `notes` value. Only used on the fresh-insert path (findDuplicate found no
+  // match) — an upsert onto an existing venue is intentionally left alone,
+  // since #985 only annotates the NEWLY CREATED record, never another venue.
+  static appendNote(existingNotes: unknown, line: string): string {
+    const trimmed = typeof existingNotes === 'string' ? existingNotes.trim() : '';
+    return trimmed ? `${trimmed}\n${line}` : line;
   }
 
   // POST /venue — create a venue, or upsert onto an existing match (dedupe), so
@@ -509,14 +530,22 @@ class VenueController extends Controller {
     let existing: Record<string, unknown> | null;
     try { existing = await this.findDuplicate(body); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
 
-    // #983 — non-blocking "email also on '<venueName>'" notice: never awaited
-    // in a way that could fail the create, and never used to find/overwrite
-    // a record (that's findDuplicate's job, above, and it never looks at email).
+    // #983/#985 — non-blocking "email also on '<venueName>'" notice: never
+    // awaited in a way that could fail the create, and never used to
+    // find/overwrite a record (that's findDuplicate's job, above, and it
+    // never looks at email). #985 — only a fresh insert (no name+city match)
+    // gets the notice persisted to ITS OWN `notes`; an upsert onto an
+    // existing venue is untouched (not a "newly created" record), and the
+    // OTHER venue that shares the email is never modified either way.
     const email = (body.email || '').trim().toLowerCase();
+    let emailNote = '';
     if (email) {
       try {
         const elsewhere = await this.findEmailElsewhere(email, existing ? String(existing._id) : undefined);
-        if (elsewhere) console.log(`[venue] email '${email}' also on '${elsewhere.name}'`); // eslint-disable-line no-console
+        if (elsewhere) {
+          emailNote = VenueController.buildEmailElsewhereNote(email, elsewhere.name);
+          console.log(`[venue] ${emailNote}`); // eslint-disable-line no-console
+        }
       } catch { /* notice lookup is best-effort only — never blocks the write */ }
     }
 
@@ -529,9 +558,11 @@ class VenueController extends Controller {
       } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
       return res.status(200).json(updated);
     }
+    const createBody: Record<string, unknown> = { ...body, status: body.status || 'active', lastModifiedBy: actor };
+    if (emailNote) createBody.notes = VenueController.appendNote(body.notes, emailNote);
     let doc;
     try {
-      doc = await this.model.create({ ...body, status: body.status || 'active', lastModifiedBy: actor });
+      doc = await this.model.create(createBody);
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     return res.status(201).json(doc);
   }
