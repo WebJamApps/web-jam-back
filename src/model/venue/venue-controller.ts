@@ -4,6 +4,7 @@ import Controller from '#src/lib/controller.js';
 import { Icontroller } from '#src/lib/routeUtils.js';
 import { isValidEmail } from '#src/lib/email.js';
 import venueModel from './venue-facade.js';
+import { normalizeAddress } from './normalize-address.js';
 import userModel from '../user/user-facade.js';
 import gigModel from '../gig/gig-facade.js';
 import {
@@ -47,9 +48,12 @@ interface VenueBody {
   _id?: string;
   name?: string;
   city?: string;
-  // #983 — street address, the disambiguator for same-name/same-city
-  // locations. Optional; refines POST /venue dedup (see findDuplicate below)
-  // but is never required.
+  // #983/#987 — street address, the disambiguator for same-name/same-city
+  // locations. REQUIRED on every POST /venue (#987 Part B — validated in
+  // validateBody below, before any DB write) and normalized on write (#987
+  // Part A — see normalize-address.ts), on both POST and PUT. PUT keeps it
+  // optional (schema stays required:false — see venue-schema.ts) but an
+  // address, once set, cannot be removed; see updateVenue below.
   address?: string;
   usState?: string;
   // #972 — country (2-letter code, default 'US' at the schema level) + region
@@ -90,6 +94,14 @@ interface VenueBody {
 }
 
 interface GigDoc { venue?: string; datetime?: string | Date }
+
+// #987 — findDuplicate's result: a definite match to upsert onto, no match
+// (create fresh), or an ambiguous set of address-less legacy candidates that
+// createVenue must 400 on rather than guess between.
+type DuplicateResolution =
+  | { kind: 'match'; venue: Record<string, unknown> }
+  | { kind: 'none' }
+  | { kind: 'ambiguous'; ids: string[] };
 
 // #898 — wire shape for POST /venue/:id/touch. `targetWeekend` mirrors the
 // outreach schema's shape (strings over the wire; parsed to Dates below).
@@ -240,6 +252,15 @@ function validateBody(body: VenueBody, partial: boolean): string {
   }
   if (body.country !== undefined && body.country !== '' && !COUNTRY_RE.test(String(body.country).trim())) {
     return 'country must be a 2-letter code';
+  }
+  // #987 Part B — address is required on every POST /venue (partial=false),
+  // validated here before any DB write. Checked last so any other body error
+  // (a bad enum, an invalid email, etc.) still reports its own specific
+  // message first — this only fires when nothing else is already wrong.
+  // PUT (partial=true) stays optional; see updateVenue for its own
+  // immutable-once-set address rule.
+  if (!partial && (!body.address || !String(body.address).trim())) {
+    return 'address is required to create a venue';
   }
   return '';
 }
@@ -449,37 +470,44 @@ class VenueController extends Controller {
     return res.status(200).json(withLinks[0]);
   }
 
-  // Find an existing venue for dedupe (#983). Email is NOT part of this
-  // match anymore — a shared chain inbox (e.g. Starr Hill's info@starrhill
-  // .com) is not unique per location, and matching on it silently overwrote
-  // a different venue's record (the Starr Hill incident this issue fixes).
+  // Find an existing venue for dedupe (#983, refined by #987). Email is NOT
+  // part of this match — a shared chain inbox (e.g. Starr Hill's
+  // info@starrhill.com) is not unique per location, and matching on it
+  // silently overwrote a different venue's record (the Starr Hill incident
+  // #983 fixed).
   //
-  // Match key is name + city (case-insensitive, as before #983), refined by
-  // `address` ONLY when BOTH the incoming body and a given candidate have a
-  // non-empty address — records without one keep falling back to name+city,
-  // same as before #983 (no back-migration; address fills in on next edit).
-  // When address IS supplied and matches a candidate's address exactly,
-  // that candidate wins outright (two Macado's in Roanoke, disambiguated).
-  // When address is supplied but matches no candidate, only fall back to
-  // name+city when there is exactly one address-less candidate to fall back
-  // to — never guess between two already address-differentiated locations.
-  async findDuplicate(body: VenueBody): Promise<Record<string, unknown> | null> {
+  // Match key is name + city (case-insensitive), refined by `address`
+  // compared NORMALIZED-to-normalized (#987 Part A's normalizeAddress) so an
+  // incoming un-normalized address still matches an already-stored
+  // (normalized, or pre-#987 legacy raw) one:
+  //   - a candidate with the SAME normalized address wins outright — that's
+  //     the venue, upsert onto it (two Macado's in Roanoke, disambiguated).
+  //   - a candidate with a DIFFERENT non-empty address is not a match.
+  //   - a legacy candidate with NO address on file (everything predating
+  //     #983) is a fallback match ONLY when there is exactly one such
+  //     candidate; two or more is reported back as 'ambiguous' so the caller
+  //     (createVenue) can 400 rather than guess.
+  async findDuplicate(body: VenueBody): Promise<DuplicateResolution> {
     const name = (body.name || '').trim();
-    if (!name) return null;
+    if (!name) return { kind: 'none' };
     const query: Record<string, unknown> = { name: new RegExp(`^${escapeRegExp(name)}$`, 'i') };
     const city = (body.city || '').trim();
     if (city) query.city = new RegExp(`^${escapeRegExp(city)}$`, 'i');
     const candidates = await this.model.find(query) as unknown as Record<string, unknown>[];
-    if (!candidates.length) return null;
-    const incomingAddress = (body.address || '').trim().toLowerCase();
-    if (incomingAddress) {
+    if (!candidates.length) return { kind: 'none' };
+    const incomingNormalized = normalizeAddress(body.address).toLowerCase();
+    if (incomingNormalized) {
       const addressMatch = candidates.find(
-        (c) => String(c.address || '').trim().toLowerCase() === incomingAddress,
+        (c) => normalizeAddress(String(c.address || '')).toLowerCase() === incomingNormalized,
       );
-      if (addressMatch) return addressMatch;
+      if (addressMatch) return { kind: 'match', venue: addressMatch };
     }
-    const noAddressCandidates = candidates.filter((c) => !String(c.address || '').trim());
-    return noAddressCandidates.length === 1 ? noAddressCandidates[0] : null;
+    const legacyCandidates = candidates.filter((c) => !String(c.address || '').trim());
+    if (legacyCandidates.length === 1) return { kind: 'match', venue: legacyCandidates[0] };
+    if (legacyCandidates.length > 1) {
+      return { kind: 'ambiguous', ids: legacyCandidates.map((c) => String(c._id)) };
+    }
+    return { kind: 'none' };
   }
 
   // #983 — email is plain contact data now: the same address (a shared chain
@@ -514,6 +542,29 @@ class VenueController extends Controller {
     return trimmed ? `${trimmed}\n${line}` : line;
   }
 
+  // #987 — resolve findDuplicate's result for createVenue: an error tuple
+  // when a 500 (the lookup itself threw) or a 400 (ambiguous legacy
+  // candidates, Part B) should short-circuit the create, or the existing doc
+  // to upsert onto (null = create fresh). Split out of createVenue to keep
+  // its cognitive complexity down.
+  async resolveExistingForCreate(
+    body: VenueBody,
+  ): Promise<{ error: { status: number; message: string } } | { existing: Record<string, unknown> | null }> {
+    let resolution: DuplicateResolution;
+    try { resolution = await this.findDuplicate(body); } catch (e) {
+      return { error: { status: 500, message: (e as Error).message } };
+    }
+    if (resolution.kind === 'ambiguous') {
+      return {
+        error: {
+          status: 400,
+          message: `multiple existing venues without an address match this name/city; specify which to update: ${resolution.ids.join(', ')}`,
+        },
+      };
+    }
+    return { existing: resolution.kind === 'match' ? resolution.venue : null };
+  }
+
   // POST /venue — create a venue, or upsert onto an existing match (dedupe), so
   // an agent that re-adds a known venue updates it instead of duplicating. A
   // matched venue is also un-archived.
@@ -525,10 +576,14 @@ class VenueController extends Controller {
     stripReadOnlyFields(body as unknown as Record<string, unknown>);
     const invalid = validateBody(body, false);
     if (invalid) return res.status(400).json({ message: invalid });
+    // #987 Part A — normalize the (now-guaranteed-present, per validateBody
+    // above) address on write, identically to the PUT path (updateVenue).
+    body.address = normalizeAddress(body.address);
 
     const actor = resolveActor(req, body);
-    let existing: Record<string, unknown> | null;
-    try { existing = await this.findDuplicate(body); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    const resolved = await this.resolveExistingForCreate(body);
+    if ('error' in resolved) return res.status(resolved.error.status).json({ message: resolved.error.message });
+    const { existing } = resolved;
 
     // #983/#985 — non-blocking "email also on '<venueName>'" notice: never
     // awaited in a way that could fail the create, and never used to
@@ -567,7 +622,38 @@ class VenueController extends Controller {
     return res.status(201).json(doc);
   }
 
-  // PUT /venue/:id — partial update.
+  // #987 — validates/normalizes a PUT body's `address` in place (mutates
+  // `body.address`) per the once-set-cannot-be-removed rule, returning an
+  // error tuple to short-circuit on, or null when fine to proceed:
+  //   - `address` key absent from the body entirely -> null immediately
+  //     (normal partial-merge behavior; nothing below runs, body untouched).
+  //   - present and non-empty -> normalized identically to POST (Part A) —
+  //     this is how you correct a wrong address.
+  //   - present but empty/whitespace/null -> allowed ONLY as a no-op when the
+  //     venue currently has no address on file (legacy records must stay
+  //     editable); an error tuple (400, nothing written) when it does have
+  //     one. Split out of updateVenue to keep its cognitive complexity down.
+  async applyAddressUpdate(id: string, body: VenueBody): Promise<{ status: number; message: string } | null> {
+    if (!Object.prototype.hasOwnProperty.call(body, 'address')) return null;
+    const trimmedAddress = typeof body.address === 'string' ? body.address.trim() : '';
+    if (trimmedAddress) {
+      body.address = normalizeAddress(trimmedAddress);
+      return null;
+    }
+    let currentDoc: Record<string, unknown> | null;
+    try { currentDoc = await this.model.findById(id); } catch (e) { return { status: 500, message: (e as Error).message }; }
+    if (!currentDoc) return { status: 400, message: 'Id Not Found' };
+    if (String(currentDoc.address || '').trim()) {
+      return { status: 400, message: 'address cannot be removed; supply a corrected address instead' };
+    }
+    // No address on file — allowed no-op; write a definite '' rather than
+    // whatever falsy shape (e.g. null) the caller sent.
+    body.address = '';
+    return null;
+  }
+
+  // PUT /venue/:id — partial update. See applyAddressUpdate above for the
+  // #987 address-immutability rule this enforces.
   async updateVenue(req: AuthIdRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['venue:edit']);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -577,6 +663,8 @@ class VenueController extends Controller {
     stripReadOnlyFields(body as unknown as Record<string, unknown>);
     const invalid = validateBody(body, true);
     if (invalid) return res.status(400).json({ message: invalid });
+    const addressErr = await this.applyAddressUpdate(req.params.id, body);
+    if (addressErr) return res.status(addressErr.status).json({ message: addressErr.message });
     let doc;
     try {
       doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, lastModifiedBy: resolveActor(req, body) });

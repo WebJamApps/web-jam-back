@@ -73,10 +73,15 @@ const venueSchema = new Schema({
   name: { type: String, required: true, trim: true },
   city: { type: String, required: false, trim: true },
   // #983 — street address, the disambiguator for same-name/same-city
-  // locations (e.g. two Macado's in Roanoke). Optional: not back-migrated
-  // onto existing records (see #983 non-goals) — it's filled in the next
-  // time a venue is created/edited. See venue-controller.ts's findDuplicate
-  // for how this refines the POST /venue dedup match.
+  // locations (e.g. two Macado's in Roanoke). Schema stays required:false ON
+  // PURPOSE (#987): a schema-level `required` would break every write to
+  // every existing address-less record. `address` IS required on create,
+  // and normalized on every write (USPS Pub 28 abbreviations) — both
+  // enforced in the controller, not here. Never back-migrated onto existing
+  // records (see #983/#987 non-goals) — it's filled/normalized the next time
+  // a venue is created/edited. See venue-controller.ts's findDuplicate for
+  // how this refines the POST /venue dedup match, and updateVenue for why a
+  // once-set address can't be cleared via PUT.
   address: { type: String, required: false, trim: true },
   usState: { type: String, required: false, trim: true },
   // #972 — 2-letter country code (validated in venue-controller.ts), defaulting
