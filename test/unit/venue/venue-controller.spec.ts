@@ -114,7 +114,7 @@ describe('Venue Controller', () => {
       await c.createVenue({
         user: 'a',
         body: {
-          name: 'The Spot', originalsFit: 'loves', travelBand: 'local', priority: 4,
+          name: 'The Spot', address: '1 Main St', originalsFit: 'loves', travelBand: 'local', priority: 4,
         },
       }, resStub);
       expect(status).toBe(201);
@@ -144,7 +144,10 @@ describe('Venue Controller', () => {
       const create = vi.fn(() => Promise.resolve({ _id: 'n3' }));
       c.model.create = create;
       await c.createVenue({
-        user: 'a', body: { name: 'Slow Play Brewing', email: 'info@slowplaybrewing.com', secondaryEmail: 'chelsea@slowplaybrewing.com' },
+        user: 'a',
+        body: {
+          name: 'Slow Play Brewing', address: '1 Main St', email: 'info@slowplaybrewing.com', secondaryEmail: 'chelsea@slowplaybrewing.com',
+        },
       }, resStub);
       expect(status).toBe(201);
       const arg = (create.mock.calls[0] as unknown[])[0] as any;
@@ -156,7 +159,7 @@ describe('Venue Controller', () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
       const create = vi.fn(() => Promise.resolve({ _id: 'n4' }));
       c.model.create = create;
-      await c.createVenue({ user: 'a', body: { name: 'X', secondaryEmail: '' } }, resStub);
+      await c.createVenue({ user: 'a', body: { name: 'X', address: '1 Main St', secondaryEmail: '' } }, resStub);
       expect(status).toBe(201);
     });
 
@@ -176,7 +179,7 @@ describe('Venue Controller', () => {
       const create = vi.fn(() => Promise.resolve({ _id: 'n2' }));
       c.model.create = create;
       await c.createVenue({
-        user: 'a', body: { name: 'The North Spot', country: 'ca', region: 'Ontario' },
+        user: 'a', body: { name: 'The North Spot', address: '1 Main St', country: 'ca', region: 'Ontario' },
       }, resStub);
       expect(status).toBe(201);
       const arg = (create.mock.calls[0] as unknown[])[0] as any;
@@ -188,7 +191,11 @@ describe('Venue Controller', () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
       const create = vi.fn(() => Promise.resolve({ _id: 'new' }));
       c.model.create = create;
-      await c.createVenue({ user: 'agent', body: { name: 'The Spot', city: 'Salem', actor: 'sonnet' } }, resStub);
+      await c.createVenue({
+        user: 'agent', body: {
+          name: 'The Spot', city: 'Salem', address: '1 Main St', actor: 'sonnet',
+        },
+      }, resStub);
       expect(status).toBe(201);
       const arg = (create.mock.calls[0] as unknown[])[0] as any;
       expect(arg.status).toBe('active');
@@ -201,7 +208,7 @@ describe('Venue Controller', () => {
       c.model.findByIdAndUpdate = upd;
       const create = vi.fn();
       c.model.create = create;
-      await c.createVenue({ user: 'agent', body: { name: 'The Spot', email: 'b@k.com' } }, resStub);
+      await c.createVenue({ user: 'agent', body: { name: 'The Spot', address: '1 Main St', email: 'b@k.com' } }, resStub);
       expect(status).toBe(200);
       expect(create).not.toHaveBeenCalled();
       expect(upd).toHaveBeenCalledWith('dup1', expect.objectContaining({ status: 'active' }));
@@ -210,23 +217,30 @@ describe('Venue Controller', () => {
     // #983 — dedup logic. Email is entirely out of the match key now; only
     // name+city (refined by address when both sides have one) is used.
     describe('dedup (#983)', () => {
-      it('matches by name+city (case-insensitive), no address involved', async () => {
+      it('matches by name+city (case-insensitive); the one legacy address-less candidate is upserted onto (#987)', async () => {
         const find = vi.fn(() => Promise.resolve([{ _id: 'dup2', name: 'The Spot', city: 'Salem' }]));
         c.model.find = find;
         const upd = vi.fn(() => Promise.resolve({ _id: 'dup2' }));
         c.model.findByIdAndUpdate = upd;
-        await c.createVenue({ user: 'a', body: { name: 'the spot', city: 'SALEM' } }, resStub);
+        await c.createVenue({
+          user: 'a', body: { name: 'the spot', city: 'SALEM', address: '1 Main St' },
+        }, resStub);
         expect(status).toBe(200);
         expect(upd).toHaveBeenCalledWith('dup2', expect.objectContaining({ status: 'active' }));
       });
 
-      it('same name+city, no address on either side, dedupes as today', async () => {
+      // #987 — address is required on every POST now, so "no address on
+      // either side" is no longer a create scenario; the incoming address
+      // fills in on the one legacy address-less candidate instead.
+      it('same name+city, exactly one legacy address-less candidate ⇒ upserts onto it, filling the address in', async () => {
         c.model.find = vi.fn(() => Promise.resolve([{ _id: 'dup3', name: "Macado's", city: 'Roanoke' }]));
         const upd = vi.fn(() => Promise.resolve({ _id: 'dup3' }));
         c.model.findByIdAndUpdate = upd;
-        await c.createVenue({ user: 'a', body: { name: "Macado's", city: 'Roanoke' } }, resStub);
+        await c.createVenue({
+          user: 'a', body: { name: "Macado's", city: 'Roanoke', address: '1 Electric Road' },
+        }, resStub);
         expect(status).toBe(200);
-        expect(upd).toHaveBeenCalledWith('dup3', expect.objectContaining({ status: 'active' }));
+        expect(upd).toHaveBeenCalledWith('dup3', expect.objectContaining({ status: 'active', address: '1 Electric Rd' }));
       });
 
       it('same name+city, different (both non-empty) address ⇒ creates a new record, not an overwrite', async () => {
@@ -287,7 +301,7 @@ describe('Venue Controller', () => {
         const upd = vi.fn();
         c.model.findByIdAndUpdate = upd;
         await c.createVenue({
-          user: 'a', body: { name: 'Starr Hill Pilot Brewery', city: 'Roanoke', email: 'info@starrhill.com' },
+          user: 'a', body: { name: 'Starr Hill Pilot Brewery', city: 'Roanoke', address: '5 Points', email: 'info@starrhill.com' },
         }, resStub);
         expect(status).toBe(201);
         expect(upd).not.toHaveBeenCalled();
@@ -301,7 +315,7 @@ describe('Venue Controller', () => {
         c.model.create = create;
         const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
         await c.createVenue({
-          user: 'a', body: { name: 'Starr Hill Pilot Brewery', city: 'Roanoke', email: 'info@starrhill.com' },
+          user: 'a', body: { name: 'Starr Hill Pilot Brewery', city: 'Roanoke', address: '5 Points', email: 'info@starrhill.com' },
         }, resStub);
         expect(status).toBe(201);
         expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("also used by venue 'Starr Hill On Main'"));
@@ -314,7 +328,7 @@ describe('Venue Controller', () => {
         const create = vi.fn(() => Promise.resolve({ _id: 'new-venue' }));
         c.model.create = create;
         await c.createVenue({
-          user: 'a', body: { name: 'Some Venue', email: 'info@starrhill.com' },
+          user: 'a', body: { name: 'Some Venue', address: '1 Main St', email: 'info@starrhill.com' },
         }, resStub);
         expect(status).toBe(201);
       });
@@ -329,7 +343,7 @@ describe('Venue Controller', () => {
           const create = vi.fn(() => Promise.resolve({ _id: 'new-venue' }));
           c.model.create = create;
           await c.createVenue({
-            user: 'a', body: { name: 'Starr Hill On Main', city: 'Lynchburg', email: 'info@starrhill.com' },
+            user: 'a', body: { name: 'Starr Hill On Main', city: 'Lynchburg', address: '5 Points', email: 'info@starrhill.com' },
           }, resStub);
           expect(status).toBe(201);
           const arg = (create.mock.calls[0] as unknown[])[0] as any;
@@ -345,7 +359,7 @@ describe('Venue Controller', () => {
           await c.createVenue({
             user: 'a',
             body: {
-              name: 'Starr Hill On Main', city: 'Lynchburg', email: 'info@starrhill.com', notes: 'Great patio.',
+              name: 'Starr Hill On Main', city: 'Lynchburg', address: '5 Points', email: 'info@starrhill.com', notes: 'Great patio.',
             },
           }, resStub);
           expect(status).toBe(201);
@@ -359,7 +373,7 @@ describe('Venue Controller', () => {
           const create = vi.fn(() => Promise.resolve({ _id: 'new-venue' }));
           c.model.create = create;
           await c.createVenue({
-            user: 'a', body: { name: 'Unique Venue', email: 'nobody-else@x.com' },
+            user: 'a', body: { name: 'Unique Venue', address: '1 Main St', email: 'nobody-else@x.com' },
           }, resStub);
           expect(status).toBe(201);
           const arg = (create.mock.calls[0] as unknown[])[0] as any;
@@ -374,7 +388,7 @@ describe('Venue Controller', () => {
           const create = vi.fn();
           c.model.create = create;
           await c.createVenue({
-            user: 'a', body: { name: 'The Spot', city: 'Salem', email: 'shared@x.com' },
+            user: 'a', body: { name: 'The Spot', city: 'Salem', address: '1 Main St', email: 'shared@x.com' },
           }, resStub);
           expect(status).toBe(200);
           expect(create).not.toHaveBeenCalled();
@@ -383,13 +397,13 @@ describe('Venue Controller', () => {
         });
       });
 
-      it('findDuplicate: no candidates at all resolves null', async () => {
+      it('findDuplicate: no candidates at all resolves { kind: "none" }', async () => {
         c.model.find = vi.fn(() => Promise.resolve([]));
         const result = await c.findDuplicate({ name: 'Nobody Here' });
-        expect(result).toBeNull();
+        expect(result).toEqual({ kind: 'none' });
       });
 
-      it('findDuplicate: an address supplied with no matching candidate and no unambiguous address-less fallback resolves null', async () => {
+      it('findDuplicate: an address supplied with no matching candidate and no unambiguous address-less fallback resolves { kind: "none" }', async () => {
         c.model.find = vi.fn(() => Promise.resolve([
           {
             _id: 'a1', name: "Macado's", city: 'Roanoke', address: '1 Electric Rd',
@@ -399,7 +413,105 @@ describe('Venue Controller', () => {
           },
         ]));
         const result = await c.findDuplicate({ name: "Macado's", city: 'Roanoke', address: '3 Brand New Rd' });
-        expect(result).toBeNull();
+        expect(result).toEqual({ kind: 'none' });
+      });
+
+      // #987 Part B — two or more legacy (address-less) candidates for the
+      // same name+city: do not guess, do not silently duplicate.
+      it('findDuplicate: two+ legacy address-less candidates resolves { kind: "ambiguous" } naming their ids', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([
+          { _id: 'legacy-1', name: 'Old Venue', city: 'Salem' },
+          { _id: 'legacy-2', name: 'Old Venue', city: 'Salem' },
+        ]));
+        const result = await c.findDuplicate({ name: 'Old Venue', city: 'Salem', address: '1 Main St' });
+        expect(result).toEqual({ kind: 'ambiguous', ids: ['legacy-1', 'legacy-2'] });
+      });
+
+      it('POST /venue 400s naming the ids when two+ legacy address-less candidates match name+city', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([
+          { _id: 'legacy-1', name: 'Old Venue', city: 'Salem' },
+          { _id: 'legacy-2', name: 'Old Venue', city: 'Salem' },
+        ]));
+        const create = vi.fn();
+        c.model.create = create;
+        const upd = vi.fn();
+        c.model.findByIdAndUpdate = upd;
+        await c.createVenue({
+          user: 'a', body: { name: 'Old Venue', city: 'Salem', address: '1 Main St' },
+        }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('legacy-1');
+        expect(payload.message).toContain('legacy-2');
+        expect(create).not.toHaveBeenCalled();
+        expect(upd).not.toHaveBeenCalled();
+      });
+    });
+
+    // #987 Part A — normalization on write (POST).
+    describe('address normalization on create (#987)', () => {
+      it('normalizes the stored address per the USPS Pub 28 table', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([]));
+        const create = vi.fn(() => Promise.resolve({ _id: 'norm-1' }));
+        c.model.create = create;
+        await c.createVenue({
+          user: 'a', body: { name: 'Norm Venue', address: '100 North Main Street, Suite 2' },
+        }, resStub);
+        expect(status).toBe(201);
+        const arg = (create.mock.calls[0] as unknown[])[0] as any;
+        expect(arg.address).toBe('100 N Main St Ste 2');
+      });
+
+      it('"1 Electric Road" and "1 Electric Rd" resolve to the same venue (one record, normalized form stored)', async () => {
+        c.model.find = vi.fn(() => Promise.resolve([]));
+        const create = vi.fn(() => Promise.resolve({ _id: 'macados-1', address: '1 Electric Rd' }));
+        c.model.create = create;
+        await c.createVenue({
+          user: 'a', body: { name: 'Macados', city: 'Roanoke', address: '1 Electric Road' },
+        }, resStub);
+        expect(status).toBe(201);
+        const created = (create.mock.calls[0] as unknown[])[0] as any;
+        expect(created.address).toBe('1 Electric Rd');
+
+        // Re-post with the already-abbreviated form: matches the same venue
+        // by normalized address, upserts rather than creating a second record.
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'macados-1', name: 'Macados', city: 'Roanoke', address: '1 Electric Rd' }]));
+        const upd = vi.fn(() => Promise.resolve({ _id: 'macados-1' }));
+        c.model.findByIdAndUpdate = upd;
+        const create2 = vi.fn();
+        c.model.create = create2;
+        await c.createVenue({
+          user: 'a', body: { name: 'Macados', city: 'Roanoke', address: '1 Electric Rd' },
+        }, resStub);
+        expect(status).toBe(200);
+        expect(create2).not.toHaveBeenCalled();
+        expect(upd).toHaveBeenCalledWith('macados-1', expect.objectContaining({ address: '1 Electric Rd' }));
+      });
+    });
+
+    // #987 Part B — address required on every POST /venue.
+    describe('address required on create (#987)', () => {
+      it('rejects a missing address, before any DB write', async () => {
+        const find = vi.fn();
+        c.model.find = find;
+        const create = vi.fn();
+        c.model.create = create;
+        await c.createVenue({ user: 'a', body: { name: 'X' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('address is required');
+        expect(find).not.toHaveBeenCalled();
+        expect(create).not.toHaveBeenCalled();
+      });
+
+      it('rejects an empty-string address', async () => {
+        await c.createVenue({ user: 'a', body: { name: 'X', address: '' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('address is required');
+      });
+
+      it('rejects a whitespace-only address', async () => {
+        await c.createVenue({ user: 'a', body: { name: 'X', address: '   ' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('address is required');
       });
     });
   });
@@ -488,6 +600,97 @@ describe('Venue Controller', () => {
       const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
       expect(written).not.toHaveProperty('bookingStatus');
       expect(written).toMatchObject({ notes: 'x' });
+    });
+
+    // #987 — address normalization on PUT (Part A) + the once-set-cannot-be-
+    // removed rule (Part B).
+    describe('address handling on update (#987)', () => {
+      it('omitting address entirely leaves it unchanged (no lookup, no address in the write)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const findById = vi.fn();
+        c.model.findById = findById;
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { notes: 'x' } }, resStub);
+        expect(status).toBe(200);
+        expect(findById).not.toHaveBeenCalled();
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        expect(written).not.toHaveProperty('address');
+      });
+
+      it('a non-empty address is normalized identically to POST (Part A)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({
+          user: 'agent', params: { id }, body: { address: '221 Church Street' },
+        }, resStub);
+        expect(status).toBe(200);
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ address: '221 Church St' }));
+      });
+
+      it('explicit "" on a venue that HAS an address ⇒ 400, nothing written', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: id, address: '1 Electric Rd' }));
+        const upd = vi.fn();
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { address: '' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('cannot be removed');
+        expect(upd).not.toHaveBeenCalled();
+      });
+
+      it('explicit null on a venue that HAS an address ⇒ 400, nothing written', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: id, address: '1 Electric Rd' }));
+        const upd = vi.fn();
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({
+          user: 'agent', params: { id }, body: { address: null as unknown as string },
+        }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('cannot be removed');
+        expect(upd).not.toHaveBeenCalled();
+      });
+
+      it('whitespace-only address on a venue that HAS an address ⇒ 400, nothing written', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: id, address: '1 Electric Rd' }));
+        const upd = vi.fn();
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { address: '   ' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('cannot be removed');
+        expect(upd).not.toHaveBeenCalled();
+      });
+
+      it('the same "" call on an address-less venue ⇒ allowed no-op', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: id }));
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { address: '' } }, resStub);
+        expect(status).toBe(200);
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ address: '' }));
+      });
+
+      it('400s "Id Not Found" when clearing address on a venue that does not exist', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve(null));
+        const upd = vi.fn();
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { address: '' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('Id Not Found');
+        expect(upd).not.toHaveBeenCalled();
+      });
+
+      it('500s when the pre-check lookup throws', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.reject(new Error('db down')));
+        await c.updateVenue({ user: 'agent', params: { id }, body: { address: '' } }, resStub);
+        expect(status).toBe(500);
+      });
     });
 
     // #980 — gigInterval (spacing, months) + resumeBooking (cooldown date).
@@ -862,7 +1065,7 @@ describe('Venue Controller', () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
       const create = vi.fn(() => Promise.resolve({ _id: 'v11' }));
       c.model.create = create;
-      await c.createVenue({ user: 'a', body: { name: 'X', bookingStatus: 'bogus' } }, resStub);
+      await c.createVenue({ user: 'a', body: { name: 'X', address: '1 Main St', bookingStatus: 'bogus' } }, resStub);
       expect(status).toBe(201);
       expect((create.mock.calls[0] as unknown[])[0]).not.toHaveProperty('bookingStatus');
     });
@@ -874,7 +1077,7 @@ describe('Venue Controller', () => {
       await c.createVenue({
         user: 'a',
         body: {
-          name: 'Olde Salem', interested: false, payTier: 'low',
+          name: 'Olde Salem', address: '1 Main St', interested: false, payTier: 'low',
         },
       }, resStub);
       expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({
@@ -1027,7 +1230,11 @@ describe('Venue Controller', () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
       const create = vi.fn(() => Promise.resolve({ _id: 'v9' }));
       c.model.create = create;
-      await c.createVenue({ user: 'a', body: { name: 'The Spot', venueType: 'Originals', outreachEligible: true } }, resStub);
+      await c.createVenue({
+        user: 'a', body: {
+          name: 'The Spot', address: '1 Main St', venueType: 'Originals', outreachEligible: true,
+        },
+      }, resStub);
       expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({ outreachEligible: true, venueType: 'Originals' });
     });
 
