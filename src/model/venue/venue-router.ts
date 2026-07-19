@@ -19,6 +19,14 @@ router.route('/')
     void action();
   });
 
+// GET /venue/cities — distinct non-empty city values (#980). Registered
+// BEFORE /:id so Express doesn't swallow it as a :id lookup for "cities".
+router.route('/cities')
+  .get((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'listCities', controller, authUtils);
+    void action();
+  });
+
 router.route('/:id')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'getVenue', controller, authUtils);

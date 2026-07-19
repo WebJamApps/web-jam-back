@@ -585,14 +585,63 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect((venueModel as any).find).toHaveBeenCalledWith(expect.objectContaining({ outreachEligible: true }));
     });
 
-    // #923 — doNotContact is a permanent global exclusion, on top of the
-    // existing outreachEligible gate; the query itself excludes it (the venue
-    // never comes back from Mongo in the first place).
-    it('excludes doNotContact venues from the query (#923)', async () => {
+    // #980 — doNotContact is gone entirely (folded into outreachEligible,
+    // the SOLE permanent stop/go gate now) — the query must never reference
+    // it anymore.
+    it('no longer references doNotContact in the query (#980)', async () => {
       (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
       await c.getCandidates({ user: 'a', query: {} }, resStub);
       expect(status).toBe(200);
-      expect((venueModel as any).find).toHaveBeenCalledWith(expect.objectContaining({ doNotContact: { $ne: true } }));
+      const callArg = (venueModel as any).find.mock.calls[0][0];
+      expect(callArg).not.toHaveProperty('doNotContact');
+    });
+
+    // #980 — no active resumeBooking cooldown: unset, null, or already in
+    // the past are all fine; only a future date blocks. Enforced at the
+    // query level (ADDITIONAL to outreachEligible, never a replacement).
+    it('excludes an active resumeBooking cooldown via the query (#980)', async () => {
+      (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+      await c.getCandidates({ user: 'a', query: {} }, resStub);
+      expect(status).toBe(200);
+      const callArg = (venueModel as any).find.mock.calls[0][0];
+      expect(callArg.$or).toEqual(expect.arrayContaining([
+        { resumeBooking: { $exists: false } },
+        { resumeBooking: null },
+        { resumeBooking: { $lte: expect.any(Date) } },
+      ]));
+    });
+
+    // #980 — optional cities filter, AND'd with every other criterion;
+    // omitted/empty = all cities (back-compat).
+    describe('cities filter (#980)', () => {
+      it('adds a city $in clause when cities is given', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        await c.getCandidates({ user: 'a', query: { cities: 'Salem,Roanoke' } }, resStub);
+        expect(status).toBe(200);
+        const callArg = (venueModel as any).find.mock.calls[0][0];
+        expect(callArg.city).toEqual({ $in: ['Salem', 'Roanoke'] });
+      });
+
+      it('trims whitespace and drops empty entries from a comma-separated cities list', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        await c.getCandidates({ user: 'a', query: { cities: ' Salem , , Roanoke ' } }, resStub);
+        const callArg = (venueModel as any).find.mock.calls[0][0];
+        expect(callArg.city).toEqual({ $in: ['Salem', 'Roanoke'] });
+      });
+
+      it('omits the city clause entirely when cities is absent — all cities (back-compat)', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        const callArg = (venueModel as any).find.mock.calls[0][0];
+        expect(callArg).not.toHaveProperty('city');
+      });
+
+      it('omits the city clause when cities is an empty string', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        await c.getCandidates({ user: 'a', query: { cities: '' } }, resStub);
+        const callArg = (venueModel as any).find.mock.calls[0][0];
+        expect(callArg).not.toHaveProperty('city');
+      });
     });
 
     // #974 — the sendability precondition (no VALID primary email = not
@@ -627,22 +676,45 @@ describe('Outreach Controller (#844 batch model)', () => {
       }));
     });
 
-    // #958 SAFETY — the core motivation for this issue: a venue booked
-    // outside the pitch flow (phone/in-person) must never be re-suggested.
-    describe('excludes venues with an upcoming linked gig (#958 SAFETY)', () => {
-      it('drops a venue matched by venueId with a future gig', async () => {
-        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }, { _id: 'b' }]));
+    // #980 — the gigInterval-aware generalization of the old #958 SAFETY
+    // blanket exclusion. gigInterval=0 (every venue's default, and every
+    // venue's value before the #980 migration) now means NO spacing check at
+    // all — the old "any upcoming linked gig excludes forever" rule (the
+    // "repeat-venue trap" #980 fixes) is gone by design. A venue only gets
+    // spaced out once it's explicitly opted in via gigInterval > 0.
+    describe('gigInterval spacing (#980)', () => {
+      it('does NOT drop a venue with an upcoming gig when gigInterval is 0 (the default) — the repeat-venue trap is fixed', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
         (gigModel as any).find = vi.fn(() => Promise.resolve([
           { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString() },
         ]));
         await c.getCandidates({ user: 'a', query: {} }, resStub);
         expect(status).toBe(200);
         expect(payload).toHaveLength(1);
-        expect(payload[0]._id).toBe('b');
       });
 
-      it('drops a venue matched by exact normalized name with a future gig', async () => {
-        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', name: 'Durty Bull' }]));
+      it('does NOT drop a venue with an upcoming gig when gigInterval is unset (default) either', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toHaveLength(1);
+      });
+
+      it('drops a venue (matched by venueId) whose linked gig is within gigInterval months of the target window', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 3 }, { _id: 'b', gigInterval: 3 }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: VALID_WEEKEND.start }, // exactly the target window
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates.map((v: any) => v._id)).toEqual(['b']);
+      });
+
+      it('drops a venue matched by exact normalized name whose gig is too close', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', name: 'Durty Bull', gigInterval: 6 }]));
         (gigModel as any).find = vi.fn(() => Promise.resolve([
           { venue: 'DURTY, BULL!', datetime: new Date(Date.now() + 86400000).toISOString() },
         ]));
@@ -651,14 +723,68 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(payload).toHaveLength(0);
       });
 
-      it('does NOT drop a venue whose linked gig is in the past', async () => {
-        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+      it('does NOT drop when the linked gig is exactly gigInterval months away (boundary is inclusive of "ok")', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 2 }]));
+        const w = new Date(VALID_WEEKEND.start);
+        const exactlyTwoMonthsOut = new Date(w); exactlyTwoMonthsOut.setMonth(exactlyTwoMonthsOut.getMonth() + 2);
         (gigModel as any).find = vi.fn(() => Promise.resolve([
-          { venueId: 'a', datetime: new Date(Date.now() - 86400000).toISOString() },
+          { venueId: 'a', datetime: exactlyTwoMonthsOut.toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(1);
+      });
+
+      it('checks the NEAREST gig on EITHER side of the target window (a past gig can be too close too)', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 3 }]));
+        const w = new Date(VALID_WEEKEND.start);
+        const oneMonthBefore = new Date(w); oneMonthBefore.setMonth(oneMonthBefore.getMonth() - 1);
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: oneMonthBefore.toISOString() }, // in the past, but only 1 month from W
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(0);
+      });
+
+      it('with multiple linked gigs, drops the venue if ANY one of them is too close', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 2 }]));
+        const w = new Date(VALID_WEEKEND.start);
+        const farBefore = new Date(w); farBefore.setFullYear(farBefore.getFullYear() - 1);
+        const farAfter = new Date(w); farAfter.setFullYear(farAfter.getFullYear() + 1);
+        const closeAfter = new Date(w); closeAfter.setDate(closeAfter.getDate() + 10);
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: farBefore.toISOString() },
+          { venueId: 'a', datetime: closeAfter.toISOString() },
+          { venueId: 'a', datetime: farAfter.toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(0);
+      });
+
+      it('with multiple linked gigs, keeps the venue when EVERY one of them clears the spacing', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 2 }]));
+        const w = new Date(VALID_WEEKEND.start);
+        const farBefore = new Date(w); farBefore.setFullYear(farBefore.getFullYear() - 1);
+        const farAfter = new Date(w); farAfter.setFullYear(farAfter.getFullYear() + 1);
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: farBefore.toISOString() },
+          { venueId: 'a', datetime: farAfter.toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(1);
+      });
+
+      it('uses "now" as the target window when no targetWeekend is given', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 3 }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString() }, // ~tomorrow, well within 3 months of now
         ]));
         await c.getCandidates({ user: 'a', query: {} }, resStub);
         expect(status).toBe(200);
-        expect(payload).toHaveLength(1);
+        expect(payload).toHaveLength(0);
       });
 
       it('500s when the gig query throws', async () => {
@@ -666,6 +792,68 @@ describe('Outreach Controller (#844 batch model)', () => {
         (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db down')));
         await c.getCandidates({ user: 'a', query: {} }, resStub);
         expect(status).toBe(500);
+      });
+    });
+
+    // #980/JaMmusic#1238 — every candidate carries a `reason` object so the
+    // Find-Eligible UI can show why it qualified without re-deriving
+    // eligibility client-side (buildCandidateReason).
+    describe('candidate reason (#980)', () => {
+      it('reports spacing off when gigInterval is 0 (the default)', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason).toMatchObject({
+          gigIntervalMonths: 0, spacingNote: 'spacing off (gigInterval=0)', nearestGigMonthsAway: null, lastGigDate: null,
+        });
+      });
+
+      it('reports "no gigs yet" when gigInterval is set but the venue has no linked gigs', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 3 }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason).toMatchObject({ gigIntervalMonths: 3, spacingNote: 'no gigs yet', nearestGigMonthsAway: null });
+      });
+
+      it('reports the nearest-gig distance (months) when the venue clears spacing', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 2 }]));
+        const w = new Date(VALID_WEEKEND.start);
+        const sixMonthsOut = new Date(w); sixMonthsOut.setMonth(sixMonthsOut.getMonth() + 6);
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: sixMonthsOut.toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(payload.candidates[0].reason.gigIntervalMonths).toBe(2);
+        expect(payload.candidates[0].reason.nearestGigMonthsAway).toBeCloseTo(6, 0);
+        expect(payload.candidates[0].reason.spacingNote).toContain('clear — nearest gig');
+      });
+
+      it('reports lastGigDate as the most recent PAST linked gig, picking the latest among several', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
+        const older = new Date(Date.now() - 200 * 86400000).toISOString();
+        const mostRecent = new Date(Date.now() - 10 * 86400000).toISOString();
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: older },
+          { venueId: 'a', datetime: mostRecent },
+        ]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason.lastGigDate).toBe(new Date(mostRecent).toISOString());
+      });
+
+      it('reports resumeBookingExpired true for a past resumeBooking date', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([
+          { _id: 'a', resumeBooking: new Date(Date.now() - 86400000).toISOString() },
+        ]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason.resumeBookingExpired).toBe(true);
+      });
+
+      it('reports resumeBookingExpired false when resumeBooking is unset', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason.resumeBookingExpired).toBe(false);
       });
     });
 
@@ -1840,17 +2028,29 @@ describe('Outreach Controller (#844 batch model)', () => {
       }));
     });
 
-    it('not-interested sets venue.doNotContact permanently', async () => {
+    // #980 — doNotContact is gone; not-interested now sets outreachEligible
+    // false (the SOLE permanent stop/go gate) and appends a dated note.
+    it('not-interested sets venue.outreachEligible false permanently and appends a dated note (#980)', async () => {
       const rec = outreachRec();
       c.model.findById = vi.fn(() => Promise.resolve(rec));
       const venueUpd = vi.fn(() => Promise.resolve({}));
       (venueModel as any).findByIdAndUpdate = venueUpd;
       await c.recordOutcome({ user: 'a', params: { id: String(rec._id) }, body: { status: 'not-interested' } }, resStub);
       expect(status).toBe(200);
-      expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({ doNotContact: true }));
+      expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({ outreachEligible: false }));
+      // The note-append call: a single pipeline update (array), never a
+      // separate read-then-write — see appendVenueNote's header comment.
+      const noteCall = venueUpd.mock.calls.find((call: any) => Array.isArray(call[1]));
+      expect(noteCall).toBeTruthy();
+      const pipeline = (noteCall as any)[1][0];
+      const line = pipeline.$set.notes.$cond[2];
+      expect(line).toContain('not-interested');
+      expect(line).toContain('outreachEligible set to false');
     });
 
-    it('booked stamps bookedDate on the record + venue, and marks venue.bookingStatus booked', async () => {
+    // #980 — bookingStatus is no longer written here (it's derived purely
+    // from actual linked-gig data now); bookedDate is unaffected.
+    it('booked stamps bookedDate on the record + venue, WITHOUT touching bookingStatus (#980)', async () => {
       const rec = outreachRec();
       c.model.findById = vi.fn(() => Promise.resolve(rec));
       const outreachUpd = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
@@ -1863,9 +2063,10 @@ describe('Outreach Controller (#844 batch model)', () => {
       }, resStub);
       expect(status).toBe(200);
       expect((outreachUpd.mock.calls[0] as any)[1].bookedDate).toEqual(new Date('2026-09-26'));
-      expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
-        bookedDate: new Date('2026-09-26'), bookingStatus: 'booked',
-      }));
+      const bookedDateCall = venueUpd.mock.calls.find((call: any) => call[1] && call[1].bookedDate);
+      expect(bookedDateCall).toBeTruthy();
+      expect((bookedDateCall as any)[1]).not.toHaveProperty('bookingStatus');
+      expect((bookedDateCall as any)[1].bookedDate).toEqual(new Date('2026-09-26'));
     });
 
     it('booked auto-flips every OTHER sent+overlapping record to target-filled (+ nextTouchDue null)', async () => {
