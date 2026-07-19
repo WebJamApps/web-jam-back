@@ -177,6 +177,18 @@ const venueSchema = new Schema({
   // cooldown. Drives both the getCandidates exclusion (outreach-
   // controller.ts) and the derived bookingStatus:'not-booking' readout above.
   resumeBooking: { type: Date, required: false },
+  // #995 — a SEPARATE "calendar full through" fact, split out from
+  // resumeBooking: `resumeBooking` means "don't contact until" (the venue
+  // asked for space, compared against TODAY — e.g. Mama Jean's "try again in
+  // 4 months"); `bookedThrough` means "their dates are gone, but contacting
+  // them now is fine" (compared against the TARGET WINDOW being pitched, not
+  // today — e.g. Olde Salem Brewing is booked solid through 2026 but still
+  // pitchable NOW for a January 2027 weekend). Conflating the two into one
+  // date lost information Josh can't reconstruct from memory later, hence the
+  // split. Optional; unset behaves identically to today on both the
+  // getCandidates exclusion (outreach-controller.ts) and the derived
+  // bookingStatus readout above.
+  bookedThrough: { type: Date, required: false },
   notes: { type: String, required: false },
   // Template-selection inputs (#848). `relationshipStage` overrides the
   // auto-derived cold/returning stage when set; left unset = auto-derive

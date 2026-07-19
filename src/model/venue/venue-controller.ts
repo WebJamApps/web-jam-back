@@ -89,6 +89,11 @@ interface VenueBody {
   // written (see createVenue/updateVenue).
   gigInterval?: number;
   resumeBooking?: string;
+  // #995 — "calendar full through" (compared against a target window's
+  // start, not today — see venue-schema.ts); a distinct fact from
+  // resumeBooking's "don't contact until" (compared against today).
+  // Same validation pattern as resumeBooking (validateBody below).
+  bookedThrough?: string;
   bookedDate?: string;
   actor?: string;
 }
@@ -233,15 +238,24 @@ function invalidGigInterval(gigInterval: number | undefined): boolean {
     && (typeof gigInterval !== 'number' || !Number.isInteger(gigInterval) || gigInterval < 0);
 }
 
+// Shared "optional, but if present must parse as a date" rule — used by both
+// resumeBooking and bookedThrough (#995: same validation pattern, deliberately
+// kept as one helper since the rule itself is identical, even though the two
+// fields mean different things and are compared against different anchors
+// elsewhere — see venue-schema.ts).
+function invalidOptionalDate(value: string | undefined): boolean {
+  return value !== undefined && value !== '' && Number.isNaN(new Date(value).getTime());
+}
+
 function validateBody(body: VenueBody, partial: boolean): string {
   if ((!partial || body.name !== undefined) && (!body.name || !body.name.trim())) return 'Name is required';
   const enumErr = invalidEnum(body);
   if (enumErr) return enumErr;
   if (invalidPriority(body.priority)) return 'priority must be a number 0-5';
   if (invalidGigInterval(body.gigInterval)) return 'gigInterval must be a non-negative whole number of months';
-  if (body.resumeBooking !== undefined && body.resumeBooking !== '' && Number.isNaN(new Date(body.resumeBooking).getTime())) {
-    return 'resumeBooking must be a valid date';
-  }
+  if (invalidOptionalDate(body.resumeBooking)) return 'resumeBooking must be a valid date';
+  // #995 — bookedThrough validated identically to resumeBooking above.
+  if (invalidOptionalDate(body.bookedThrough)) return 'bookedThrough must be a valid date';
   if (body.email !== undefined && body.email !== '' && !isValidEmail(body.email)) {
     return 'A valid email is required';
   }
@@ -363,10 +377,21 @@ class VenueController extends Controller {
   // "active" when set to a date strictly in the future, relative to `now` —
   // the same instant the caller resolves everything else against (mirrors
   // the exact wording of #980: "unset or in the past" = no active cooldown).
+  //
+  // #995 — `bookedThrough` (their calendar is full through this date, but
+  // contacting them is fine) ALSO drives `not-booking`, alongside the
+  // resumeBooking cooldown above: "active" here means bookedThrough is set to
+  // a date at-or-after `now` (this readout has no target-window context to
+  // compare against — see the getCandidates exclusion in
+  // outreach-controller.ts for the window-aware comparison), so the badge
+  // just tells Josh "still booked up as of right now." Precedence is
+  // otherwise unchanged: booked still beats not-booking either way.
   static computeBookingStatus(venue: Record<string, unknown>, hasUpcomingGig: boolean, now: number): DerivedBookingStatus {
     if (hasUpcomingGig) return 'booked';
     const resumeBooking = venue.resumeBooking ? new Date(venue.resumeBooking as string) : null;
     if (resumeBooking && !Number.isNaN(resumeBooking.getTime()) && resumeBooking.getTime() > now) return 'not-booking';
+    const bookedThrough = venue.bookedThrough ? new Date(venue.bookedThrough as string) : null;
+    if (bookedThrough && !Number.isNaN(bookedThrough.getTime()) && bookedThrough.getTime() >= now) return 'not-booking';
     return 'booking';
   }
 
