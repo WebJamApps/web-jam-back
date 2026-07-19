@@ -47,6 +47,10 @@ interface VenueBody {
   _id?: string;
   name?: string;
   city?: string;
+  // #983 — street address, the disambiguator for same-name/same-city
+  // locations. Optional; refines POST /venue dedup (see findDuplicate below)
+  // but is never required.
+  address?: string;
   usState?: string;
   // #972 — country (2-letter code, default 'US' at the schema level) + region
   // (free-text state/province, for non-US venues). usState is kept as-is for
@@ -445,15 +449,69 @@ class VenueController extends Controller {
     return res.status(200).json(withLinks[0]);
   }
 
-  // Find an existing venue for dedupe: by email when given (strongest key),
-  // otherwise by case-insensitive name (+ city when present).
+  // Find an existing venue for dedupe (#983). Email is NOT part of this
+  // match anymore — a shared chain inbox (e.g. Starr Hill's info@starrhill
+  // .com) is not unique per location, and matching on it silently overwrote
+  // a different venue's record (the Starr Hill incident this issue fixes).
+  //
+  // Match key is name + city (case-insensitive, as before #983), refined by
+  // `address` ONLY when BOTH the incoming body and a given candidate have a
+  // non-empty address — records without one keep falling back to name+city,
+  // same as before #983 (no back-migration; address fills in on next edit).
+  // When address IS supplied and matches a candidate's address exactly,
+  // that candidate wins outright (two Macado's in Roanoke, disambiguated).
+  // When address is supplied but matches no candidate, only fall back to
+  // name+city when there is exactly one address-less candidate to fall back
+  // to — never guess between two already address-differentiated locations.
   async findDuplicate(body: VenueBody): Promise<Record<string, unknown> | null> {
-    const email = (body.email || '').trim().toLowerCase();
-    if (email) return this.model.findOne({ email });
-    const query: Record<string, unknown> = { name: new RegExp(`^${escapeRegExp((body.name || '').trim())}$`, 'i') };
+    const name = (body.name || '').trim();
+    if (!name) return null;
+    const query: Record<string, unknown> = { name: new RegExp(`^${escapeRegExp(name)}$`, 'i') };
     const city = (body.city || '').trim();
     if (city) query.city = new RegExp(`^${escapeRegExp(city)}$`, 'i');
+    const candidates = await this.model.find(query) as unknown as Record<string, unknown>[];
+    if (!candidates.length) return null;
+    const incomingAddress = (body.address || '').trim().toLowerCase();
+    if (incomingAddress) {
+      const addressMatch = candidates.find(
+        (c) => String(c.address || '').trim().toLowerCase() === incomingAddress,
+      );
+      if (addressMatch) return addressMatch;
+    }
+    const noAddressCandidates = candidates.filter((c) => !String(c.address || '').trim());
+    return noAddressCandidates.length === 1 ? noAddressCandidates[0] : null;
+  }
+
+  // #983 — email is plain contact data now: the same address (a shared chain
+  // inbox) may legitimately exist on multiple venues, and finding it
+  // elsewhere must never block or overwrite a create. This is a cheap,
+  // best-effort, non-blocking lookup purely to surface an informational
+  // notice; any failure here is swallowed so it can never fail the actual
+  // write. #985 — when more than one other venue shares the email, only the
+  // FIRST match found is named (kept simple, per #985's own call-it-your-way
+  // acceptance criterion) rather than enumerating every match.
+  async findEmailElsewhere(email: string, excludeId?: string): Promise<Record<string, unknown> | null> {
+    const query: Record<string, unknown> = { email };
+    if (excludeId) query._id = { $ne: excludeId };
     return this.model.findOne(query);
+  }
+
+  // #985 — build the dated notice line persisted to a newly-created venue's
+  // `notes` when its email is already on another venue (e.g. Starr Hill's
+  // shared info@starrhill.com). Same `[YYYY-MM-DD] ...` dated-line format as
+  // the not-interested outcome handler / #980 migration notes.
+  static buildEmailElsewhereNote(email: string, otherName: unknown): string {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    return `[${dateStr}] Email ${email} also used by venue '${String(otherName || '')}'.`;
+  }
+
+  // #985 — append (never overwrite) a note line onto a create payload's own
+  // `notes` value. Only used on the fresh-insert path (findDuplicate found no
+  // match) — an upsert onto an existing venue is intentionally left alone,
+  // since #985 only annotates the NEWLY CREATED record, never another venue.
+  static appendNote(existingNotes: unknown, line: string): string {
+    const trimmed = typeof existingNotes === 'string' ? existingNotes.trim() : '';
+    return trimmed ? `${trimmed}\n${line}` : line;
   }
 
   // POST /venue — create a venue, or upsert onto an existing match (dedupe), so
@@ -471,6 +529,26 @@ class VenueController extends Controller {
     const actor = resolveActor(req, body);
     let existing: Record<string, unknown> | null;
     try { existing = await this.findDuplicate(body); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+
+    // #983/#985 — non-blocking "email also on '<venueName>'" notice: never
+    // awaited in a way that could fail the create, and never used to
+    // find/overwrite a record (that's findDuplicate's job, above, and it
+    // never looks at email). #985 — only a fresh insert (no name+city match)
+    // gets the notice persisted to ITS OWN `notes`; an upsert onto an
+    // existing venue is untouched (not a "newly created" record), and the
+    // OTHER venue that shares the email is never modified either way.
+    const email = (body.email || '').trim().toLowerCase();
+    let emailNote = '';
+    if (email) {
+      try {
+        const elsewhere = await this.findEmailElsewhere(email, existing ? String(existing._id) : undefined);
+        if (elsewhere) {
+          emailNote = VenueController.buildEmailElsewhereNote(email, elsewhere.name);
+          console.log(`[venue] ${emailNote}`); // eslint-disable-line no-console
+        }
+      } catch { /* notice lookup is best-effort only — never blocks the write */ }
+    }
+
     if (existing) {
       let updated;
       try {
@@ -480,9 +558,11 @@ class VenueController extends Controller {
       } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
       return res.status(200).json(updated);
     }
+    const createBody: Record<string, unknown> = { ...body, status: body.status || 'active', lastModifiedBy: actor };
+    if (emailNote) createBody.notes = VenueController.appendNote(body.notes, emailNote);
     let doc;
     try {
-      doc = await this.model.create({ ...body, status: body.status || 'active', lastModifiedBy: actor });
+      doc = await this.model.create(createBody);
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     return res.status(201).json(doc);
   }
