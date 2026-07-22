@@ -15,6 +15,9 @@
     "#src/*": "./build/src/*",
     "#lib/*": "./build/src/lib/*"
   },
+  "overrides": {
+    "shell-quote": "^1.10.0"
+  },
   "scripts": {
     "rmrf": "rimraf build && rimraf JaMmusic && rimraf coverage",
     "dev": "rimraf build && tsc && npm run copy:assets && concurrently --raw \"npm:ts-start\" \"npm:ts-watch\"",
