@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -14,6 +14,9 @@
   "imports": {
     "#src/*": "./build/src/*",
     "#lib/*": "./build/src/lib/*"
+  },
+  "overrides": {
+    "shell-quote": "^1.10.0"
   },
   "scripts": {
     "rmrf": "rimraf build && rimraf JaMmusic && rimraf coverage",
