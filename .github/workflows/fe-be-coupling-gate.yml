@@ -1,0 +1,22 @@
+name: FE/BE coupling gate
+
+# Required status check on dev->main PRs. Parses the PR body for a
+# `FE-couples: <repo>#NNN` line and blocks the PR unless that front-end
+# change has merged to its own repo's main, or a `Coupling-override:`
+# line is present. Conventions are canonical in
+# web-jam-tools/docs/cross-ai-rules.md.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  coupling-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check FE/BE coupling
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/coupling-gate.sh
