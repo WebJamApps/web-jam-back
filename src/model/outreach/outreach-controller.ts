@@ -25,6 +25,20 @@ import { MAX_STEP, nextTouchDueAfter, touchAt } from './cadence.js';
 // InquiryController CC precedent). Maria's address is the same one inquiries CC.
 const PITCH_CC = ['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com'];
 
+// JaMmusic#1250 — a 29-venue batch silently skipped 6 venues with no
+// venueType/templateOverride/templateType because resolvePitch hard-400'd
+// instead of sending. Rather than drop a venue on the floor for a missing
+// tag (the real gap is web-jam-back#843's venueType backfill), fall back to
+// this safest-for-an-unknown-venue template type. Prod carries both a `cold`
+// and a `returning` stage for it, so findTemplate always resolves. Kept as
+// one exported constant so it's changeable in a single place.
+export const DEFAULT_TEMPLATE_TYPE = 'MidRangeCafeBar';
+
+// JaMmusic#1250 — placeholder venueName for a skipped-batch entry where no
+// venue doc could even be loaded (invalid id, or venue not found). The
+// frontend always renders venueName, so this field is never omitted.
+export const UNKNOWN_VENUE_NAME = '(unknown venue)';
+
 // An active campaign blocks a new pitch for the same venue + window (no
 // double-pitching). sent / replied are active; every outcome status
 // (no-response / interested / not-interested / booked / target-filled) is
@@ -42,7 +56,11 @@ const OUTREACH_SEND_CAPS = ['outreach:create', 'outreach:approve'];
 interface AuthedUser { userType?: string; privileges?: string[] }
 type AuthRequest = Request & { user?: string };
 type AuthIdRequest = Request<{ id: string }> & { user?: string };
-type AuthzError = { status: number; message: string; outreach?: unknown };
+// venueName (JaMmusic#1250) — carried alongside every resolvePitch error so
+// sendBatch's skipped report can name the venue instead of just its
+// ObjectId. Always set by resolvePitch (UNKNOWN_VENUE_NAME when no venue doc
+// could be loaded at all), never left undefined for a batch-originated error.
+type AuthzError = { status: number; message: string; outreach?: unknown; venueName?: string };
 type AuthzResult = AuthzError | null;
 interface PitchContext { error?: AuthzError; venue?: VenueDoc; template?: TemplateDoc; type?: string }
 interface ResolveOpts { skipDedup?: boolean; requireEligible?: boolean }
@@ -724,38 +742,43 @@ class OutreachController extends Controller {
     const { skipDedup = false, requireEligible = true } = opts;
     let venue: VenueDoc | null;
     try { venue = await venueModel.findById(body.venueId || '') as unknown as VenueDoc | null; } catch (e) {
-      return { error: { status: 500, message: (e as Error).message } };
+      return { error: { status: 500, message: (e as Error).message, venueName: UNKNOWN_VENUE_NAME } };
     }
-    if (!venue) return { error: { status: 400, message: 'venue not found' } };
-    if (venue.status === 'archived') return { error: { status: 400, message: 'venue is archived' } };
+    if (!venue) return { error: { status: 400, message: 'venue not found', venueName: UNKNOWN_VENUE_NAME } };
+    const venueName = venue.name || UNKNOWN_VENUE_NAME;
+    if (venue.status === 'archived') return { error: { status: 400, message: 'venue is archived', venueName } };
     if (requireEligible && !venue.outreachEligible) {
-      return { error: { status: 400, message: 'venue is not outreach-eligible (not vetted)' } };
+      return { error: { status: 400, message: 'venue is not outreach-eligible (not vetted)', venueName } };
     }
     // #974 — sendability precondition, ADDITIONAL to (never a replacement for)
     // the outreachEligible vetting gate just above: a venue with no VALID
     // primary email is never sendable. Format-checked, not just presence —
     // `contactVerified` is gone; a real, present primary email IS the
     // verification now.
-    if (!isValidEmail(venue.email)) return { error: { status: 400, message: 'venue has no valid primary email to pitch' } };
+    if (!isValidEmail(venue.email)) return { error: { status: 400, message: 'venue has no valid primary email to pitch', venueName } };
 
     // Dedup guard first — refuse a duplicate before doing template work.
     if (!skipDedup) {
       const dupeErr = await this.dedupGuard(body.venueId, parseTargetWeekend(body.targetWeekend));
-      if (dupeErr) return { error: dupeErr };
+      if (dupeErr) return { error: { ...dupeErr, venueName } };
     }
 
-    // Template type: explicit caller value > per-venue override > venue's type (#848).
-    const type = (body.templateType || venue.templateOverride || venue.venueType || '').trim();
-    if (!type) return { error: { status: 400, message: 'no templateType and venue has no venueType' } };
+    // Template type: explicit caller value > per-venue override > venue's type
+    // (#848). JaMmusic#1250 — when NONE of those resolve, fall back to
+    // DEFAULT_TEMPLATE_TYPE rather than hard-400ing and silently skipping the
+    // venue (the #843 venueType-backfill gap is real, but a missing tag must
+    // never cost a send). findTemplate below still fails hard if even the
+    // default template is missing/inactive.
+    const type = (body.templateType || venue.templateOverride || venue.venueType || '').trim() || DEFAULT_TEMPLATE_TYPE;
 
     let template: TemplateDoc | null;
     try {
       const stage = await this.resolveStage(venue);
       template = await this.findTemplate(type, stage);
     } catch (e) {
-      return { error: { status: 500, message: (e as Error).message } };
+      return { error: { status: 500, message: (e as Error).message, venueName } };
     }
-    if (!template) return { error: { status: 400, message: `no active template for type ${type}` } };
+    if (!template) return { error: { status: 400, message: `no active template for type ${type}`, venueName } };
 
     return { venue, template, type };
   }
@@ -848,22 +871,29 @@ class OutreachController extends Controller {
     if (sendErr) return res.status(sendErr.status).json({ message: sendErr.message });
 
     const actor = resolveActor(req, body);
-    const result: { requested: number; sent: number; skipped: { venueId: string; reason: string }[]; records: unknown[] } = {
+    // venueName (JaMmusic#1250) — carried on every skipped entry, never
+    // omitted, so the report is readable without cross-referencing Mongo
+    // ObjectIds by hand.
+    const result: { requested: number; sent: number; skipped: { venueId: string; venueName: string; reason: string }[]; records: unknown[] } = {
       requested: body.venueIds.length, sent: 0, skipped: [], records: [],
     };
     for (const venueId of body.venueIds) {
-      if (!mongoose.Types.ObjectId.isValid(venueId)) { result.skipped.push({ venueId, reason: 'invalid id' }); continue; }
+      if (!mongoose.Types.ObjectId.isValid(venueId)) {
+        result.skipped.push({ venueId, venueName: UNKNOWN_VENUE_NAME, reason: 'invalid id' }); continue;
+      }
       const sendBody = {
         targetDates: body.targetDates, targetWeekend: body.targetWeekend, bookingPeriod: body.bookingPeriod, cc: body.cc,
         customIntro: body.customIntro, customBody: body.customBody,
       };
       // eslint-disable-next-line no-await-in-loop
       const ctx = await this.resolvePitch({ venueId, templateType: body.templateType, ...sendBody });
-      if (ctx.error) { result.skipped.push({ venueId, reason: ctx.error.message }); continue; }
+      if (ctx.error) {
+        result.skipped.push({ venueId, venueName: ctx.error.venueName || UNKNOWN_VENUE_NAME, reason: ctx.error.message }); continue;
+      }
       const { venue, template, type } = ctx as Required<PitchContext>;
       // eslint-disable-next-line no-await-in-loop
       const r = await this.performSend(venue, template, type, sendBody, actor);
-      if (!r.ok) { result.skipped.push({ venueId, reason: r.message }); continue; }
+      if (!r.ok) { result.skipped.push({ venueId, venueName: venue.name || UNKNOWN_VENUE_NAME, reason: r.message }); continue; }
       result.sent += 1; result.records.push(r.record);
     }
     return res.status(200).json(result);
