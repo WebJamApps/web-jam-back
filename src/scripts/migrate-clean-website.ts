@@ -70,13 +70,13 @@ export type WebsiteCategory =
 // "don't touch" is the safer, more general reading of that rule.
 const SCHEME_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//;
 
-// A confident bare-domain match: one or more dot-separated labels (so a
-// dot-less bare word like a venue name or "TBD" never matches), optional
-// port, optional path/query/fragment. No whitespace and no "@" anywhere —
-// which also excludes an email address ("booking@example.com") from ever
-// matching, since '@' isn't in the character class.
-// eslint-disable-next-line sonarjs/slow-regex
-const DOMAIN_LIKE_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+(:\d+)?([/?#].*)?$/i;
+// A confident bare-domain match: starts alphanumeric, requires at least one
+// "." followed by a final alnum/hyphen label (so a dot-less bare word like a
+// venue name or "TBD" never matches), optional port, optional
+// path/query/fragment. No whitespace and no "@" anywhere — which also
+// excludes an email address ("booking@example.com") from ever matching,
+// since '@' isn't in the character class.
+const DOMAIN_LIKE_RE = /^[a-z0-9][a-z0-9.-]*\.[a-z0-9-]+(:\d+)?([/?#].*)?$/i;
 
 export function classifyWebsite(raw: string | undefined): WebsiteCategory {
   const trimmed = (raw || '').trim();
