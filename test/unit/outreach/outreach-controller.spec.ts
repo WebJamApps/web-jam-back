@@ -26,7 +26,9 @@ vi.mock('#src/lib/classify-reply.js', () => ({
   default: { classifyReply },
 }));
 
-const { default: controller } = await import('#src/model/outreach/outreach-controller.js');
+const {
+  default: controller, DEFAULT_TEMPLATE_TYPE, UNKNOWN_VENUE_NAME,
+} = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
 const { default: templateModel } = await import('#src/model/template/template-facade.js');
@@ -195,12 +197,18 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(sendMail).not.toHaveBeenCalled();
     });
 
-    it('400s when no template type can be resolved', async () => {
+    // JaMmusic#1250 — a venue with no templateType/templateOverride/venueType
+    // no longer hard-400s and gets silently skipped; it falls back to
+    // DEFAULT_TEMPLATE_TYPE (MidRangeCafeBar) and the pitch still sends.
+    it('falls back to DEFAULT_TEMPLATE_TYPE and sends when no template type can be resolved (#1250)', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ venueType: '' })));
+      const findOne = vi.fn(() => Promise.resolve(validTemplate({ type: DEFAULT_TEMPLATE_TYPE })));
+      (templateModel as any).findOne = findOne;
       await c.sendPitch({ user: 'a', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
-      expect(status).toBe(400);
-      expect(payload.message).toContain('venueType');
+      expect(status).toBe(201);
+      expect(findOne).toHaveBeenCalledWith(expect.objectContaining({ type: DEFAULT_TEMPLATE_TYPE, active: true }));
+      expect((c.model.create as any).mock.calls[0][0].templateUsed).toBe(DEFAULT_TEMPLATE_TYPE);
     });
 
     it('400s when no active template exists for the type', async () => {
@@ -486,6 +494,30 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(status).toBe(201);
       expect((c.model.create as any).mock.calls[0][0].templateUsed).toBe('MidRangeCafeBar');
     });
+
+    // JaMmusic#1250 — precedence guardrails around the new default fallback:
+    // an explicit templateType, or a bare venue.venueType, must still win
+    // over DEFAULT_TEMPLATE_TYPE; the fallback is the LAST resort only.
+    it('an explicit templateType still wins over the default (#1250)', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ venueType: '', templateOverride: '' })));
+      await c.sendPitch(
+        { user: 'josh', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, templateType: 'PubFestivalBrewery' } },
+        resStub,
+      );
+      expect(status).toBe(201);
+      expect((c.model.create as any).mock.calls[0][0].templateUsed).toBe('PubFestivalBrewery');
+      expect((c.model.create as any).mock.calls[0][0].templateUsed).not.toBe(DEFAULT_TEMPLATE_TYPE);
+    });
+
+    it('venue.venueType still wins over the default (#1250)', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ venueType: 'PubFestivalBrewery', templateOverride: '' })));
+      await c.sendPitch({ user: 'josh', body: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+      expect(status).toBe(201);
+      expect((c.model.create as any).mock.calls[0][0].templateUsed).toBe('PubFestivalBrewery');
+      expect((c.model.create as any).mock.calls[0][0].templateUsed).not.toBe(DEFAULT_TEMPLATE_TYPE);
+    });
   });
 
   describe('sendBatch (#844)', () => {
@@ -539,18 +571,19 @@ describe('Outreach Controller (#844 batch model)', () => {
       asApprover();
       await c.sendBatch({ user: 'josh', body: { venueIds: ['bad', oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(payload.sent).toBe(1);
-      expect(payload.skipped).toEqual([{ venueId: 'bad', reason: 'invalid id' }]);
+      expect(payload.skipped).toEqual([{ venueId: 'bad', venueName: UNKNOWN_VENUE_NAME, reason: 'invalid id' }]);
     });
 
     it('skips an ineligible venue (collected, batch continues)', async () => {
       asApprover();
       (venueModel as any).findById = vi.fn()
         .mockResolvedValueOnce(validVenue())
-        .mockResolvedValueOnce(validVenue({ outreachEligible: false }));
+        .mockResolvedValueOnce(validVenue({ name: 'The Ineligible Room', outreachEligible: false }));
       await c.sendBatch({ user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(payload.sent).toBe(1);
       expect(payload.skipped).toHaveLength(1);
       expect(payload.skipped[0].reason).toContain('not outreach-eligible');
+      expect(payload.skipped[0].venueName).toBe('The Ineligible Room');
     });
 
     it('skips a venue whose send fails', async () => {
@@ -560,6 +593,19 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(payload.sent).toBe(0);
       expect(payload.skipped).toHaveLength(1);
       expect(payload.skipped[0].reason).toContain('email send failed');
+      expect(payload.skipped[0].venueName).toBe('The Spot on Kirk');
+    });
+
+    // JaMmusic#1250 — every skipped entry carries venueName; a venue that
+    // never even loaded (bad id, or not found) gets the UNKNOWN_VENUE_NAME
+    // placeholder instead of the field being omitted.
+    it('carries venueName on every skipped entry, including the unknown-venue placeholder (#1250)', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(null));
+      await c.sendBatch({ user: 'josh', body: { venueIds: ['bad', oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+      expect(payload.skipped).toHaveLength(2);
+      expect(payload.skipped[0]).toEqual({ venueId: 'bad', venueName: UNKNOWN_VENUE_NAME, reason: 'invalid id' });
+      expect(payload.skipped[1]).toMatchObject({ venueName: UNKNOWN_VENUE_NAME, reason: 'venue not found' });
     });
 
     it('lets an agent batch-send when auto-approve is ON', async () => {
