@@ -1069,7 +1069,7 @@ describe('Outreach Controller (#844 batch model)', () => {
   // from every other one; the subject must always name the target venue,
   // whether or not the template author wired the [Venue Name] token into it.
   describe('subject includes the target venue (#917)', () => {
-    it('sendPitch: appends " — <Venue Name>" when the template subject carries no token', async () => {
+    it('sendPitch: prepends "<Venue Name> — " when the template subject carries no token', async () => {
       asApprover();
       (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ subject: 'Performance Inquiry: Josh and Maria' })));
       await c.sendPitch(
@@ -1078,7 +1078,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(201);
       const sentSubject = (sendMail as any).mock.calls[0][0].subject;
-      expect(sentSubject).toBe('Performance Inquiry: Josh and Maria — The Spot on Kirk');
+      expect(sentSubject).toBe('The Spot on Kirk — Performance Inquiry: Josh and Maria');
     });
 
     it('sendPitch: does not duplicate the venue name when the template subject already tokenizes it', async () => {
@@ -1106,15 +1106,15 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(200);
       expect(sendMail).toHaveBeenCalledTimes(2);
-      expect((sendMail as any).mock.calls[0][0].subject).toBe('Performance Inquiry: Josh and Maria — Venue One');
-      expect((sendMail as any).mock.calls[1][0].subject).toBe('Performance Inquiry: Josh and Maria — Venue Two');
+      expect((sendMail as any).mock.calls[0][0].subject).toBe('Venue One — Performance Inquiry: Josh and Maria');
+      expect((sendMail as any).mock.calls[1][0].subject).toBe('Venue Two — Performance Inquiry: Josh and Maria');
     });
 
-    it('previewByVenue (single form): appends the venue name when the template subject has no token', async () => {
+    it('previewByVenue (single form): prepends the venue name when the template subject has no token', async () => {
       (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ subject: 'Performance Inquiry: Josh and Maria' })));
       await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(200);
-      expect(payload.subject).toBe('Performance Inquiry: Josh and Maria — The Spot on Kirk');
+      expect(payload.subject).toBe('The Spot on Kirk — Performance Inquiry: Josh and Maria');
     });
 
     it('previewByVenue (batch form): each preview names its own venue in the subject', async () => {
@@ -1126,8 +1126,8 @@ describe('Outreach Controller (#844 batch model)', () => {
       (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ subject: 'Performance Inquiry: Josh and Maria' })));
       await c.previewByVenue({ user: 'a', query: { venueIds: `${id1},${id2}`, targetDates: 'Sept 25-27' } }, resStub);
       expect(status).toBe(200);
-      expect(payload[0].subject).toBe('Performance Inquiry: Josh and Maria — Venue One');
-      expect(payload[1].subject).toBe('Performance Inquiry: Josh and Maria — Venue Two');
+      expect(payload[0].subject).toBe('Venue One — Performance Inquiry: Josh and Maria');
+      expect(payload[1].subject).toBe('Venue Two — Performance Inquiry: Josh and Maria');
     });
 
     it('advanceCadence: a due EMAIL follow-up names the venue in the subject', async () => {
