@@ -677,7 +677,7 @@ class VenueController extends Controller {
     return null;
   }
 
-  // PUT /venue/:id — partial update. See applyAddressUpdate above for the
+  // PATCH /venue/:id (and legacy PUT /venue/:id) — partial update. See applyAddressUpdate above for the
   // #987 address-immutability rule this enforces.
   async updateVenue(req: AuthIdRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['venue:edit']);
