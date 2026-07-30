@@ -36,6 +36,10 @@ router.route('/:id')
     const action = routeUtils.makeAction(req, res, 'updateVenue', controller, authUtils);
     void action();
   })
+  .patch((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'updateVenue', controller, authUtils);
+    void action();
+  })
   .delete((req, res) => {
     const action = routeUtils.makeAction(req, res, 'deleteVenue', controller, authUtils);
     void action();
