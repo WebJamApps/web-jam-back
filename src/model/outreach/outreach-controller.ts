@@ -292,12 +292,13 @@ function fillCustomBodyMarker(bodyHtml: string, customBody?: string): string {
 // template author may already wire the [Venue Name] token into their subject
 // (personalize() fills it same as it does in the body) — in that case the
 // name is already present and nothing further is needed. When it isn't
-// (an un-tokenized subject, or the hardcoded fallback below), append it. This
-// is the single choke point every send path's subject passes through so the
-// guarantee holds everywhere without string-concatenating in each caller.
+// (an un-tokenized subject, or the hardcoded fallback below), prepend it at
+// the front so Gmail's inbox view doesn't truncate it. This is the single
+// choke point every send path's subject passes through so the guarantee holds
+// everywhere without string-concatenating in each caller.
 function ensureVenueInSubject(subject: string, venueName: string): string {
   if (!venueName || subject.indexOf(venueName) !== -1) return subject;
-  return `${subject} — ${venueName}`;
+  return `${venueName} — ${subject}`;
 }
 
 // Render a template into a ready-to-send email: token-filled subject + intro +
