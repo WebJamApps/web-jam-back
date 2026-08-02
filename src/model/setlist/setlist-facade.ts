@@ -12,14 +12,16 @@ type AnyDoc = Record<string, unknown>;
 // own inline fields) — web-jam-back#946. lean() + populate() together are
 // fine; the prior bug was the missing populate, not lean itself.
 class SetlistModel extends Model {
-  find(query: QueryFilter<AnyDoc>): Promise<AnyDoc[]> {
-    return this.Schema.find(query).populate('items.songId').lean().exec()
-      .then((docs) => (docs as AnyDoc[]).map((doc) => resolveSetlistDoc(doc))) as unknown as Promise<AnyDoc[]>;
+  find(query: QueryFilter<AnyDoc>, sortOption?: string): Promise<AnyDoc[]> {
+    const mongoQuery = { ...query };
+    delete (mongoQuery as Record<string, unknown>).sort;
+    return this.Schema.find(mongoQuery).populate('items.songId').lean().exec()
+      .then((docs) => (docs as AnyDoc[]).map((doc) => resolveSetlistDoc(doc, sortOption))) as unknown as Promise<AnyDoc[]>;
   }
 
-  findById(id: string): Promise<AnyDoc | null> {
+  findById(id: string, sortOption?: string): Promise<AnyDoc | null> {
     return this.Schema.findById(id).populate('items.songId').lean().exec()
-      .then((doc) => (doc ? resolveSetlistDoc(doc as AnyDoc) : null)) as unknown as Promise<AnyDoc | null>;
+      .then((doc) => (doc ? resolveSetlistDoc(doc as AnyDoc, sortOption) : null)) as unknown as Promise<AnyDoc | null>;
   }
 }
 

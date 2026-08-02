@@ -78,9 +78,46 @@ export function resolveSetlistItem(item: SetlistItemLean): ResolvedSetlistItem {
   };
 }
 
-export function resolveSetlistDoc<T extends { items?: SetlistItemLean[] }>(doc: T): T {
-  if (!doc || !Array.isArray(doc.items)) return doc;
-  return { ...doc, items: doc.items.map(resolveSetlistItem) };
+function compareStr(valA?: string, valB?: string, isDesc?: boolean): number {
+  const strA = String(valA || '').trim();
+  const strB = String(valB || '').trim();
+  const cmp = strA.localeCompare(strB, undefined, { sensitivity: 'base', numeric: true });
+  return isDesc ? -cmp : cmp;
 }
 
-export default { toSetlistPlayerLink, resolveSetlistItem, resolveSetlistDoc };
+export function sortSetlistItems<T extends { title?: string; artist?: string; order?: number }>(
+  items: T[],
+  sortOption?: string,
+): T[] {
+  if (!Array.isArray(items) || items.length <= 1) return items;
+  const opt = (sortOption || '').trim().toLowerCase();
+
+  const isDesc = opt.endsWith(':desc') || opt.endsWith('_desc') || opt.endsWith('-desc');
+  const field = opt.replace(/[:_-]desc$/, '').replace(/[:_-]asc$/, '');
+
+  return items.slice().sort((a, b) => {
+    if (field === 'title') {
+      const cmp = compareStr(a.title, b.title, isDesc);
+      return cmp !== 0 ? cmp : Number(a.order ?? 0) - Number(b.order ?? 0);
+    }
+    if (field === 'artist') {
+      const cmp = compareStr(a.artist, b.artist, isDesc);
+      return cmp !== 0 ? cmp : compareStr(a.title, b.title, false);
+    }
+    if (field === 'order' && isDesc) {
+      return Number(b.order ?? 0) - Number(a.order ?? 0);
+    }
+    return Number(a.order ?? 0) - Number(b.order ?? 0);
+  });
+}
+
+export function resolveSetlistDoc<T extends { items?: SetlistItemLean[] }>(doc: T, sortOption?: string): T {
+  if (!doc || !Array.isArray(doc.items)) return doc;
+  const resolvedItems = doc.items.map(resolveSetlistItem);
+  const sortedItems = sortSetlistItems(resolvedItems, sortOption);
+  return { ...doc, items: sortedItems };
+}
+
+export default {
+  toSetlistPlayerLink, resolveSetlistItem, resolveSetlistDoc, sortSetlistItems,
+};

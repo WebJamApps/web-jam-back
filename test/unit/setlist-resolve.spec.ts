@@ -1,5 +1,5 @@
 import {
-  toSetlistPlayerLink, resolveSetlistItem, resolveSetlistDoc, type SetlistItemLean,
+  toSetlistPlayerLink, resolveSetlistItem, resolveSetlistDoc, sortSetlistItems, type SetlistItemLean,
 } from '#src/model/setlist/setlist-resolve.js';
 
 describe('setlist-resolve', () => {
@@ -85,6 +85,44 @@ describe('setlist-resolve', () => {
     });
   });
 
+  describe('sortSetlistItems', () => {
+    const items = [
+      { order: 1, title: 'Wagon Wheel', artist: 'Old Crow Medicine Show' },
+      { order: 2, title: 'Folsom Prison Blues', artist: 'Johnny Cash' },
+      { order: 3, title: 'Amie', artist: 'Pure Prairie League' },
+    ];
+
+    it('defaults to stored order ascending', () => {
+      const sorted = sortSetlistItems(items);
+      expect(sorted.map((i) => i.title)).toEqual(['Wagon Wheel', 'Folsom Prison Blues', 'Amie']);
+    });
+
+    it('sorts by title A-Z for sort=title', () => {
+      const sorted = sortSetlistItems(items, 'title');
+      expect(sorted.map((i) => i.title)).toEqual(['Amie', 'Folsom Prison Blues', 'Wagon Wheel']);
+    });
+
+    it('sorts by title Z-A for sort=title:desc', () => {
+      const sorted = sortSetlistItems(items, 'title:desc');
+      expect(sorted.map((i) => i.title)).toEqual(['Wagon Wheel', 'Folsom Prison Blues', 'Amie']);
+    });
+
+    it('sorts by artist A-Z for sort=artist', () => {
+      const sorted = sortSetlistItems(items, 'artist');
+      expect(sorted.map((i) => i.artist)).toEqual(['Johnny Cash', 'Old Crow Medicine Show', 'Pure Prairie League']);
+    });
+
+    it('sorts by artist Z-A for sort=artist:desc', () => {
+      const sorted = sortSetlistItems(items, 'artist:desc');
+      expect(sorted.map((i) => i.artist)).toEqual(['Pure Prairie League', 'Old Crow Medicine Show', 'Johnny Cash']);
+    });
+
+    it('sorts by order descending for sort=order:desc', () => {
+      const sorted = sortSetlistItems(items, 'order:desc');
+      expect(sorted.map((i) => i.order)).toEqual([3, 2, 1]);
+    });
+  });
+
   describe('resolveSetlistDoc', () => {
     it('resolves every item in a mixed setlist (referenced + inline)', () => {
       const doc = resolveSetlistDoc({
@@ -101,6 +139,18 @@ describe('setlist-resolve', () => {
       expect(doc.items[0].title).toBe('Ref Song');
       expect(doc.items[0].playLink).toBe('https://open.spotify.com/track/x');
       expect(doc.items[1].title).toBe('Inline Cover');
+    });
+
+    it('sorts resolved items when sortOption is provided', () => {
+      const doc = resolveSetlistDoc({
+        name: 'Sorted Set',
+        items: [
+          { order: 1, title: 'Zebra' },
+          { order: 2, title: 'Apple' },
+        ],
+      }, 'title');
+      expect(doc.items[0].title).toBe('Apple');
+      expect(doc.items[1].title).toBe('Zebra');
     });
 
     it('passes through a doc with no items array unchanged', () => {
