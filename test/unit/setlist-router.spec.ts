@@ -206,7 +206,51 @@ describe('The Setlist API', () => {
       const list = await request(app).get('/setlist').set({ origin: allowedUrl });
       expect(list.status).toBe(200);
       const found = (list.body as Array<{ _id: string }>).find((s) => s._id === created._id.toString());
+    });
+  });
+
+  describe('sort options query support (web-jam-back#945)', () => {
+    it('returns items in alphabetical order by title when ?sort=title is passed without mutating stored order', async () => {
+      const created = await SetlistModel.create({
+        name: 'Practice Set',
+        items: [
+          { order: 1, title: 'Wagon Wheel', artist: 'Old Crow Medicine Show' },
+          { order: 2, title: 'Amie', artist: 'Pure Prairie League' },
+          { order: 3, title: 'Folsom Prison Blues', artist: 'Johnny Cash' },
+        ],
+      }) as unknown as { _id: string };
+
+      // GET /setlist/:id?sort=title
+      r = await request(app).get(`/setlist/${created._id}?sort=title`).set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      expect(r.body.items.map((i: { title: string }) => i.title)).toEqual(['Amie', 'Folsom Prison Blues', 'Wagon Wheel']);
+
+      // GET /setlist?sort=title
+      r = await request(app).get('/setlist?sort=title').set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      const found = (r.body as Array<{ _id: string; items: Array<{ title: string }> }>).find((s) => s._id === created._id.toString());
       expect(found).toBeDefined();
+      expect(found?.items.map((i) => i.title)).toEqual(['Amie', 'Folsom Prison Blues', 'Wagon Wheel']);
+
+      // Verify stored order was NOT mutated (plain GET without sort returns stored order)
+      r = await request(app).get(`/setlist/${created._id}`).set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      expect(r.body.items.map((i: { title: string }) => i.title)).toEqual(['Wagon Wheel', 'Amie', 'Folsom Prison Blues']);
+    });
+
+    it('returns items sorted by artist when ?sort=artist is passed', async () => {
+      const created = await SetlistModel.create({
+        name: 'Artist Sorted Set',
+        items: [
+          { order: 1, title: 'Wagon Wheel', artist: 'Old Crow Medicine Show' },
+          { order: 2, title: 'Folsom Prison Blues', artist: 'Johnny Cash' },
+          { order: 3, title: 'Amie', artist: 'Pure Prairie League' },
+        ],
+      }) as unknown as { _id: string };
+
+      r = await request(app).get(`/setlist/${created._id}?sort=artist`).set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      expect(r.body.items.map((i: { artist: string }) => i.artist)).toEqual(['Johnny Cash', 'Old Crow Medicine Show', 'Pure Prairie League']);
     });
   });
 
