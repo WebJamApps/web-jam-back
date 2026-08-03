@@ -1,15 +1,22 @@
 # Gemini Context: web-jam-back
 
 ## Tech Stack
-- **Runtime:** Node.js
+- **Runtime:** Node.js v24.18.1
 - **Framework:** Express
 - **Testing:** Vitest (vitest.config.ts)
 - **Linting:** ESLint (eslint.config.mjs)
 
 ## Development Workflow
 - **Build:** Check package.json for build scripts.
+- **Node Engine Version Bumps:** When bumping Node.js in `package.json` `engines.node`, always run `npm install --package-lock-only --ignore-scripts` (or `npm install --ignore-scripts`) to update `package-lock.json` root engine definition without triggering `postinstall` build scripts, so both files are committed together.
 - **Standards:** Follow existing ESM patterns.
 - **Merging:** Gemini is **NOT** allowed to merge PR changes to the `dev` or `main` branches. The user is the reviewer.
+
+## Quota & Token Hygiene
+- **Sliding Window Quota Preservation:** Google Antigravity (`agy`) tracks model token usage on a rolling 5-hour sliding window. To preserve quota and avoid 3+ hour lockouts during heavy or multi-repo tasks:
+  - Keep command outputs compact: avoid printing thousands of lines of raw test logs directly into main turn outputs.
+  - Redirect large multi-line summaries, test plans, and evidence to scratch files (`--summary-file`, `--test-plan-file`, `--test-evidence-file`) when calling `create-draft-pr.sh`.
+  - **Automatic Flash Med Subagent Handoff on "Go":** Once requirements and implementation steps are aligned interactively on `Flash High`, automatically delegate contained execution work (coding, running test suites, branch/PR creation) down to a `Flash Med` subagent without waiting for Josh to explicitly request delegation.
 
 ## Routes & Verbs
 - **Venue Updates (`/venue/:id`)**: `PATCH /venue/:id` is the standard partial-merge update verb. `PUT /venue/:id` is maintained alongside `PATCH` for backward compatibility, both routing to `controller.updateVenue`. Address updates enforce immutability once set (`400: address cannot be removed`).
