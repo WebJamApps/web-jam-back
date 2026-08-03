@@ -1,7 +1,7 @@
 # Gemini Context: web-jam-back
 
 ## Tech Stack
-- **Runtime:** Node.js
+- **Runtime:** Node.js v24.18.1
 - **Framework:** Express
 - **Testing:** Vitest (vitest.config.ts)
 - **Linting:** ESLint (eslint.config.mjs)
