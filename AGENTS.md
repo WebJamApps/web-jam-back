@@ -12,6 +12,12 @@
 - **Standards:** Follow existing ESM patterns.
 - **Merging:** Gemini is **NOT** allowed to merge PR changes to the `dev` or `main` branches. The user is the reviewer.
 
+## Quota & Token Hygiene
+- **Sliding Window Quota Preservation:** Google Antigravity (`agy`) tracks model token usage on a rolling 5-hour sliding window. To preserve quota and avoid 3+ hour lockouts during heavy or multi-repo tasks:
+  - Keep command outputs compact: avoid printing thousands of lines of raw test logs directly into main turn outputs.
+  - Redirect large multi-line summaries, test plans, and evidence to scratch files (`--summary-file`, `--test-plan-file`, `--test-evidence-file`) when calling `create-draft-pr.sh`.
+  - **Automatic Flash Med Subagent Handoff on "Go":** Once requirements and implementation steps are aligned interactively on `Flash High`, automatically delegate contained execution work (coding, running test suites, branch/PR creation) down to a `Flash Med` subagent without waiting for Josh to explicitly request delegation.
+
 ## Routes & Verbs
 - **Venue Updates (`/venue/:id`)**: `PATCH /venue/:id` is the standard partial-merge update verb. `PUT /venue/:id` is maintained alongside `PATCH` for backward compatibility, both routing to `controller.updateVenue`. Address updates enforce immutability once set (`400: address cannot be removed`).
 - **Setlist API Sorting (`GET /setlist` and `GET /setlist/:id`)**: Accepts `?sort=title` (or `sort=artist` / `sort=order`) to return items in alphabetical or specified order. Sorting is read-time view only and strips `sort` from Mongoose query params so stored MongoDB item order is never mutated.
