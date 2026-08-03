@@ -5,6 +5,10 @@ jobs:
       # App targets Node 24.18 (engines/.nvmrc); the matching browsers image is
       # now published, so CI runs on the same Node line as the app + local dev.
       - image: cimg/node:24.18-browsers
+        environment:
+          DB_URL: mongodb://127.0.0.1:27017/web-jam-test
+          NODE_ENV: test
+      - image: mongo:7.0
     working_directory: ~/repo
     steps:
       - checkout
