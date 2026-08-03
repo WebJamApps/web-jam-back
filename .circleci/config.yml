@@ -8,7 +8,7 @@ jobs:
         environment:
           DB_URL: mongodb://127.0.0.1:27017/web-jam-test
           NODE_ENV: test
-      - image: cimg/mongo:7.0
+      - image: mongo:7.0
     working_directory: ~/repo
     steps:
       - checkout
