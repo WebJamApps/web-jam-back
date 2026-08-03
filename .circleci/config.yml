@@ -9,6 +9,16 @@ jobs:
     steps:
       - checkout
       - run:
+          name: PR base branch verification (main requires dev head)
+          command: |
+            TARGET="${CIRCLE_TARGET_BRANCH:-${GITHUB_BASE_REF:-}}"
+            SOURCE="${CIRCLE_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
+            if [ -n "$TARGET" ] && [ "$TARGET" = "main" ] && [ "$SOURCE" != "dev" ]; then
+              echo "FAIL: PRs targeting main must originate from dev branch (got: $SOURCE)." >&2
+              exit 1
+            fi
+            echo "OK: PR base/head branch verification passed (Target: ${TARGET:-default}, Source: $SOURCE)"
+      - run:
           name: Test install (skip postinstall — frontend not needed for tests)
           command: npm install --ignore-scripts
       - run:
