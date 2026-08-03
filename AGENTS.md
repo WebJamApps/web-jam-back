@@ -1,13 +1,14 @@
 # Gemini Context: web-jam-back
 
 ## Tech Stack
-- **Runtime:** Node.js
+- **Runtime:** Node.js v24.18.1
 - **Framework:** Express
 - **Testing:** Vitest (vitest.config.ts)
 - **Linting:** ESLint (eslint.config.mjs)
 
 ## Development Workflow
 - **Build:** Check package.json for build scripts.
+- **Node Engine Version Bumps:** When bumping Node.js in `package.json` `engines.node`, always run `npm install --package-lock-only --ignore-scripts` (or `npm install --ignore-scripts`) to update `package-lock.json` root engine definition without triggering `postinstall` build scripts, so both files are committed together.
 - **Standards:** Follow existing ESM patterns.
 - **Merging:** Gemini is **NOT** allowed to merge PR changes to the `dev` or `main` branches. The user is the reviewer.
 
