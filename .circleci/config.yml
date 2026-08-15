@@ -2,9 +2,9 @@ version: 2.1
 jobs:
   build:
     docker:
-      # App targets Node 24.18 (engines/.nvmrc); the matching browsers image is
+      # App targets Node 24.19 (engines/.nvmrc); the matching browsers image is
       # now published, so CI runs on the same Node line as the app + local dev.
-      - image: cimg/node:24.18-browsers
+      - image: cimg/node:24.19.0-browsers
         environment:
           DB_URL: mongodb://127.0.0.1:27017/web-jam-test
           NODE_ENV: test

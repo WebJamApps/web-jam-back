@@ -12,7 +12,7 @@ Read that file before acting. If you cannot find it, STOP and say so — do not 
 rules and do not reconstruct them from memory or from this file.
 
 ## Tech Stack
-- **Runtime:** Node.js v24.18.1
+- **Runtime:** Node.js v24.19.0
 - **Framework:** Express
 - **Testing:** Vitest (vitest.config.ts)
 - **Linting:** ESLint (eslint.config.mjs)
