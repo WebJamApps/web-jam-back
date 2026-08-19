@@ -8,7 +8,7 @@
 // the 'release' (production) database. DEV Atlas is the normal local-dev target.
 //
 // Idempotent: uses upserts keyed on natural identifiers (Template by type+stage;
-// Venue by email; OutreachConfig by key:'outreach'; Outreach by venueId+targetDates).
+// Venue by email; User by email; OutreachConfig by key:'outreach'; Outreach by venueId+targetDates).
 // Re-running the script does NOT duplicate data.
 //
 // Schemas are defined inline (matching src/model/*/.*-schema.ts) because tsx/ts-node
@@ -93,6 +93,24 @@ const outreachSchema = new Schema({
   lastModifiedBy: String,
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
 
+// mirror: src/model/user/user-schema.ts
+const userSchema = new Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  verifiedEmail: { type: Boolean, required: false },
+  changeemail: { type: String, required: false },
+  userPhone: { type: Number, required: false },
+  userStatus: { type: String, required: false },
+  userType: { type: String, required: false },
+  artist: { type: String, required: false },
+  userStreetAddress: { type: String, required: false },
+  userCity: { type: String, required: false },
+  userState: { type: String, required: false },
+  userZip: { type: String, required: false },
+  userDetails: { type: String, required: false },
+  privileges: { type: [String], required: false, default: [] },
+});
+
 // mirror: src/model/outreach/outreach-config-schema.ts
 const configSchema = new Schema({
   key: { type: String, required: true, unique: true, default: 'outreach' },
@@ -103,6 +121,7 @@ const configSchema = new Schema({
 // Singleton model pattern matching the real schema files.
 const Template = mongoose.models.Template || mongoose.model('Template', templateSchema);
 const Venue = mongoose.models.Venue || mongoose.model('Venue', venueSchema);
+const User = mongoose.models.User || mongoose.model('User', userSchema);
 const Outreach = mongoose.models.Outreach || mongoose.model('Outreach', outreachSchema);
 const OutreachConfig = mongoose.models.OutreachConfig || mongoose.model('OutreachConfig', configSchema);
 
@@ -224,7 +243,7 @@ const templates = [
   },
 ];
 
-// ── Seed data: 5 Venues ──────────────────────────────────────────────────────
+// ── Seed data: 22 Venues ────────────────────────────────────────────────────
 
 const venues = [
   {
@@ -283,6 +302,184 @@ const venues = [
     templateOverride: 'MidRangeCafeBar', // forces the MidRangeCafeBar template
     lastModifiedBy: 'seed-outreach',
   },
+  {
+    name: 'Copper Kettle Brewhouse',
+    city: 'Blacksburg', usState: 'VA',
+    venueType: 'PubFestivalBrewery', contactName: 'Morgan Vance',
+    email: 'booking@copperkettle.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Starlight Listening Room',
+    city: 'Charlottesville', usState: 'VA',
+    venueType: 'Originals', contactName: 'Elena Rostova',
+    email: 'shows@starlightroom.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    relationshipStage: 'cold',
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Timberline Tavern',
+    city: 'Lynchburg', usState: 'VA',
+    venueType: 'PubFestivalBrewery', contactName: 'Marcus Cole',
+    email: 'events@timberlinetavern.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    relationshipStage: 'returning',
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Velvet Oak Bistro',
+    city: 'Richmond', usState: 'VA',
+    venueType: 'MidRangeCafeBar', contactName: 'Claire Bennet',
+    email: 'music@velvetoakbistro.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Shenandoah Ciderworks',
+    city: 'Staunton', usState: 'VA',
+    venueType: 'PubFestivalBrewery', contactName: 'Wyatt Russell',
+    email: 'cider@shenandoahcider.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    templateOverride: 'Originals',
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Ironclad Ale House',
+    city: 'Roanoke', usState: 'VA',
+    venueType: 'PubFestivalBrewery', contactName: 'Gwen Stacy',
+    email: 'booking@ironcladale.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booked', interested: true,
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Old Mill Music Hall',
+    city: 'Floyd', usState: 'VA',
+    venueType: 'Originals', contactName: 'Arlo Guthrie',
+    email: 'arlo@oldmillmusichall.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    relationshipStage: 'returning',
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Rusty Anchor Pub',
+    city: 'Bedford', usState: 'VA',
+    venueType: 'PubFestivalBrewery', contactName: 'Captain Dave',
+    email: 'dave@rustyanchor.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'not-booking', interested: true,
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'The Daily Grind Espresso',
+    city: 'Salem', usState: 'VA',
+    venueType: 'MidRangeCafeBar', contactName: 'Fiona Gallagher',
+    email: 'fiona@dailygrindsalem.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Foggy Mountain Cellars',
+    city: 'Christiansburg', usState: 'VA',
+    venueType: 'PubFestivalBrewery', contactName: 'Liam Miller',
+    email: 'events@foggymountaincellars.seed.example',
+    status: 'active', outreachEligible: false, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'The Speakeasy Underground',
+    city: 'Charlottesville', usState: 'VA',
+    venueType: 'MidRangeCafeBar', contactName: 'Victor Creed',
+    email: 'vic@speakeasyunderground.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: false,
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Whispering Pines Amphitheater',
+    city: 'Radford', usState: 'VA',
+    venueType: 'Originals', contactName: 'Hanna Abbot',
+    email: 'hanna@whisperingpines.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Appalachian Trailside Brewery',
+    city: 'Damascus', usState: 'VA',
+    venueType: 'PubFestivalBrewery', contactName: 'Travis Scott',
+    email: 'gigs@trailsidebrewery.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    relationshipStage: 'returning',
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Main Street Cantina & Grill',
+    city: 'Harrisonburg', usState: 'VA',
+    venueType: 'MidRangeCafeBar', contactName: 'Maria Santos',
+    email: 'maria@mainstreetcantina.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    templateOverride: 'PubFestivalBrewery',
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'High Country Wine Bar',
+    city: 'Boone', usState: 'NC',
+    venueType: 'MidRangeCafeBar', contactName: 'Chloe Price',
+    email: 'contact@highcountrywine.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'Valley View Acoustic Barn',
+    city: 'Staunton', usState: 'VA',
+    venueType: 'Originals', contactName: 'Jonah Hex',
+    email: 'jonah@valleyviewbarn.seed.example',
+    status: 'active', outreachEligible: true, inScope: true,
+    bookingStatus: 'booking', interested: true,
+    relationshipStage: 'cold',
+    lastModifiedBy: 'seed-outreach',
+  },
+  {
+    name: 'The Rusty Nail Saloon (Archived)',
+    city: 'Roanoke', usState: 'VA',
+    venueType: 'PubFestivalBrewery', contactName: 'Zack Morris',
+    email: 'zack@rustynailsaloon.seed.example',
+    status: 'archived', outreachEligible: false, inScope: false,
+    bookingStatus: 'not-booking', interested: false,
+    lastModifiedBy: 'seed-outreach',
+  },
+];
+
+// ── Seed data: 1 Privileged Test User ────────────────────────────────────────
+
+const testUsers = [
+  {
+    name: 'E2E Test Admin',
+    email: 'e2e-admin@test.seed.example',
+    userType: 'Developer',
+    privileges: [
+      'venue:create',
+      'venue:edit',
+      'venue:delete',
+      'gig:create',
+      'gig:edit',
+      'gig:delete',
+    ],
+  },
 ];
 
 // ── Upsert helpers ───────────────────────────────────────────────────────────
@@ -297,6 +494,14 @@ async function upsertTemplate(data) {
 
 async function upsertVenue(data) {
   return Venue.findOneAndUpdate(
+    { email: data.email },
+    { $set: data },
+    { upsert: true, returnDocument: 'after' },
+  );
+}
+
+async function upsertUser(data) {
+  return User.findOneAndUpdate(
     { email: data.email },
     { $set: data },
     { upsert: true, returnDocument: 'after' },
@@ -321,7 +526,7 @@ async function run() {
     console.log(`  template upserted: ${t.type}/${t.stage}`);
   }
 
-  // 2. Venues — 5 total
+  // 2. Venues — 22 total
   const venueRecords = [];
   let vUpserted = 0;
   for (const v of venues) {
@@ -331,7 +536,15 @@ async function run() {
     console.log(`  venue upserted: "${v.name}" (${v.venueType}${v.relationshipStage ? ', ' + v.relationshipStage : ''}${v.templateOverride ? ', override→' + v.templateOverride : ''})`);
   }
 
-  // 3. OutreachConfig — singleton
+  // 3. Test Users — 1 total
+  let uUpserted = 0;
+  for (const u of testUsers) {
+    await upsertUser(u); // eslint-disable-line no-await-in-loop
+    uUpserted++;
+    console.log(`  user upserted: "${u.name}" (${u.email}, ${u.userType}, privileges: ${u.privileges.join(',')})`);
+  }
+
+  // 4. OutreachConfig — singleton
   await OutreachConfig.findOneAndUpdate(
     { key: 'outreach' },
     { $set: { key: 'outreach', autoApprove: false, lastModifiedBy: 'seed-outreach' } },
@@ -339,7 +552,7 @@ async function run() {
   );
   console.log('  config upserted: key=outreach autoApprove=false');
 
-  // 4. Outreach records — 2 total
+  // 5. Outreach records — 2 total
   const stageVenue = venueRecords.find((v) => v && v.name === 'The Stage at Roanoke');
   const hideawayVenue = venueRecords.find((v) => v && v.name === 'The Hideaway Lounge');
   let oUpserted = 0;
@@ -379,7 +592,8 @@ async function run() {
   console.log(`
 Seed complete:
   ${tUpserted} templates  (3 venueTypes × cold/returning)
-  ${vUpserted} venues     (all outreachEligible:true, varied types/stages)
+  ${vUpserted} venues     (outreachEligible + varied types/stages)
+  ${uUpserted} test user(s) (privileged E2E / local admin user)
   1 OutreachConfig (autoApprove: false)
   ${oUpserted} outreach records (1 sent + 1 replied @ "Sept 25-27")
 

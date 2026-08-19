@@ -1,7 +1,18 @@
 # Gemini Context: web-jam-back
 
+
+## Cross-AI hard rules
+
+The cross-AI hard rules that bind every agent on every surface are NOT duplicated here. They live
+in exactly one file: `docs/cross-ai-rules.md` in the **`web-jam-tools` repository**, which normally
+sits alongside this repository — `../web-jam-tools/docs/cross-ai-rules.md`, and on Josh's laptop
+`/home/joshua/WebJamApps/web-jam-tools/docs/cross-ai-rules.md`.
+
+Read that file before acting. If you cannot find it, STOP and say so — do not proceed without the
+rules and do not reconstruct them from memory or from this file.
+
 ## Tech Stack
-- **Runtime:** Node.js v24.18.1
+- **Runtime:** Node.js v24.19.0
 - **Framework:** Express
 - **Testing:** Vitest (vitest.config.ts)
 - **Linting:** ESLint (eslint.config.mjs)
