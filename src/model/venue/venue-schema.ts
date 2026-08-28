@@ -83,6 +83,7 @@ const venueSchema = new Schema({
   // how this refines the POST /venue dedup match, and updateVenue for why a
   // once-set address can't be cleared via PATCH.
   address: { type: String, required: false, trim: true },
+  zipCode: { type: String, required: false, trim: true },
   usState: { type: String, required: false, trim: true },
   // #972 — 2-letter country code (validated in venue-controller.ts), defaulting
   // to 'US' since every venue on record today is US-based. `region` is optional
