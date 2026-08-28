@@ -14,6 +14,7 @@ import {
 // #972 — country is a 2-letter code (ISO 3166-1 alpha-2 style, e.g. 'US',
 // 'CA'); case-insensitive here since the schema uppercase-normalizes on save.
 const COUNTRY_RE = /^[A-Za-z]{2}$/;
+const ZIP_CODE_RE = /^\d{5}(?:-\d{4})?$/;
 const VENUE_TYPES = ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'];
 const STATUS_OPTIONS = ['active', 'archived'];
 // #980 — the derived bookingStatus values, returned on every venue payload by
@@ -55,6 +56,7 @@ interface VenueBody {
   // optional (schema stays required:false — see venue-schema.ts) but an
   // address, once set, cannot be removed; see updateVenue below.
   address?: string;
+  zipCode?: string;
   usState?: string;
   // #972 — country (2-letter code, default 'US' at the schema level) + region
   // (free-text state/province, for non-US venues). usState is kept as-is for
@@ -247,15 +249,7 @@ function invalidOptionalDate(value: string | undefined): boolean {
   return value !== undefined && value !== '' && Number.isNaN(new Date(value).getTime());
 }
 
-function validateBody(body: VenueBody, partial: boolean): string {
-  if ((!partial || body.name !== undefined) && (!body.name || !body.name.trim())) return 'Name is required';
-  const enumErr = invalidEnum(body);
-  if (enumErr) return enumErr;
-  if (invalidPriority(body.priority)) return 'priority must be a number 0-5';
-  if (invalidGigInterval(body.gigInterval)) return 'gigInterval must be a non-negative whole number of months';
-  if (invalidOptionalDate(body.resumeBooking)) return 'resumeBooking must be a valid date';
-  // #995 — bookedThrough validated identically to resumeBooking above.
-  if (invalidOptionalDate(body.bookedThrough)) return 'bookedThrough must be a valid date';
+function validateFormatFields(body: VenueBody): string {
   if (body.email !== undefined && body.email !== '' && !isValidEmail(body.email)) {
     return 'A valid email is required';
   }
@@ -267,14 +261,43 @@ function validateBody(body: VenueBody, partial: boolean): string {
   if (body.country !== undefined && body.country !== '' && !COUNTRY_RE.test(String(body.country).trim())) {
     return 'country must be a 2-letter code';
   }
+  if (body.zipCode !== undefined && String(body.zipCode).trim() !== '' && !ZIP_CODE_RE.test(String(body.zipCode).trim())) {
+    return 'zipCode must be a valid 5-digit ZIP code';
+  }
+  return '';
+}
+
+function validateRequiredFields(body: VenueBody): string {
   // #987 Part B — address is required on every POST /venue (partial=false),
   // validated here before any DB write. Checked last so any other body error
   // (a bad enum, an invalid email, etc.) still reports its own specific
   // message first — this only fires when nothing else is already wrong.
   // PATCH (partial=true) stays optional; see updateVenue for its own
   // immutable-once-set address rule.
-  if (!partial && (!body.address || !String(body.address).trim())) {
+  if (!body.address || !String(body.address).trim()) {
     return 'address is required to create a venue';
+  }
+  // #1043 — zipCode required on every POST /venue
+  if (!body.zipCode || !String(body.zipCode).trim()) {
+    return 'zipCode is required to create a venue';
+  }
+  return '';
+}
+
+function validateBody(body: VenueBody, partial: boolean): string {
+  if ((!partial || body.name !== undefined) && (!body.name || !body.name.trim())) return 'Name is required';
+  const enumErr = invalidEnum(body);
+  if (enumErr) return enumErr;
+  if (invalidPriority(body.priority)) return 'priority must be a number 0-5';
+  if (invalidGigInterval(body.gigInterval)) return 'gigInterval must be a non-negative whole number of months';
+  if (invalidOptionalDate(body.resumeBooking)) return 'resumeBooking must be a valid date';
+  // #995 — bookedThrough validated identically to resumeBooking above.
+  if (invalidOptionalDate(body.bookedThrough)) return 'bookedThrough must be a valid date';
+  const formatErr = validateFormatFields(body);
+  if (formatErr) return formatErr;
+  if (!partial) {
+    const reqErr = validateRequiredFields(body);
+    if (reqErr) return reqErr;
   }
   return '';
 }
@@ -677,8 +700,31 @@ class VenueController extends Controller {
     return null;
   }
 
-  // PATCH /venue/:id — partial update. See applyAddressUpdate above for the
-  // #987 address-immutability rule this enforces.
+  // #1043 — validates a PATCH body's `zipCode` per the once-set-cannot-be-removed rule:
+  //   - `zipCode` key absent -> null immediately (normal partial merge).
+  //   - present and non-empty -> trimmed, valid 5-digit ZIP code.
+  //   - present but empty/whitespace/null -> allowed ONLY as a no-op when the
+  //     venue currently has no zipCode on file (legacy records must stay
+  //     editable); 400 error when it does have one on file.
+  async applyZipCodeUpdate(id: string, body: VenueBody): Promise<{ status: number; message: string } | null> {
+    if (!Object.prototype.hasOwnProperty.call(body, 'zipCode')) return null;
+    const trimmedZip = typeof body.zipCode === 'string' ? body.zipCode.trim() : '';
+    if (trimmedZip) {
+      body.zipCode = trimmedZip;
+      return null;
+    }
+    let currentDoc: Record<string, unknown> | null;
+    try { currentDoc = await this.model.findById(id); } catch (e) { return { status: 500, message: (e as Error).message }; }
+    if (!currentDoc) return { status: 400, message: 'Id Not Found' };
+    if (String(currentDoc.zipCode || '').trim()) {
+      return { status: 400, message: 'zipCode cannot be removed; supply a corrected zipCode instead' };
+    }
+    body.zipCode = '';
+    return null;
+  }
+
+  // PATCH /venue/:id — partial update. See applyAddressUpdate & applyZipCodeUpdate above for the
+  // address- and zipCode-immutability rules this enforces.
   async updateVenue(req: AuthIdRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['venue:edit']);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -690,6 +736,8 @@ class VenueController extends Controller {
     if (invalid) return res.status(400).json({ message: invalid });
     const addressErr = await this.applyAddressUpdate(req.params.id, body);
     if (addressErr) return res.status(addressErr.status).json({ message: addressErr.message });
+    const zipErr = await this.applyZipCodeUpdate(req.params.id, body);
+    if (zipErr) return res.status(zipErr.status).json({ message: zipErr.message });
     let doc;
     try {
       doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, lastModifiedBy: resolveActor(req, body) });
