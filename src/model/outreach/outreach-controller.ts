@@ -792,7 +792,11 @@ class OutreachController extends Controller {
   // require + validate targetWeekend before calling resolvePitch, so `tw` is
   // always present here when skipDedup is false. A legacy record with no
   // targetWeekend can never match (both clauses require the field to exist) —
-  // legacy records don't block. Returns the error envelope to relay, or null.
+  // legacy records don't block.
+  //
+  // #1050 / #1046: Only active records sent or created within OUTREACH_COOLDOWN_DAYS
+  // (7 days) count as blocking; older campaigns allow re-pitching for the weekend.
+  // Returns the error envelope to relay, or null.
   async dedupGuard(venueId: string | undefined, tw: TargetWeekend | null): Promise<AuthzError | null> {
     const cooldownThreshold = new Date(Date.now() - OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
     const query: Record<string, unknown> = {
