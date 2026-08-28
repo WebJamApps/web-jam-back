@@ -8,19 +8,15 @@ describe('Venue Router (PATCH /venue/:id)', () => {
   let r: ApiResponse, agentUser: { _id: string };
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     await venueModel.deleteMany({});
-    await userModel.deleteMany({});
+    await userModel.deleteMany({ email: 'agent-venue-router@example.com' });
     const createdUser = await userModel.create({
       name: 'agent-test',
       email: 'agent-venue-router@example.com',
       privileges: ['venue:create', 'venue:edit', 'venue:delete'],
     }) as unknown as { _id: { toString(): string } };
     agentUser = { _id: createdUser._id.toString() };
-  });
-
-  beforeEach(async () => {
-    await venueModel.deleteMany({});
   });
 
   it('updates a venue using PATCH /venue/:id with partial-merge semantics (#990)', async () => {

@@ -7,33 +7,25 @@ import request, { type ApiResponse } from '../helpers/api.js';
 describe('The Gig API', () => {
   let r: ApiResponse, newUser: { _id: string; userType: string }, adminUser: { _id: string }, nonAdminUser: { _id: string };
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
-  beforeAll(async () => {
+  beforeEach(async () => {
     await GigModel.deleteMany({});
-    await userModel.deleteMany({});
+    await userModel.deleteMany({
+      email: { $in: ['gig-foo@example.com', 'gig-admin@example.com', 'gig-non-admin@example.com'] },
+    });
     const createdUser = await userModel.create({
       name: 'foo',
       email: 'gig-foo@example.com',
       userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0],
     }) as unknown as { _id: { toString(): string }; userType: string };
     newUser = { _id: createdUser._id.toString(), userType: createdUser.userType };
-    // #962 — announce is gated by GigController's own admin check (role
-    // fallback: JaM-admin/Developer), independent of AUTH_ROLES (which has no
-    // 'gig' entry — any authenticated user passes ensureAuthenticated for
-    // /gig/*, same as the CRUD tests above using the plain `user` role).
     const createdAdmin = await userModel.create({
       name: 'gig-admin', email: 'gig-admin@example.com', userType: 'JaM-admin',
     }) as unknown as { _id: { toString(): string } };
     adminUser = { _id: createdAdmin._id.toString() };
-    // A userType outside GigController's ALLOWED_ROLES (['JaM-admin',
-    // 'Developer']) — `newUser` above is 'Developer' (AUTH_ROLES.user[0]),
-    // which IS admin-allowed, so announce's 403 test needs its own account.
     const createdNonAdmin = await userModel.create({
       name: 'gig-non-admin', email: 'gig-non-admin@example.com', userType: 'plain-user',
     }) as unknown as { _id: { toString(): string } };
     nonAdminUser = { _id: createdNonAdmin._id.toString() };
-  });
-  beforeEach(async () => {
-    await GigModel.deleteMany({});
   });
   it('gets all gigs without auth (public)', async () => {
     await GigModel.create({ venue: 'The Spot on Kirk', city: 'Roanoke', usState: 'Virginia' });

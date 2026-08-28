@@ -9,18 +9,15 @@ describe('The Setlist API', () => {
   let r: ApiResponse, newUser: { _id: string; userType: string };
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
   const auth = () => `Bearer ${authUtils.createJWT({ _id: newUser._id })}`;
-  beforeAll(async () => {
+  beforeEach(async () => {
     await SetlistModel.deleteMany({});
-    await userModel.deleteMany({});
+    await userModel.deleteMany({ email: 'setlist-foo@example.com' });
     const createdUser = await userModel.create({
       name: 'foo',
       email: 'setlist-foo@example.com',
       userType: JSON.parse(process.env.AUTH_ROLES || '{}').user[0],
     }) as unknown as { _id: { toString(): string }; userType: string };
     newUser = { _id: createdUser._id.toString(), userType: createdUser.userType };
-  });
-  beforeEach(async () => {
-    await SetlistModel.deleteMany({});
   });
 
   it('gets all setlists without auth (public)', async () => {

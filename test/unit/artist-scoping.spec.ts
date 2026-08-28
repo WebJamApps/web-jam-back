@@ -18,20 +18,16 @@ describe('Artist scoping', () => {
   // Scoping is driven by the `artist` field, not the role: superUser has no
   // artist slug (unscoped -> pre-#885 behaviour); timAdmin carries artist='tim'.
   const allowedRole = JSON.parse(process.env.AUTH_ROLES || '{}').user[0];
-  beforeAll(async () => {
+  beforeEach(async () => {
     await GigModel.deleteMany({});
     await BookModel.deleteMany({});
-    await userModel.deleteMany({});
+    await userModel.deleteMany({ email: { $in: ['super@example.com', 'tim@example.com'] } });
     const su = await userModel.create({ name: 'josh', email: 'super@example.com', userType: allowedRole }) as unknown as { _id: { toString(): string } };
     const tim = await userModel.create({
       name: 'tim', email: 'tim@example.com', userType: allowedRole, artist: 'tim',
     }) as unknown as { _id: { toString(): string } };
     superUser = { _id: su._id.toString() };
     timAdmin = { _id: tim._id.toString() };
-  });
-  beforeEach(async () => {
-    await GigModel.deleteMany({});
-    await BookModel.deleteMany({});
   });
 
   it('GET /gig?artist=tim returns only that artist', async () => {
