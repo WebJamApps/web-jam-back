@@ -51,7 +51,7 @@ interface VenueBody {
   // #983/#987 — street address, the disambiguator for same-name/same-city
   // locations. REQUIRED on every POST /venue (#987 Part B — validated in
   // validateBody below, before any DB write) and normalized on write (#987
-  // Part A — see normalize-address.ts), on both POST and PUT. PUT keeps it
+  // Part A — see normalize-address.ts), on both POST and PATCH. PATCH keeps it
   // optional (schema stays required:false — see venue-schema.ts) but an
   // address, once set, cannot be removed; see updateVenue below.
   address?: string;
@@ -141,7 +141,7 @@ function resolveActor(req: AuthRequest, body: { actor?: string }): string {
 }
 
 // Reject a write body up front. Returns an error message, or '' when valid.
-// `partial` (PUT) only validates the fields that are present.
+// `partial` (PATCH) only validates the fields that are present.
 // Enum-validated string fields ('' = unset, allowed). Data-driven so adding a
 // field doesn't grow validateBody's cognitive complexity (#867).
 type EnumKey = 'venueType' | 'status' | 'relationshipStage'
@@ -271,7 +271,7 @@ function validateBody(body: VenueBody, partial: boolean): string {
   // validated here before any DB write. Checked last so any other body error
   // (a bad enum, an invalid email, etc.) still reports its own specific
   // message first — this only fires when nothing else is already wrong.
-  // PUT (partial=true) stays optional; see updateVenue for its own
+  // PATCH (partial=true) stays optional; see updateVenue for its own
   // immutable-once-set address rule.
   if (!partial && (!body.address || !String(body.address).trim())) {
     return 'address is required to create a venue';
@@ -602,7 +602,7 @@ class VenueController extends Controller {
     const invalid = validateBody(body, false);
     if (invalid) return res.status(400).json({ message: invalid });
     // #987 Part A — normalize the (now-guaranteed-present, per validateBody
-    // above) address on write, identically to the PUT path (updateVenue).
+    // above) address on write, identically to the PATCH path (updateVenue).
     body.address = normalizeAddress(body.address);
 
     const actor = resolveActor(req, body);
@@ -647,7 +647,7 @@ class VenueController extends Controller {
     return res.status(201).json(doc);
   }
 
-  // #987 — validates/normalizes a PUT body's `address` in place (mutates
+  // #987 — validates/normalizes a PATCH body's `address` in place (mutates
   // `body.address`) per the once-set-cannot-be-removed rule, returning an
   // error tuple to short-circuit on, or null when fine to proceed:
   //   - `address` key absent from the body entirely -> null immediately
@@ -677,7 +677,7 @@ class VenueController extends Controller {
     return null;
   }
 
-  // PATCH /venue/:id (and legacy PUT /venue/:id) — partial update. See applyAddressUpdate above for the
+  // PATCH /venue/:id — partial update. See applyAddressUpdate above for the
   // #987 address-immutability rule this enforces.
   async updateVenue(req: AuthIdRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, ['venue:edit']);

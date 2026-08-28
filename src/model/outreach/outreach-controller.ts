@@ -34,6 +34,9 @@ const PITCH_CC = ['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com'];
 // one exported constant so it's changeable in a single place.
 export const DEFAULT_TEMPLATE_TYPE = 'MidRangeCafeBar';
 
+// #1036 — default gig spacing in months when a venue's gigInterval is 0 or unset.
+export const DEFAULT_GIG_SPACING_MONTHS = 2;
+
 // JaMmusic#1250 — placeholder venueName for a skipped-batch entry where no
 // venue doc could even be loaded (invalid id, or venue not found). The
 // frontend always renders venueName, so this field is never omitted.
@@ -157,16 +160,73 @@ function resolveActor(req: AuthRequest, body: { actor?: string }): string {
 
 interface TargetWeekend { start: Date; end: Date }
 
-// #923 — validate + parse the wire-shape targetWeekend into real Dates. Returns
+// #1036 — parse start and end dates from a targetDates string (e.g. "2026-10-16 to 2026-10-18",
+// "2026-10-16 - 2026-10-18", or single ISO date "2026-10-16").
+export function parseTargetDates(raw: string | undefined): TargetWeekend | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  let startStr = '';
+  let endStr = '';
+  const toIdx = trimmed.toLowerCase().indexOf(' to ');
+  if (toIdx !== -1) {
+    startStr = trimmed.slice(0, toIdx).trim();
+    endStr = trimmed.slice(toIdx + 4).trim();
+  } else {
+    const dashIdx = trimmed.indexOf(' - ');
+    if (dashIdx !== -1) {
+      startStr = trimmed.slice(0, dashIdx).trim();
+      endStr = trimmed.slice(dashIdx + 3).trim();
+    } else {
+      const slashIdx = trimmed.indexOf('/');
+      if (slashIdx !== -1) {
+        startStr = trimmed.slice(0, slashIdx).trim();
+        endStr = trimmed.slice(slashIdx + 1).trim();
+      } else if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+        startStr = trimmed;
+        endStr = trimmed;
+      }
+    }
+  }
+  if (!startStr || !endStr) return null;
+  if (!/\b\d{4}\b/.test(startStr) || !/\b\d{4}\b/.test(endStr)) return null;
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  if (start.getTime() > end.getTime()) return null;
+  return { start, end };
+}
+
+// #923/#1036 — validate + parse the wire-shape targetWeekend into real Dates. Returns
 // null for anything malformed (missing either bound, unparseable, or an
 // inverted range) so the caller can 400 with one consistent check.
-function parseTargetWeekend(raw: RawTargetWeekend | undefined): TargetWeekend | null {
-  if (!raw || !raw.start || !raw.end) return null;
+export function parseTargetWeekend(raw: RawTargetWeekend | string | undefined): TargetWeekend | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') return parseTargetDates(raw);
+  if (!raw.start || !raw.end) return null;
   const start = new Date(raw.start);
   const end = new Date(raw.end);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   if (start.getTime() > end.getTime()) return null;
   return { start, end };
+}
+
+// #1036 — resolve targetWeekend from targetWeekend object or targetDates string fallback for getCandidates.
+export function resolveCandidateWeekend(query: { targetWeekend?: RawTargetWeekend; targetDates?: string }): {
+  tw: TargetWeekend | null;
+  error?: string;
+} {
+  let tw: TargetWeekend | null = null;
+  if (query.targetWeekend !== undefined && (query.targetWeekend.start || query.targetWeekend.end)) {
+    tw = parseTargetWeekend(query.targetWeekend);
+  }
+  if (!tw && query.targetDates) {
+    tw = parseTargetDates(query.targetDates);
+  }
+  if (query.targetWeekend !== undefined && !tw && !query.targetDates) {
+    return { tw: null, error: 'targetWeekend must include valid start and end' };
+  }
+  return { tw };
 }
 
 // The Mongo overlap clause for "an outreach whose targetWeekend range overlaps
@@ -411,6 +471,8 @@ function buildCallScript(venue: VenueDoc, outreach: OutreachDoc): string {
 }
 
 class OutreachController extends Controller {
+  static readonly DEFAULT_GIG_SPACING_MONTHS = DEFAULT_GIG_SPACING_MONTHS;
+
   async authorize(req: AuthRequest, required: string[]): Promise<AuthzResult> { // eslint-disable-line class-methods-use-this
     let user: AuthedUser | null;
     try { user = await userModel.findById(req.user || '') as unknown as AuthedUser | null; } catch (e) {
@@ -912,17 +974,14 @@ class OutreachController extends Controller {
     return t > lower.getTime() && t < upper.getTime();
   }
 
-  // #980 — generalizes the old #958 SAFETY exclusion (a venue with ANY
+  // #980/#1036 — generalizes the old #958 SAFETY exclusion (a venue with ANY
   // upcoming linked gig was dropped forever) into a configurable spacing
-  // rule: `gigInterval` (months on the venue, default 0) is the minimum gap
+  // rule: `gigInterval` (months on the venue, default 0 -> 2 months default) is the minimum gap
   // Josh wants between gigs at that venue. For target window `w`, a venue is
   // excluded when ANY of its linked gigs (past or future) falls within
-  // `gigInterval` months of `w`. `gigInterval = 0` (every venue's default,
-  // and every venue's value before this migration) disables the check
-  // entirely — BY DESIGN this removes the old blanket exclusion (the
-  // "repeat-venue trap" #980 exists to fix): a venue only gets spaced out
-  // once Josh explicitly opts it in by setting gigInterval > 0. Resolution
-  // uses the shared venueId-first/exact-normalized-name rule (never fuzzy —
+  // `gigInterval` months of `w`. When `gigInterval` is 0 or unset, defaults to
+  // DEFAULT_GIG_SPACING_MONTHS (2 months). Custom values > 0 (e.g. 3, 6) are respected.
+  // Resolution uses the shared venueId-first/exact-normalized-name rule (never fuzzy —
   // see src/lib/gig-venue-link.ts). `gigs` is fetched ONCE by the caller (no
   // per-venue query/N+1) and the spacing math runs in memory over that one
   // fetched set, grouped by venueId.
@@ -933,8 +992,8 @@ class OutreachController extends Controller {
   ): LinkableVenue[] {
     const groups = groupGigsByVenue(gigs, venues);
     return venues.filter((v) => {
-      const gigIntervalMonths = Number(v.gigInterval) || 0;
-      if (!gigIntervalMonths) return true;
+      const rawInterval = Number(v.gigInterval);
+      const gigIntervalMonths = rawInterval > 0 ? rawInterval : DEFAULT_GIG_SPACING_MONTHS;
       const linked = groups.get(String(v._id)) || [];
       return !linked.some((g) => g.datetime && !Number.isNaN(new Date(g.datetime as string).getTime())
         && OutreachController.isTooCloseToWindow(new Date(g.datetime as string), w, gigIntervalMonths));
@@ -947,7 +1006,7 @@ class OutreachController extends Controller {
   // calendar-month arithmetic via setMonth).
   static readonly MS_PER_MONTH = 30.4368 * 24 * 60 * 60 * 1000;
 
-  // #980 — build the per-venue "why did this qualify" context for JaM#1238.
+  // #980/#1036 — build the per-venue "why did this qualify" context for JaM#1238.
   // `linkedGigs` is this one venue's slice of the single batch-fetched gig
   // set (already grouped by the caller — no extra query). Every candidate
   // passed here already cleared the eligibility + spacing checks; this is
@@ -964,7 +1023,8 @@ class OutreachController extends Controller {
       if (!latest) return g;
       return new Date(g.datetime as string).getTime() > new Date(latest.datetime as string).getTime() ? g : latest;
     }, null);
-    const gigIntervalMonths = Number(venue.gigInterval) || 0;
+    const rawInterval = Number(venue.gigInterval);
+    const gigIntervalMonths = rawInterval > 0 ? rawInterval : DEFAULT_GIG_SPACING_MONTHS;
     const distancesInMonths = validGigs.map(
       (g) => Math.abs(new Date(g.datetime as string).getTime() - w.getTime()) / OutreachController.MS_PER_MONTH,
     );
@@ -972,8 +1032,7 @@ class OutreachController extends Controller {
       ? Math.round(Math.min(...distancesInMonths) * 10) / 10
       : null;
     let spacingNote: string;
-    if (!gigIntervalMonths) spacingNote = 'spacing off (gigInterval=0)';
-    else if (nearestGigMonthsAway === null) spacingNote = 'no gigs yet';
+    if (nearestGigMonthsAway === null) spacingNote = 'no gigs yet';
     else spacingNote = `clear — nearest gig ~${nearestGigMonthsAway} mo away`;
     const resumeBooking = venue.resumeBooking ? new Date(venue.resumeBooking as string) : null;
     const resumeBookingExpired = !!(resumeBooking && !Number.isNaN(resumeBooking.getTime()) && resumeBooking.getTime() <= now);
@@ -1000,28 +1059,26 @@ class OutreachController extends Controller {
     });
   }
 
-  // GET /outreach/candidates — propose the target list (#844/#980/#995): a
+  // GET /outreach/candidates — propose the target list (#844/#980/#995/#1036): a
   // venue is a candidate for target window W iff `outreachEligible = GO` AND
   // a valid primary email AND not archived AND no active `resumeBooking`
   // cooldown (unset, or a date already in the past, relative to NOW) AND no
   // active `bookedThrough` (unset, or already before W's START — #995: a
   // "calendar full through" date is compared against the window being
   // pitched, not today) AND — the excludeUpcomingGigVenues spacing check
-  // below — (`gigInterval = 0` OR every linked gig at that venue is ≥
-  // `gigInterval` months from W), minus any venue that already has an active
-  // outreach with an OVERLAPPING targetWeekend. #898: the targetWeekend
-  // filter is date-range aware (matching the dedup guard's overlap
+  // below — (every linked gig at that venue is ≥ `gigInterval` months from W,
+  // defaulting to 2 months when gigInterval is 0 or unset), minus any venue that
+  // already has an active outreach with an OVERLAPPING targetWeekend. #898: the
+  // targetWeekend filter is date-range aware (matching the dedup guard's overlap
   // semantics) rather than the old targetDates string filter. Read-only.
   // Optional query:
   //   • targetWeekend {start, end} (bracket-notation query params, e.g.
-  //     ?targetWeekend[start]=...&targetWeekend[end]=...) — W for both the
+  //     ?targetWeekend[start]=...&targetWeekend[end]=...) or fallback targetDates
+  //     string (e.g. ?targetDates=2026-10-16 to 2026-10-18) — W for both the
   //     dedup-overlap check and the gigInterval spacing check. When omitted,
-  //     W defaults to "now" for spacing purposes (matching the pre-#980
-  //     behavior for every venue, since gigInterval=0 is every venue's
-  //     default and disables the check regardless of W) and the response
-  //     stays the plain candidates array (back-compat); when given, the
-  //     response is `{ candidates, weekendGigs }` (weekendGigs = #958's
-  //     weekend-awareness surfacing).
+  //     W defaults to "now" for spacing purposes and the response stays the plain
+  //     candidates array (back-compat); when given, the response is `{ candidates, weekendGigs }`
+  //     (weekendGigs = #958's weekend-awareness surfacing).
   //   • cities=City1,City2,... (comma-separated, #980) — AND'd with every
   //     other criterion; omitted/empty = all cities (back-compat).
   // Every returned candidate carries a `reason` object (buildCandidateReason,
@@ -1033,12 +1090,9 @@ class OutreachController extends Controller {
     const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
 
-    const query = (req.query || {}) as { targetWeekend?: RawTargetWeekend; cities?: string };
-    let tw: TargetWeekend | null = null;
-    if (query.targetWeekend !== undefined) {
-      tw = parseTargetWeekend(query.targetWeekend);
-      if (!tw) return res.status(400).json({ message: 'targetWeekend must include valid start and end' });
-    }
+    const query = (req.query || {}) as { targetWeekend?: RawTargetWeekend; targetDates?: string; cities?: string };
+    const { tw, error: twError } = resolveCandidateWeekend(query);
+    if (twError) return res.status(400).json({ message: twError });
     const now = new Date();
     const w = tw ? tw.start : now;
     const cities = (query.cities || '').split(',').map((s) => s.trim()).filter(Boolean);

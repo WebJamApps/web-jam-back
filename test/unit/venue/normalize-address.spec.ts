@@ -2,7 +2,7 @@ import {
   normalizeAddress, STREET_SUFFIXES, DIRECTIONALS, UNIT_DESIGNATORS,
 } from '#src/model/venue/normalize-address.js';
 
-// web-jam-back#987 — the normalizer table drives POST/PUT /venue's on-write
+// web-jam-back#987 — the normalizer table drives POST/PATCH /venue's on-write
 // normalization and the dedup comparison in findDuplicate. Tested directly,
 // independent of the controller.
 describe('normalizeAddress (#987)', () => {

@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.11.9",
+  "version": "2.11.11",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -90,8 +90,10 @@
     "eslint-plugin-import-x": "^4.16.2",
     "eslint-plugin-json": "^4.0.1",
     "eslint-plugin-n": "^17.24.0",
+    "eslint-plugin-promise": "^7.3.0",
     "eslint-plugin-security": "^4.0.0",
     "eslint-plugin-sonarjs": "^4.0.3",
+    "eslint-plugin-unicorn": "^73.0.0",
     "globals": "^17.5.0",
     "jscpd": "^5.0.11",
     "typescript-eslint": "^8.59.1",

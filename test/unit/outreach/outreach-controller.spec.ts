@@ -27,7 +27,8 @@ vi.mock('#src/lib/classify-reply.js', () => ({
 }));
 
 const {
-  default: controller, DEFAULT_TEMPLATE_TYPE, UNKNOWN_VENUE_NAME,
+  default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
+  parseTargetDates, parseTargetWeekend,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -758,31 +759,53 @@ describe('Outreach Controller (#844 batch model)', () => {
       }));
     });
 
-    // #980 — the gigInterval-aware generalization of the old #958 SAFETY
-    // blanket exclusion. gigInterval=0 (every venue's default, and every
-    // venue's value before the #980 migration) now means NO spacing check at
-    // all — the old "any upcoming linked gig excludes forever" rule (the
-    // "repeat-venue trap" #980 fixes) is gone by design. A venue only gets
-    // spaced out once it's explicitly opted in via gigInterval > 0.
-    describe('gigInterval spacing (#980)', () => {
-      it('does NOT drop a venue with an upcoming gig when gigInterval is 0 (the default) — the repeat-venue trap is fixed', async () => {
+    // #980/#1036 — the gigInterval-aware generalization of the old #958 SAFETY
+    // blanket exclusion. When gigInterval is 0 or unset, defaults to 2-month spacing.
+    // Explicit values > 0 (e.g. 3, 6) are respected.
+    describe('gigInterval spacing (#980/#1036)', () => {
+      it('drops a venue with an upcoming gig within 2 months when gigInterval is 0 (default 2-month spacing)', async () => {
         (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
         (gigModel as any).find = vi.fn(() => Promise.resolve([
           { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString() },
         ]));
         await c.getCandidates({ user: 'a', query: {} }, resStub);
         expect(status).toBe(200);
-        expect(payload).toHaveLength(1);
+        expect(payload).toHaveLength(0);
       });
 
-      it('does NOT drop a venue with an upcoming gig when gigInterval is unset (default) either', async () => {
+      it('drops a venue with an upcoming gig within 2 months when gigInterval is unset (default 2-month spacing)', async () => {
         (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
         (gigModel as any).find = vi.fn(() => Promise.resolve([
           { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString() },
         ]));
         await c.getCandidates({ user: 'a', query: {} }, resStub);
         expect(status).toBe(200);
-        expect(payload).toHaveLength(1);
+        expect(payload).toHaveLength(0);
+      });
+
+      it('does NOT drop a venue when gigInterval is 0 (or unset) and the gig is 3 months away from w', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }, { _id: 'b' }]));
+        const w = new Date(VALID_WEEKEND.start);
+        const threeMonthsOut = new Date(w); threeMonthsOut.setMonth(threeMonthsOut.getMonth() + 3);
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: threeMonthsOut.toISOString() },
+          { venueId: 'b', datetime: threeMonthsOut.toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(2);
+      });
+
+      it('drops a venue with explicit gigInterval: 3 when gig is 2.5 months away from w', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 3 }]));
+        const w = new Date(VALID_WEEKEND.start);
+        const twoAndHalfMonthsOut = new Date(w.getTime() + 75 * 86400000);
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: twoAndHalfMonthsOut.toISOString() },
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(0);
       });
 
       it('drops a venue (matched by venueId) whose linked gig is within gigInterval months of the target window', async () => {
@@ -869,6 +892,16 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(payload).toHaveLength(0);
       });
 
+      it('parses targetDates string fallback into w and excludes venues with gigs within default 2 months', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([
+          { venueId: 'a', datetime: '2026-09-15T20:00:00.000Z' },
+        ]));
+        await c.getCandidates({ user: 'a', query: { targetDates: '2026-10-16 to 2026-10-18' } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(0);
+      });
+
       it('500s when the gig query throws', async () => {
         (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
         (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db down')));
@@ -877,16 +910,25 @@ describe('Outreach Controller (#844 batch model)', () => {
       });
     });
 
-    // #980/JaMmusic#1238 — every candidate carries a `reason` object so the
+    // #980/#1036/JaMmusic#1238 — every candidate carries a `reason` object so the
     // Find-Eligible UI can show why it qualified without re-deriving
     // eligibility client-side (buildCandidateReason).
-    describe('candidate reason (#980)', () => {
-      it('reports spacing off when gigInterval is 0 (the default)', async () => {
+    describe('candidate reason (#980/#1036)', () => {
+      it('reports default 2-month spacing and "no gigs yet" when gigInterval is 0 (the default)', async () => {
         (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
         (gigModel as any).find = vi.fn(() => Promise.resolve([]));
         await c.getCandidates({ user: 'a', query: {} }, resStub);
         expect(payload[0].reason).toMatchObject({
-          gigIntervalMonths: 0, spacingNote: 'spacing off (gigInterval=0)', nearestGigMonthsAway: null, lastGigDate: null,
+          gigIntervalMonths: DEFAULT_GIG_SPACING_MONTHS, spacingNote: 'no gigs yet', nearestGigMonthsAway: null, lastGigDate: null,
+        });
+      });
+
+      it('reports default 2-month spacing when gigInterval is unset', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a' }]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(payload[0].reason).toMatchObject({
+          gigIntervalMonths: DEFAULT_GIG_SPACING_MONTHS, spacingNote: 'no gigs yet', nearestGigMonthsAway: null, lastGigDate: null,
         });
       });
 
@@ -913,7 +955,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       it('reports lastGigDate as the most recent PAST linked gig, picking the latest among several', async () => {
         (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
         const older = new Date(Date.now() - 200 * 86400000).toISOString();
-        const mostRecent = new Date(Date.now() - 10 * 86400000).toISOString();
+        const mostRecent = new Date(Date.now() - 70 * 86400000).toISOString();
         (gigModel as any).find = vi.fn(() => Promise.resolve([
           { venueId: 'a', datetime: older },
           { venueId: 'a', datetime: mostRecent },
@@ -936,6 +978,60 @@ describe('Outreach Controller (#844 batch model)', () => {
         (gigModel as any).find = vi.fn(() => Promise.resolve([]));
         await c.getCandidates({ user: 'a', query: {} }, resStub);
         expect(payload[0].reason.resumeBookingExpired).toBe(false);
+      });
+    });
+
+    describe('parseTargetDates and parseTargetWeekend (#1036)', () => {
+      it('parses "YYYY-MM-DD to YYYY-MM-DD"', () => {
+        const res = parseTargetDates('2026-10-16 to 2026-10-18');
+        expect(res).not.toBeNull();
+        expect(res?.start.toISOString()).toContain('2026-10-16');
+        expect(res?.end.toISOString()).toContain('2026-10-18');
+      });
+
+      it('parses "YYYY-MM-DD - YYYY-MM-DD"', () => {
+        const res = parseTargetDates('2026-10-16 - 2026-10-18');
+        expect(res).not.toBeNull();
+        expect(res?.start.toISOString()).toContain('2026-10-16');
+        expect(res?.end.toISOString()).toContain('2026-10-18');
+      });
+
+      it('parses "YYYY-MM-DD/YYYY-MM-DD"', () => {
+        const res = parseTargetDates('2026-10-16/2026-10-18');
+        expect(res).not.toBeNull();
+        expect(res?.start.toISOString()).toContain('2026-10-16');
+        expect(res?.end.toISOString()).toContain('2026-10-18');
+      });
+
+      it('parses a single date "YYYY-MM-DD"', () => {
+        const res = parseTargetDates('2026-10-16');
+        expect(res).not.toBeNull();
+        expect(res?.start.toISOString()).toContain('2026-10-16');
+        expect(res?.end.toISOString()).toContain('2026-10-16');
+      });
+
+      it('returns null for empty or non-string input', () => {
+        expect(parseTargetDates(undefined)).toBeNull();
+        expect(parseTargetDates('')).toBeNull();
+        expect(parseTargetDates('   ')).toBeNull();
+        expect(parseTargetDates(123 as any)).toBeNull();
+      });
+
+      it('returns null for unparseable dates or inverted range', () => {
+        expect(parseTargetDates('invalid-date')).toBeNull();
+        expect(parseTargetDates('2026-10-18 to 2026-10-16')).toBeNull();
+      });
+
+      it('parseTargetWeekend delegates to parseTargetDates for string input', () => {
+        const res = parseTargetWeekend('2026-10-16 to 2026-10-18');
+        expect(res).not.toBeNull();
+        expect(res?.start.toISOString()).toContain('2026-10-16');
+      });
+
+      it('parseTargetWeekend parses RawTargetWeekend object', () => {
+        const res = parseTargetWeekend({ start: '2026-10-16', end: '2026-10-18' });
+        expect(res).not.toBeNull();
+        expect(res?.start.toISOString()).toContain('2026-10-16');
       });
     });
 
