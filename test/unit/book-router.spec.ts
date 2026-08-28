@@ -7,9 +7,9 @@ import request, { type ApiResponse } from '../helpers/api.js';
 describe('The Book API', () => {
   let r: ApiResponse, newUser: { _id: string; userType: string };
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
-  beforeAll(async () => {
+  beforeEach(async () => {
     await BookModel.deleteMany({});
-    await userModel.deleteMany({});
+    await userModel.deleteMany({ email: 'foo3@example.com' });
     const createdUser = await userModel.create({
       name: 'foo',
       email: 'foo3@example.com',
@@ -17,9 +17,6 @@ describe('The Book API', () => {
     }) as unknown as { _id: { toString(): string }; userType: string };
     // Map the Mongoose Document to the plain object type expected by the tests
     newUser = { _id: createdUser._id.toString(), userType: createdUser.userType };
-  });
-  beforeEach(async () => {
-    await BookModel.deleteMany({});
   });
   it('should find one book', async () => {
     await BookModel.create({

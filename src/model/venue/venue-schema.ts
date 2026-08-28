@@ -81,7 +81,7 @@ const venueSchema = new Schema({
   // records (see #983/#987 non-goals) — it's filled/normalized the next time
   // a venue is created/edited. See venue-controller.ts's findDuplicate for
   // how this refines the POST /venue dedup match, and updateVenue for why a
-  // once-set address can't be cleared via PUT.
+  // once-set address can't be cleared via PATCH.
   address: { type: String, required: false, trim: true },
   usState: { type: String, required: false, trim: true },
   // #972 — 2-letter country code (validated in venue-controller.ts), defaulting

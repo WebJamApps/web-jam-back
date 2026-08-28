@@ -539,7 +539,7 @@ describe('Venue Controller', () => {
       expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ notes: 'called them', lastModifiedBy: 'agent' }));
     });
 
-    // #972 — country/region accepted through the partial-merge PUT path too.
+    // #972 — country/region accepted through the partial-merge PATCH path too.
     it('rejects an invalid country on update', async () => {
       const id = new mongoose.Types.ObjectId().toString();
       await c.updateVenue({ user: 'a', params: { id }, body: { country: 'usa' } }, resStub);
