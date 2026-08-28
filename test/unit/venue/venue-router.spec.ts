@@ -96,7 +96,7 @@ describe('Venue Router (PATCH /venue/:id)', () => {
     expect(r.body[0].name).toBe('The Spot on Kirk');
   });
 
-  it('creates a venue using POST /venue', async () => {
+  it('creates a venue using POST /venue (#1043)', async () => {
     r = await request(app)
       .post('/venue')
       .set({ origin: allowedUrl })
@@ -106,10 +106,42 @@ describe('Venue Router (PATCH /venue/:id)', () => {
         address: '181 N Main St',
         city: 'Harrisonburg',
         usState: 'Virginia',
+        zipCode: '22802',
       });
 
     expect(r.status).toBe(201);
     expect(r.body.name).toBe('The Golden Pony');
+    expect(r.body.zipCode).toBe('22802');
+  });
+
+  it('enforces zipCode immutability on PATCH /venue/:id (#1043)', async () => {
+    const venue = await venueModel.create({
+      name: 'The Spot on Kirk',
+      address: '22 S Kirk St',
+      city: 'Roanoke',
+      usState: 'Virginia',
+      zipCode: '24011',
+    }) as unknown as { _id: { toString(): string } };
+
+    // Attempting to remove zipCode when one is already set fails on PATCH
+    r = await request(app)
+      .patch(`/venue/${venue._id.toString()}`)
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`)
+      .send({ zipCode: '' });
+
+    expect(r.status).toBe(400);
+    expect(r.body.message).toContain('zipCode cannot be removed');
+
+    // Updating to a new valid zipCode succeeds
+    r = await request(app)
+      .patch(`/venue/${venue._id.toString()}`)
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`)
+      .send({ zipCode: '24016' });
+
+    expect(r.status).toBe(200);
+    expect(r.body.zipCode).toBe('24016');
   });
 
   it('lists distinct cities using GET /venue/cities', async () => {
