@@ -37,6 +37,9 @@ export const DEFAULT_TEMPLATE_TYPE = 'MidRangeCafeBar';
 // #1036 — default gig spacing in months when a venue's gigInterval is 0 or unset.
 export const DEFAULT_GIG_SPACING_MONTHS = 2;
 
+// #1046 — cooldown in days before an active outreach record no longer blocks candidate re-pitching for the same weekend.
+export const OUTREACH_COOLDOWN_DAYS = 7;
+
 // JaMmusic#1250 — placeholder venueName for a skipped-batch entry where no
 // venue doc could even be loaded (invalid id, or venue not found). The
 // frontend always renders venueName, so this field is never omitted.
@@ -1146,7 +1149,15 @@ class OutreachController extends Controller {
     if (tw) {
       let active: { venueId?: unknown }[];
       try {
-        active = await this.model.find({ status: { $in: ACTIVE_STATUSES }, ...targetWeekendOverlapClause(tw) });
+        const cooldownThreshold = new Date(now.getTime() - OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+        active = await this.model.find({
+          status: { $in: ACTIVE_STATUSES },
+          ...targetWeekendOverlapClause(tw),
+          $or: [
+            { sentAt: { $gte: cooldownThreshold } },
+            { created_at: { $gte: cooldownThreshold } },
+          ],
+        });
       } catch (e) {
         return res.status(500).json({ message: (e as Error).message });
       }

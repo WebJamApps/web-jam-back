@@ -28,7 +28,7 @@ vi.mock('#src/lib/classify-reply.js', () => ({
 
 const {
   default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
-  parseTargetDates, parseTargetWeekend,
+  OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -757,6 +757,41 @@ describe('Outreach Controller (#844 batch model)', () => {
         'targetWeekend.start': { $exists: true, $lte: new Date(VALID_WEEKEND.end) },
         'targetWeekend.end': { $exists: true, $gte: new Date(VALID_WEEKEND.start) },
       }));
+    });
+
+    // #1046 — 1-week cooldown: active outreach records > 7 days old do not block re-pitching.
+    describe('re-pitching cooldown (#1046)', () => {
+      it('exports OUTREACH_COOLDOWN_DAYS as 7', () => {
+        expect(OUTREACH_COOLDOWN_DAYS).toBe(7);
+      });
+
+      it('excludes candidate venues when an active outreach record was sent/created <= 7 days ago', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'v1' }, { _id: 'v2' }]));
+        const recentOutreach = [{ venueId: 'v1' }];
+        const findMock = vi.fn(() => Promise.resolve(recentOutreach));
+        c.model.find = findMock;
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(1);
+        expect(payload.candidates[0]._id).toBe('v2');
+        expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
+          status: { $in: ['sent', 'replied'] },
+          $or: [
+            { sentAt: { $gte: expect.any(Date) } },
+            { created_at: { $gte: expect.any(Date) } },
+          ],
+        }));
+      });
+
+      it('returns candidate venues when active outreach records are > 7 days old (query returns no active matches)', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'v1' }, { _id: 'v2' }]));
+        const findMock = vi.fn(() => Promise.resolve([]));
+        c.model.find = findMock;
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(2);
+        expect(payload.candidates.map((v: any) => v._id)).toEqual(['v1', 'v2']);
+      });
     });
 
     // #980/#1036 — the gigInterval-aware generalization of the old #958 SAFETY
