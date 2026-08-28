@@ -794,7 +794,15 @@ class OutreachController extends Controller {
   // targetWeekend can never match (both clauses require the field to exist) —
   // legacy records don't block. Returns the error envelope to relay, or null.
   async dedupGuard(venueId: string | undefined, tw: TargetWeekend | null): Promise<AuthzError | null> {
-    const query: Record<string, unknown> = { venueId, status: { $in: ACTIVE_STATUSES } };
+    const cooldownThreshold = new Date(Date.now() - OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+    const query: Record<string, unknown> = {
+      venueId,
+      status: { $in: ACTIVE_STATUSES },
+      $or: [
+        { sentAt: { $gte: cooldownThreshold } },
+        { created_at: { $gte: cooldownThreshold } },
+      ],
+    };
     if (tw) Object.assign(query, targetWeekendOverlapClause(tw));
     let dupe;
     try {
