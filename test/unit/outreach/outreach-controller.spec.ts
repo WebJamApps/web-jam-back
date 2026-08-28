@@ -2369,4 +2369,52 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(findMock).not.toHaveBeenCalled(); // auto-flip only runs off a 'booked' recording
     });
   });
+
+  describe('template sanitization in pitch generation and sends (#1046)', () => {
+    it('sanitizes banned voice-rule phrases when resolving templates via findTemplate', async () => {
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve({
+        type: 'Originals',
+        stage: 'cold',
+        subject: 'I am reaching out',
+        introHtml: 'Thank you for reaching out',
+        bodyHtml: 'This is a perfect fit for you',
+      }));
+
+      const template = await c.findTemplate('Originals', 'cold');
+      expect(template.subject).toBe('I am connecting');
+      expect(template.introHtml).toBe('Thank you for connecting');
+      expect(template.bodyHtml).toBe('This is a great match for you');
+    });
+
+    it('sanitizes banned phrases in rendered pitch emails sent via sendPitch', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue()));
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve({
+        type: 'Originals',
+        stage: 'cold',
+        subject: 'Reaching out to {{venueName}}',
+        introHtml: 'We are reaching out to connect.',
+        bodyHtml: 'Our acoustic set is a perfect fit for {{venueName}}.',
+      }));
+
+      await c.sendPitch({
+        user: 'a',
+        body: {
+          venueId: oid(),
+          targetDates: 'Oct 16-18',
+          targetWeekend: VALID_WEEKEND,
+        },
+      }, resStub);
+
+      expect(status).toBe(201);
+      expect(sendMail).toHaveBeenCalled();
+      const sendArgs = (sendMail as any).mock.calls[0][0];
+      expect(sendArgs.subject).toContain('Connecting to');
+      expect(sendArgs.subject).not.toContain('Reaching out');
+      expect(sendArgs.html).toContain('connecting to connect');
+      expect(sendArgs.html).not.toContain('reaching out');
+      expect(sendArgs.html).toContain('great match');
+      expect(sendArgs.html).not.toContain('perfect fit');
+    });
+  });
 });

@@ -252,6 +252,10 @@ class TemplateController extends Controller {
     const invalid = validateBody(body, false);
     if (invalid) return res.status(400).json({ message: invalid });
 
+    if (typeof body.introHtml === 'string') body.introHtml = sanitizeTemplateText(body.introHtml);
+    if (typeof body.bodyHtml === 'string') body.bodyHtml = sanitizeTemplateText(body.bodyHtml);
+    if (typeof body.subject === 'string') body.subject = sanitizeTemplateText(body.subject);
+
     const actor = resolveActor(req, body);
     let existing: Record<string, unknown> | null;
     try { existing = await this.findDuplicate(body); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
@@ -290,6 +294,10 @@ class TemplateController extends Controller {
     delete body._id;
     const invalid = validateBody(body, true);
     if (invalid) return res.status(400).json({ message: invalid });
+
+    if (typeof body.introHtml === 'string') body.introHtml = sanitizeTemplateText(body.introHtml);
+    if (typeof body.bodyHtml === 'string') body.bodyHtml = sanitizeTemplateText(body.bodyHtml);
+    if (typeof body.subject === 'string') body.subject = sanitizeTemplateText(body.subject);
 
     let existing;
     try { existing = await this.model.findById(req.params.id); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }

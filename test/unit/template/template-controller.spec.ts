@@ -235,17 +235,38 @@ describe('Template Controller', () => {
       expect(sanitizeTemplateText(null as any)).toBeNull();
     });
 
-    it('formatTemplate preserves document fields and handles toObject/plain objects', () => {
-      expect(formatTemplate(null)).toBeNull();
-      expect(formatTemplate(undefined)).toBeUndefined();
-      const mockDoc = {
-        _id: '123',
-        type: 'Originals',
-        toObject: () => ({ _id: '123', type: 'Originals', introHtml: 'reach out' }),
-      };
-      const formatted = formatTemplate(mockDoc as any);
-      expect(formatted.introHtml).toBe('connect');
-      expect(formatted._id).toBe('123');
+    it('sanitizes banned phrases in createTemplate and updateTemplate write bodies (#1046)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const createMock = vi.fn((doc) => Promise.resolve({ _id: 'n', ...doc }));
+      c.model.create = createMock;
+
+      await c.createTemplate({
+        user: 'a',
+        body: { type: 'Originals', subject: 'I am reaching out', introHtml: 'Please reach out', bodyHtml: 'It is a perfect fit' },
+      }, resStub);
+
+      expect(status).toBe(201);
+      expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+        subject: 'I am connecting',
+        introHtml: 'Please connect',
+        bodyHtml: 'It is a great match',
+      }));
+
+      const updMock = vi.fn((id, doc) => Promise.resolve({ _id: id, ...doc }));
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: '507f1f77bcf86cd799439011' }));
+      c.model.findByIdAndUpdate = updMock;
+
+      await c.updateTemplate({
+        user: 'a',
+        params: { id: '507f1f77bcf86cd799439011' },
+        body: { subject: 'Reaching out again', bodyHtml: 'Still a Perfect fit' },
+      }, resStub);
+
+      expect(status).toBe(200);
+      expect(updMock).toHaveBeenCalledWith('507f1f77bcf86cd799439011', expect.objectContaining({
+        subject: 'Connecting again',
+        bodyHtml: 'Still a Great match',
+      }));
     });
   });
 

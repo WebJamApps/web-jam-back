@@ -14,6 +14,7 @@ import outreachModel from './outreach-facade.js';
 import outreachConfigModel from './outreach-config-facade.js';
 import venueModel from '../venue/venue-facade.js';
 import templateModel from '../template/template-facade.js';
+import { formatTemplate, sanitizeTemplateText } from '../template/template-controller.js';
 import userModel from '../user/user-facade.js';
 import gigModel from '../gig/gig-facade.js';
 import {
@@ -374,15 +375,18 @@ function ensureVenueInSubject(subject: string, venueName: string): string {
 function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody): {
   subject: string; html: string; attachments: { filename: string; path: string; cid: string }[];
 } {
-  const subject = ensureVenueInSubject(
-    personalize(template.subject || 'Performance Inquiry: Josh and Maria', venue, body),
+  const sanitizedTemplate = formatTemplate(template as unknown as Record<string, unknown>) as unknown as TemplateDoc;
+  const rawSubject = ensureVenueInSubject(
+    personalize(sanitizedTemplate.subject || 'Performance Inquiry: Josh and Maria', venue, body),
     venue.name || 'your venue',
   );
-  const introHtml = resolveIntroHtml(template, venue, body);
-  const bodyHtml = fillCustomBodyMarker(personalize(template.bodyHtml || '', venue, body), body.customBody);
+  const subject = sanitizeTemplateText(rawSubject);
+  const introHtml = sanitizeTemplateText(resolveIntroHtml(sanitizedTemplate, venue, body));
+  const rawBodyHtml = fillCustomBodyMarker(personalize(sanitizedTemplate.bodyHtml || '', venue, body), body.customBody);
+  const bodyHtml = sanitizeTemplateText(rawBodyHtml);
   let html = introHtml + bodyHtml;
   const attachments = [];
-  const assetPath = template.footerPhotoRef ? resolveFooterAsset(template.footerPhotoRef) : null;
+  const assetPath = sanitizedTemplate.footerPhotoRef ? resolveFooterAsset(sanitizedTemplate.footerPhotoRef) : null;
   /* istanbul ignore else */
   if (assetPath) {
     html += footerHtml();
@@ -774,9 +778,10 @@ class OutreachController extends Controller {
     const coldMatch = { type, active: true, $or: [{ stage: 'cold' }, { stage: { $exists: false } }, { stage: null }] };
     if (stage === 'returning') {
       const returning = await templateModel.findOne({ type, active: true, stage: 'returning' }) as unknown as TemplateDoc | null;
-      if (returning) return returning;
+      if (returning) return formatTemplate(returning as unknown as Record<string, unknown>) as unknown as TemplateDoc;
     }
-    return await templateModel.findOne(coldMatch) as unknown as TemplateDoc | null;
+    const cold = await templateModel.findOne(coldMatch) as unknown as TemplateDoc | null;
+    return cold ? (formatTemplate(cold as unknown as Record<string, unknown>) as unknown as TemplateDoc) : null;
   }
 
   // Dedup guard (#923): 409 when an active (sent/replied) record exists for
