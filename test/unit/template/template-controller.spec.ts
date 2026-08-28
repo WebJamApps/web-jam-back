@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
 import fs from 'fs';
-import controller from '#src/model/template/template-controller.js';
+import controller, { sanitizeTemplateText, formatTemplate } from '#src/model/template/template-controller.js';
 import userModel from '#src/model/user/user-facade.js';
 
 const c = controller as any;
@@ -178,6 +178,24 @@ describe('Template Controller', () => {
       expect(status).toBe(200);
       expect(payload.type).toBe('Originals');
     });
+
+    it('sanitizes banned voice-rule phrases from introHtml, bodyHtml, and subject (#1046)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({
+        _id: id,
+        type: 'Originals',
+        subject: 'Wanted to reach out about a show',
+        introHtml: '<p>I wanted to reach out and say hi.</p>',
+        bodyHtml: '<p>We think this would be a perfect fit for your venue.</p>',
+      }));
+      await c.getTemplate({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(200);
+      expect(payload.subject).toBe('Wanted to connect about a show');
+      expect(payload.introHtml).toBe('<p>I wanted to connect and say hi.</p>');
+      expect(payload.bodyHtml).toBe('<p>We think this would be a great match for your venue.</p>');
+      expect(payload.introHtml).not.toContain('reach out');
+      expect(payload.bodyHtml).not.toContain('perfect fit');
+    });
   });
 
   describe('listTemplates', () => {
@@ -186,6 +204,69 @@ describe('Template Controller', () => {
       await c.listTemplates({ user: 'a', query: {} }, resStub);
       expect(status).toBe(200);
       expect(payload).toHaveLength(2);
+    });
+
+    it('returns templates with sanitized voice-rule phrases (#1046)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([
+        { type: 'Originals', introHtml: 'Reach out to us', bodyHtml: 'It is a Perfect fit' },
+        { type: 'PubFestivalBrewery', introHtml: 'Thank you for reaching out', bodyHtml: 'A perfect fit for all' },
+      ]));
+      await c.listTemplates({ user: 'a', query: {} }, resStub);
+      expect(status).toBe(200);
+      expect(payload[0].introHtml).toBe('Connect to us');
+      expect(payload[0].bodyHtml).toBe('It is a Great match');
+      expect(payload[1].introHtml).toBe('Thank you for connecting');
+      expect(payload[1].bodyHtml).toBe('A great match for all');
+    });
+  });
+
+  describe('voice-rule text sanitizer (#1046)', () => {
+    it('sanitizes banned phrases with proper casing', () => {
+      expect(sanitizeTemplateText('I wanted to reach out')).toBe('I wanted to connect');
+      expect(sanitizeTemplateText('Reach out to us')).toBe('Connect to us');
+      expect(sanitizeTemplateText('Thanks for reaching out')).toBe('Thanks for connecting');
+      expect(sanitizeTemplateText('This is a perfect fit')).toBe('This is a great match');
+      expect(sanitizeTemplateText('Perfect fit for your venue')).toBe('Great match for your venue');
+    });
+
+    it('returns non-string or falsy values safely', () => {
+      expect(sanitizeTemplateText('')).toBe('');
+      expect(sanitizeTemplateText(undefined as any)).toBeUndefined();
+      expect(sanitizeTemplateText(null as any)).toBeNull();
+    });
+
+    it('sanitizes banned phrases in createTemplate and updateTemplate write bodies (#1046)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      const createMock = vi.fn((doc) => Promise.resolve({ _id: 'n', ...doc }));
+      c.model.create = createMock;
+
+      await c.createTemplate({
+        user: 'a',
+        body: { type: 'Originals', subject: 'I am reaching out', introHtml: 'Please reach out', bodyHtml: 'It is a perfect fit' },
+      }, resStub);
+
+      expect(status).toBe(201);
+      expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+        subject: 'I am connecting',
+        introHtml: 'Please connect',
+        bodyHtml: 'It is a great match',
+      }));
+
+      const updMock = vi.fn((id, doc) => Promise.resolve({ _id: id, ...doc }));
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: '507f1f77bcf86cd799439011' }));
+      c.model.findByIdAndUpdate = updMock;
+
+      await c.updateTemplate({
+        user: 'a',
+        params: { id: '507f1f77bcf86cd799439011' },
+        body: { subject: 'Reaching out again', bodyHtml: 'Still a Perfect fit' },
+      }, resStub);
+
+      expect(status).toBe(200);
+      expect(updMock).toHaveBeenCalledWith('507f1f77bcf86cd799439011', expect.objectContaining({
+        subject: 'Connecting again',
+        bodyHtml: 'Still a Great match',
+      }));
     });
   });
 

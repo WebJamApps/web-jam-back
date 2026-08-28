@@ -51,6 +51,27 @@ function resolveActor(req: AuthRequest, body: TemplateBody): string {
   return (body.actor || '').trim() || req.user || '';
 }
 
+// #1046 — Voice-rule text sanitizer: replaces banned phrases with natural, conversational alternatives.
+export function sanitizeTemplateText(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/\breaching out\b/gi, (match) => (match[0] === 'R' ? 'Connecting' : 'connecting'))
+    .replace(/\breach out\b/gi, (match) => (match[0] === 'R' ? 'Connect' : 'connect'))
+    .replace(/\bperfect fit\b/gi, (match) => (match[0] === 'P' ? 'Great match' : 'great match'));
+}
+
+export function formatTemplate<T extends Record<string, unknown> | null | undefined>(doc: T): T {
+  if (!doc) return doc;
+  const t = (typeof (doc as { toObject?: () => Record<string, unknown> }).toObject === 'function'
+    ? (doc as { toObject: () => Record<string, unknown> }).toObject()
+    : { ...doc }) as Record<string, unknown>;
+
+  if (typeof t.introHtml === 'string') t.introHtml = sanitizeTemplateText(t.introHtml);
+  if (typeof t.bodyHtml === 'string') t.bodyHtml = sanitizeTemplateText(t.bodyHtml);
+  if (typeof t.subject === 'string') t.subject = sanitizeTemplateText(t.subject);
+  return t as T;
+}
+
 // Reject a write body up front. Returns an error message, or '' when valid.
 // `partial` (PUT) only validates the fields that are present. `type` is required
 // on create and must be one of the known types.
@@ -182,7 +203,7 @@ class TemplateController extends Controller {
     try { templates = await this.model.find(TemplateController.buildListFilter(query)); } catch (e) {
       return res.status(500).json({ message: (e as Error).message });
     }
-    return res.status(200).json(templates);
+    return res.status(200).json(templates.map((t) => formatTemplate(t)));
   }
 
   // GET /template/:id
@@ -193,7 +214,7 @@ class TemplateController extends Controller {
     let doc;
     try { doc = await this.model.findById(req.params.id); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     if (!doc) return res.status(400).json({ message: 'nothing found with id provided' });
-    return res.status(200).json(doc);
+    return res.status(200).json(formatTemplate(doc as Record<string, unknown>));
   }
 
   // One template per (type, stage) — dedupe on both so re-creating a known
@@ -231,6 +252,10 @@ class TemplateController extends Controller {
     const invalid = validateBody(body, false);
     if (invalid) return res.status(400).json({ message: invalid });
 
+    if (typeof body.introHtml === 'string') body.introHtml = sanitizeTemplateText(body.introHtml);
+    if (typeof body.bodyHtml === 'string') body.bodyHtml = sanitizeTemplateText(body.bodyHtml);
+    if (typeof body.subject === 'string') body.subject = sanitizeTemplateText(body.subject);
+
     const actor = resolveActor(req, body);
     let existing: Record<string, unknown> | null;
     try { existing = await this.findDuplicate(body); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
@@ -242,7 +267,7 @@ class TemplateController extends Controller {
           ...body, active: body.active === undefined ? true : body.active, lastModifiedBy: actor,
         });
       } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
-      return res.status(200).json(updated);
+      return res.status(200).json(formatTemplate(updated as Record<string, unknown>));
     }
 
     const newId = new mongoose.Types.ObjectId();
@@ -254,7 +279,7 @@ class TemplateController extends Controller {
         _id: newId, ...body, active: body.active === undefined ? true : body.active, lastModifiedBy: actor,
       });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
-    return res.status(201).json(doc);
+    return res.status(201).json(formatTemplate(doc as Record<string, unknown>));
   }
 
   // PUT /template/:id — partial update. Same write-only `photoData` handling
@@ -270,6 +295,10 @@ class TemplateController extends Controller {
     const invalid = validateBody(body, true);
     if (invalid) return res.status(400).json({ message: invalid });
 
+    if (typeof body.introHtml === 'string') body.introHtml = sanitizeTemplateText(body.introHtml);
+    if (typeof body.bodyHtml === 'string') body.bodyHtml = sanitizeTemplateText(body.bodyHtml);
+    if (typeof body.subject === 'string') body.subject = sanitizeTemplateText(body.subject);
+
     let existing;
     try { existing = await this.model.findById(req.params.id); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     if (!existing) return res.status(400).json({ message: 'Id Not Found' });
@@ -280,7 +309,7 @@ class TemplateController extends Controller {
       doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, lastModifiedBy: resolveActor(req, body) });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     if (!doc) return res.status(400).json({ message: 'Id Not Found' });
-    return res.status(200).json(doc);
+    return res.status(200).json(formatTemplate(doc as Record<string, unknown>));
   }
 
   // DELETE /template/:id — soft-delete (active:false), never a hard remove, so a
@@ -295,7 +324,7 @@ class TemplateController extends Controller {
       doc = await this.model.findByIdAndUpdate(req.params.id, { active: false, lastModifiedBy: actor });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     if (!doc) return res.status(400).json({ message: 'Delete id is invalid' });
-    return res.status(200).json({ message: 'Template was deactivated successfully', template: doc });
+    return res.status(200).json({ message: 'Template was deactivated successfully', template: formatTemplate(doc as Record<string, unknown>) });
   }
 }
 

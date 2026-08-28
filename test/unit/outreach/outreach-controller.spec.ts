@@ -28,7 +28,7 @@ vi.mock('#src/lib/classify-reply.js', () => ({
 
 const {
   default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
-  parseTargetDates, parseTargetWeekend,
+  OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -757,6 +757,41 @@ describe('Outreach Controller (#844 batch model)', () => {
         'targetWeekend.start': { $exists: true, $lte: new Date(VALID_WEEKEND.end) },
         'targetWeekend.end': { $exists: true, $gte: new Date(VALID_WEEKEND.start) },
       }));
+    });
+
+    // #1046 — 1-week cooldown: active outreach records > 7 days old do not block re-pitching.
+    describe('re-pitching cooldown (#1046)', () => {
+      it('exports OUTREACH_COOLDOWN_DAYS as 7', () => {
+        expect(OUTREACH_COOLDOWN_DAYS).toBe(7);
+      });
+
+      it('excludes candidate venues when an active outreach record was sent/created <= 7 days ago', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'v1' }, { _id: 'v2' }]));
+        const recentOutreach = [{ venueId: 'v1' }];
+        const findMock = vi.fn(() => Promise.resolve(recentOutreach));
+        c.model.find = findMock;
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(1);
+        expect(payload.candidates[0]._id).toBe('v2');
+        expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
+          status: { $in: ['sent', 'replied'] },
+          $or: [
+            { sentAt: { $gte: expect.any(Date) } },
+            { created_at: { $gte: expect.any(Date) } },
+          ],
+        }));
+      });
+
+      it('returns candidate venues when active outreach records are > 7 days old (query returns no active matches)', async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'v1' }, { _id: 'v2' }]));
+        const findMock = vi.fn(() => Promise.resolve([]));
+        c.model.find = findMock;
+        await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(status).toBe(200);
+        expect(payload.candidates).toHaveLength(2);
+        expect(payload.candidates.map((v: any) => v._id)).toEqual(['v1', 'v2']);
+      });
     });
 
     // #980/#1036 — the gigInterval-aware generalization of the old #958 SAFETY
@@ -2332,6 +2367,54 @@ describe('Outreach Controller (#844 batch model)', () => {
       await c.recordOutcome({ user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled' } }, resStub);
       expect(status).toBe(200);
       expect(findMock).not.toHaveBeenCalled(); // auto-flip only runs off a 'booked' recording
+    });
+  });
+
+  describe('template sanitization in pitch generation and sends (#1046)', () => {
+    it('sanitizes banned voice-rule phrases when resolving templates via findTemplate', async () => {
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve({
+        type: 'Originals',
+        stage: 'cold',
+        subject: 'I am reaching out',
+        introHtml: 'Thank you for reaching out',
+        bodyHtml: 'This is a perfect fit for you',
+      }));
+
+      const template = await c.findTemplate('Originals', 'cold');
+      expect(template.subject).toBe('I am connecting');
+      expect(template.introHtml).toBe('Thank you for connecting');
+      expect(template.bodyHtml).toBe('This is a great match for you');
+    });
+
+    it('sanitizes banned phrases in rendered pitch emails sent via sendPitch', async () => {
+      asApprover();
+      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue()));
+      (templateModel as any).findOne = vi.fn(() => Promise.resolve({
+        type: 'Originals',
+        stage: 'cold',
+        subject: 'Reaching out to {{venueName}}',
+        introHtml: 'We are reaching out to connect.',
+        bodyHtml: 'Our acoustic set is a perfect fit for {{venueName}}.',
+      }));
+
+      await c.sendPitch({
+        user: 'a',
+        body: {
+          venueId: oid(),
+          targetDates: 'Oct 16-18',
+          targetWeekend: VALID_WEEKEND,
+        },
+      }, resStub);
+
+      expect(status).toBe(201);
+      expect(sendMail).toHaveBeenCalled();
+      const sendArgs = (sendMail as any).mock.calls[0][0];
+      expect(sendArgs.subject).toContain('Connecting to');
+      expect(sendArgs.subject).not.toContain('Reaching out');
+      expect(sendArgs.html).toContain('connecting to connect');
+      expect(sendArgs.html).not.toContain('reaching out');
+      expect(sendArgs.html).toContain('great match');
+      expect(sendArgs.html).not.toContain('perfect fit');
     });
   });
 });
