@@ -2417,4 +2417,30 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(sendArgs.html).not.toContain('perfect fit');
     });
   });
+
+  describe('dedupGuard 7-day cooldown (#1046)', () => {
+    it('allows re-pitching when an active outreach record for the weekend was sent > 7 days ago', async () => {
+      // Mock findOne to return null (because the query with cooldown threshold filters out old records)
+      c.model.findOne = vi.fn((q: any) => {
+        if (q.$or) return Promise.resolve(null);
+        return Promise.resolve({ _id: oid(), status: 'sent', sentAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) });
+      });
+
+      const dupeErr = await c.dedupGuard(oid(), VALID_WEEKEND);
+      expect(dupeErr).toBeNull();
+      expect(c.model.findOne).toHaveBeenCalled();
+      const query = (c.model.findOne as any).mock.calls[0][0];
+      expect(query.$or).toBeDefined();
+    });
+
+    it('blocks re-pitching when an active outreach record was sent <= 7 days ago', async () => {
+      const recentDoc = { _id: oid(), status: 'sent', sentAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) };
+      c.model.findOne = vi.fn(() => Promise.resolve(recentDoc));
+
+      const dupeErr = await c.dedupGuard(oid(), VALID_WEEKEND);
+      expect(dupeErr).not.toBeNull();
+      expect(dupeErr?.status).toBe(409);
+      expect(dupeErr?.message).toContain('active outreach already exists');
+    });
+  });
 });
