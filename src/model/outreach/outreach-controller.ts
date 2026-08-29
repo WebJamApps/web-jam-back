@@ -12,6 +12,7 @@ import { findReplies } from '#src/lib/imap-replies.js';
 import { classifyReply } from '#src/lib/classify-reply.js';
 import outreachModel from './outreach-facade.js';
 import outreachConfigModel from './outreach-config-facade.js';
+import outreachReportModel from './outreach-report-facade.js';
 import venueModel from '../venue/venue-facade.js';
 import templateModel from '../template/template-facade.js';
 import { formatTemplate, sanitizeTemplateText } from '../template/template-controller.js';
@@ -1614,6 +1615,92 @@ class OutreachController extends Controller {
       updated = await this.model.findByIdAndUpdate(req.params.id, { 'suggestion.reviewed': true, lastModifiedBy: actor });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     return res.status(200).json(updated);
+  }
+
+  // POST /outreach/report — save or update an outreach HTML run report (web-jam-back#1052).
+  async saveReport(req: AuthRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, OUTREACH_SEND_CAPS);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    const {
+      weekend, title, htmlContent, candidatesCount, dispatchedCount, metadata,
+    } = (req.body || {}) as {
+      weekend?: string;
+      title?: string;
+      htmlContent?: string;
+      candidatesCount?: number;
+      dispatchedCount?: number;
+      metadata?: Record<string, unknown>;
+    };
+    if (!weekend || typeof weekend !== 'string' || !weekend.trim()) {
+      return res.status(400).json({ message: 'weekend is required' });
+    }
+    if (!htmlContent || typeof htmlContent !== 'string' || !htmlContent.trim()) {
+      return res.status(400).json({ message: 'htmlContent is required' });
+    }
+    const trimmedWeekend = weekend.trim();
+    const reportTitle = (title && typeof title === 'string' && title.trim())
+      ? title.trim()
+      : `Outreach Report - ${trimmedWeekend}`;
+    const docData = {
+      weekend: trimmedWeekend,
+      title: reportTitle,
+      htmlContent,
+      candidatesCount: typeof candidatesCount === 'number' ? candidatesCount : 0,
+      dispatchedCount: typeof dispatchedCount === 'number' ? dispatchedCount : 0,
+      metadata: metadata && typeof metadata === 'object' ? metadata : {},
+    };
+    try {
+      const existing = await outreachReportModel.findOne({ weekend: trimmedWeekend }) as { _id?: unknown } | null;
+      let saved;
+      if (existing && existing._id) {
+        saved = await outreachReportModel.findByIdAndUpdate(String(existing._id), docData);
+      } else {
+        saved = await outreachReportModel.create(docData);
+      }
+      return res.status(existing ? 200 : 201).json(saved);
+    } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+  }
+
+  // GET /outreach/report/:weekend — public HTML report serving endpoint (web-jam-back#1052).
+  async getReport(req: Request, res: Response): Promise<unknown> {
+    const { weekend } = req.params;
+    if (!weekend || typeof weekend !== 'string' || !weekend.trim()) {
+      return res.status(400).json({ message: 'weekend parameter is required' });
+    }
+    const trimmedWeekend = weekend.trim();
+    try {
+      const doc = await outreachReportModel.findOne({ weekend: trimmedWeekend }) as { htmlContent?: string } | null;
+      if (!doc || !doc.htmlContent) {
+        return res.status(404).json({ message: `Outreach report for weekend '${trimmedWeekend}' not found` });
+      }
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      return res.status(200).send(doc.htmlContent);
+    } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+  }
+
+  // DELETE /outreach/report/:weekend — hard delete HTML report on gig booking or takedown (web-jam-back#1052).
+  async deleteReport(req: AuthRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    const { weekend } = req.params;
+    if (!weekend || typeof weekend !== 'string' || !weekend.trim()) {
+      return res.status(400).json({ message: 'weekend parameter is required' });
+    }
+    const trimmedWeekend = weekend.trim();
+    try {
+      const deleted = await outreachReportModel.findOneAndDelete({ weekend: trimmedWeekend });
+      if (!deleted) {
+        return res.status(404).json({ message: `Outreach report for weekend '${trimmedWeekend}' not found` });
+      }
+      return res.status(200).json({ message: `Outreach report for weekend '${trimmedWeekend}' deleted successfully` });
+    } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
   }
 }
 

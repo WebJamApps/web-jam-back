@@ -107,6 +107,26 @@ router.route('/:id/outcome')
     void action();
   });
 
+// POST /outreach/report — save or update an outreach HTML run report (web-jam-back#1052).
+router.route('/report')
+  .post((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'saveReport', controller, authUtils);
+    void action();
+  });
+
+// GET /outreach/report/:weekend — public HTML report serving endpoint (web-jam-back#1052).
+// DELETE /outreach/report/:weekend — authenticated HTML report takedown endpoint (web-jam-back#1052).
+router.route('/report/:weekend')
+  .get((req, res) => {
+    (async () => {
+      await controller.getReport(req, res);
+    })();
+  })
+  .delete((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'deleteReport', controller, authUtils);
+    void action();
+  });
+
 router.route('/:id')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'getOutreach', controller, authUtils);
