@@ -21,6 +21,7 @@ rules and do not reconstruct them from memory or from this file.
 - **Build:** Check package.json for build scripts.
 - **Node Engine Version Bumps:** When bumping Node.js in `package.json` `engines.node`, always run `npm install --package-lock-only --ignore-scripts` (or `npm install --ignore-scripts`) to update `package-lock.json` root engine definition without triggering `postinstall` build scripts, so both files are committed together.
 - **Standards:** Follow existing ESM patterns.
+- **Vitest Config & Environment Variables**: Never hardcode test environment variables (such as `test.env.AllowUrl`) in shared, CI-executed `vitest.config.ts` to satisfy local test runs. Vitest's `test.env` overrides project-level CI environment variables across all test workers and silently overwrites production/CI test environments. If local test execution requires environment variables, configure them in uncommitted local `.env` files rather than modifying `vitest.config.ts`.
 - **Merging:** Gemini is **NOT** allowed to merge PR changes to the `dev` or `main` branches. The user is the reviewer.
 
 ## Quota & Token Hygiene
@@ -32,3 +33,4 @@ rules and do not reconstruct them from memory or from this file.
 ## Routes & Verbs
 - **Venue Updates (`/venue/:id`)**: `PATCH /venue/:id` is the partial-merge update verb (routing to `controller.updateVenue`). Address updates enforce immutability once set (`400: address cannot be removed`).
 - **Setlist API Sorting (`GET /setlist` and `GET /setlist/:id`)**: Accepts `?sort=title` (or `sort=artist` / `sort=order`) to return items in alphabetical or specified order. Sorting is read-time view only and strips `sort` from Mongoose query params so stored MongoDB item order is never mutated.
+- **Outreach Report Serving & Takedown (`/outreach/report`)**: `POST /outreach/report` (authenticated) stores or updates rendered HTML artifacts in MongoDB (`OutreachReport` collection). `GET /outreach/report/:weekend` (public) serves raw HTML directly with `Content-Type: text/html; charset=utf-8` and `Cache-Control: public, max-age=300`. `DELETE /outreach/report/:weekend` (authenticated) deletes the stored report document from MongoDB upon gig booking or decommission, returning HTTP 404 on subsequent requests.
