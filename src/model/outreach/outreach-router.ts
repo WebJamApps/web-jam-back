@@ -114,6 +114,12 @@ router.route('/report')
     void action();
   });
 
+// GET /outreach/table-sort.js — static first-party table sorting and interaction script (web-jam-back#1055).
+router.route('/table-sort.js')
+  .get((req, res) => {
+    controller.getTableSortScript(req, res);
+  });
+
 // GET /outreach/report/:weekend — public HTML report serving endpoint (web-jam-back#1052).
 // DELETE /outreach/report/:weekend — authenticated HTML report takedown endpoint (web-jam-back#1052).
 router.route('/report/:weekend')
