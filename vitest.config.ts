@@ -11,9 +11,6 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: true,
-    env: {
-      AllowUrl: JSON.stringify({ urls: ['http://localhost:9000', 'https://localhost:9000', 'http://localhost:7000', 'https://localhost:7000'] }),
-    },
     include: ['test/**/*.spec.ts'],
     bail: 1,
     mockReset: true,
