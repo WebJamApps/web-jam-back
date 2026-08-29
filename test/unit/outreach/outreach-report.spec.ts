@@ -209,7 +209,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
       expect(status).toBe(404);
     });
 
-    it('serves HTML report with Content-Type: text/html and 200 status', async () => {
+    it('serves HTML report with Content-Type: text/html, relaxed CSP for inline scripts, and 200 status', async () => {
       const html = '<!DOCTYPE html><html><body><h1>Gig Outreach Review</h1></body></html>';
       (reportModel as any).findOne = vi.fn(() => Promise.resolve({
         weekend: '2026-10-16-to-2026-10-18',
@@ -221,6 +221,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
       expect(status).toBe(200);
       expect(headers['Content-Type']).toBe('text/html; charset=utf-8');
       expect(headers['Cache-Control']).toBe('public, max-age=300');
+      expect(headers['Content-Security-Policy']).toContain("'unsafe-inline'");
       expect(rawBody).toBe(html);
     });
 

@@ -1677,6 +1677,11 @@ class OutreachController extends Controller {
       }
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+        + 'img-src \'self\' data: https:; font-src \'self\' https: data:;',
+      );
       return res.status(200).send(doc.htmlContent);
     } catch (e) {
       return res.status(500).json({ message: (e as Error).message });
