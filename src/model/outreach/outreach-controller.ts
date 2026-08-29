@@ -478,6 +478,73 @@ function buildCallScript(venue: VenueDoc, outreach: OutreachDoc): string {
   ].join('\n');
 }
 
+export const TABLE_SORT_JS = `function copyPitch(id, btn) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.innerText);
+  btn.innerText = 'Copied!';
+  setTimeout(function() { btn.innerText = 'Copy Email'; }, 2000);
+}
+
+function initTableSorting() {
+  document.querySelectorAll('table.candidate-table').forEach(function(table) {
+    var headers = table.querySelectorAll('thead th');
+    headers.forEach(function(th, colIdx) {
+      th.classList.add('sortable-th');
+      var indicator = document.createElement('span');
+      indicator.className = 'sort-indicator';
+      indicator.textContent = ' ⇅';
+      th.appendChild(indicator);
+
+      th.addEventListener('click', function() {
+        var currentDir = th.getAttribute('data-sort-dir');
+        var newDir = currentDir === 'asc' ? 'desc' : 'asc';
+
+        headers.forEach(function(h) {
+          h.removeAttribute('data-sort-dir');
+          var ind = h.querySelector('.sort-indicator');
+          if (ind) ind.textContent = ' ⇅';
+        });
+
+        th.setAttribute('data-sort-dir', newDir);
+        indicator.textContent = newDir === 'asc' ? ' ▲' : ' ▼';
+
+        var tbody = table.querySelector('tbody');
+        if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr'));
+        if (rows.length <= 1) return;
+
+        if (rows.length === 1 && rows[0].querySelector('td[colspan]')) return;
+
+        rows.sort(function(rowA, rowB) {
+          var cellA = rowA.children[colIdx] ? (rowA.children[colIdx].innerText || rowA.children[colIdx].textContent || '').trim() : '';
+          var cellB = rowB.children[colIdx] ? (rowB.children[colIdx].innerText || rowB.children[colIdx].textContent || '').trim() : '';
+
+          var numA = parseFloat(cellA.replace(/[^0-9.-]/g, ''));
+          var numB = parseFloat(cellB.replace(/[^0-9.-]/g, ''));
+          var isNumeric = !isNaN(numA) && !isNaN(numB) && /^#?[0-9.-]+$/.test(cellA) && /^#?[0-9.-]+$/.test(cellB);
+
+          var cmp = 0;
+          if (isNumeric) {
+            cmp = numA - numB;
+          } else {
+            cmp = cellA.localeCompare(cellB, undefined, { numeric: true, sensitivity: 'base' });
+          }
+          return newDir === 'asc' ? cmp : -cmp;
+        });
+
+        rows.forEach(function(r) { tbody.appendChild(r); });
+      });
+    });
+  });
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initTableSorting);
+} else {
+  initTableSorting();
+}
+`;
+
 class OutreachController extends Controller {
   static readonly DEFAULT_GIG_SPACING_MONTHS = DEFAULT_GIG_SPACING_MONTHS;
 
@@ -1661,6 +1728,13 @@ class OutreachController extends Controller {
     } catch (e) {
       return res.status(500).json({ message: (e as Error).message });
     }
+  }
+
+  // GET /outreach/table-sort.js — static first-party table sorting and interaction script (web-jam-back#1055).
+  getTableSortScript(_req: Request, res: Response): unknown {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.status(200).send(TABLE_SORT_JS);
   }
 
   // GET /outreach/report/:weekend — public HTML report serving endpoint (web-jam-back#1052).

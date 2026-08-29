@@ -233,6 +233,18 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
     });
   });
 
+  describe('GET /outreach/table-sort.js (getTableSortScript)', () => {
+    it('serves static table sorting JavaScript with application/javascript Content-Type and immutable cache', () => {
+      const req: any = {};
+      c.getTableSortScript(req, resStub);
+      expect(status).toBe(200);
+      expect(headers['Content-Type']).toBe('application/javascript; charset=utf-8');
+      expect(headers['Cache-Control']).toBe('public, max-age=31536000, immutable');
+      expect(rawBody).toContain('initTableSorting');
+      expect(rawBody).toContain('copyPitch');
+    });
+  });
+
   describe('DELETE /outreach/report/:weekend (deleteReport)', () => {
     it('rejects unauthenticated requests (401)', async () => {
       (userModel as any).findById = vi.fn(() => Promise.resolve(null));

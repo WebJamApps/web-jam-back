@@ -63,8 +63,8 @@ app.use(helmet.contentSecurityPolicy({
     'connect-src': ["'self'", 'ws:', 'wss:', 'https://cdn.plyr.io', 'https://noembed.com'],
   },
 }));
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(morgan('tiny'));
 routes(app);
 // Prime the CollegeLutheran Facebook feed cache and start the hourly refresh.
