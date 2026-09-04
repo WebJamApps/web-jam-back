@@ -19,14 +19,14 @@ describe('classify-reply', () => {
 
   describe('parseSuggestion', () => {
     it('parses a full valid suggestion', () => {
-      const raw = 'Here you go: {"sentiment":"positive","proposedBookingStatus":"booking","proposedInterested":true,"rationale":"They said yes"}';
+      const raw = 'Here you go: {"sentiment":"positive","proposedBookingStatus":"booking","rationale":"They said yes"}';
       expect(parseSuggestion(raw)).toEqual({
-        sentiment: 'positive', proposedBookingStatus: 'booking', proposedInterested: true, rationale: 'They said yes',
+        sentiment: 'positive', proposedBookingStatus: 'booking', rationale: 'They said yes',
       });
     });
     it('drops fields whose values are not recognized enums', () => {
-      const raw = '{"sentiment":"meh","proposedBookingStatus":"maybe","proposedInterested":true}';
-      expect(parseSuggestion(raw)).toEqual({ proposedInterested: true });
+      const raw = '{"sentiment":"meh","proposedBookingStatus":"maybe","rationale":"unclear"}';
+      expect(parseSuggestion(raw)).toEqual({ rationale: 'unclear' });
     });
     it('returns null when no JSON object is present', () => {
       expect(parseSuggestion('no json here')).toBeNull();

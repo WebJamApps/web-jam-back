@@ -1998,7 +1998,7 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     describe('applySuggestion', () => {
       const withSuggestion = (over = {}) => ({
-        _id: oid(), venueId: oid(), suggestion: { proposedBookingStatus: 'booking', proposedInterested: true }, ...over,
+        _id: oid(), venueId: oid(), suggestion: { proposedBookingStatus: 'booking' }, ...over,
       });
 
       it('403s without venue:edit', async () => {
@@ -2032,7 +2032,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         c.model.findById = vi.fn(() => Promise.resolve(rec));
         await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: {} }, resStub);
         expect((venueModel as any).findByIdAndUpdate).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
-          bookingStatus: 'booking', interested: true,
+          bookingStatus: 'booking',
         }));
         expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({ 'suggestion.reviewed': true }));
         expect(status).toBe(200);
@@ -2042,9 +2042,9 @@ describe('Outreach Controller (#844 batch model)', () => {
         asAgent(['venue:edit']);
         const rec = withSuggestion();
         c.model.findById = vi.fn(() => Promise.resolve(rec));
-        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { bookingStatus: 'booked', interested: false } }, resStub);
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { bookingStatus: 'booked' } }, resStub);
         expect((venueModel as any).findByIdAndUpdate).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
-          bookingStatus: 'booked', interested: false,
+          bookingStatus: 'booked',
         }));
       });
 

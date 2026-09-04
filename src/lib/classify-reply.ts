@@ -3,10 +3,16 @@ import Debug from 'debug';
 
 // AI reply-classification (gig-outreach #825 Half B). Claude Haiku reads a venue's
 // reply to our gig pitch and SUGGESTS a venue update — sentiment + a proposed
-// bookingStatus/interested change. The suggestion is advisory only: it's surfaced
-// in the AdminVenues review queue and never written to a venue until Josh approves
+// bookingStatus change. The suggestion is advisory only: it's surfaced in the
+// AdminVenues review queue and never written to a venue until Josh approves
 // (the mis-send-incident guardrail — AI never auto-writes booking data). Haiku is
 // the cheapest capable model and this is a short, bounded classification.
+//
+// #1059 — `proposedInterested` (a proposed write to the venue's `interested`
+// field) is dropped along with `interested` itself (see D-32 in
+// book-gig-skill-design-2026-08-16.md): a venue "not worth pursuing" is
+// already expressed by `outreachEligible`/`bookingStatus`, so the AI never had
+// a second job to do here.
 const debug = Debug('web-jam-back:classify-reply');
 
 const MODEL = 'claude-haiku-4-5';
@@ -16,7 +22,6 @@ const BOOKING_STATUSES = ['booking', 'not-booking', 'booked'] as const;
 export interface ReplySuggestion {
   sentiment?: string;
   proposedBookingStatus?: string;
-  proposedInterested?: boolean;
   rationale?: string;
   model?: string;
 }
@@ -30,7 +35,6 @@ export function buildPrompt(replyText: string, venueName: string): string {
       + '"needs-info" (asking questions / not yet decided)',
     '- "proposedBookingStatus": one of "booking" (still an open prospect), "booked" (confirmed a gig), '
       + '"not-booking" (ruled out) — or omit if unclear',
-    '- "proposedInterested": true or false — or omit if unclear',
     '- "rationale": one short sentence citing the reply',
     '',
     'Reply:',
@@ -59,10 +63,9 @@ export function parseSuggestion(raw: string): ReplySuggestion | null {
     && BOOKING_STATUSES.indexOf(obj.proposedBookingStatus as typeof BOOKING_STATUSES[number]) !== -1) {
     out.proposedBookingStatus = obj.proposedBookingStatus;
   }
-  if (typeof obj.proposedInterested === 'boolean') out.proposedInterested = obj.proposedInterested;
   if (typeof obj.rationale === 'string') out.rationale = obj.rationale.trim();
   // Nothing recognized → not worth surfacing.
-  if (out.sentiment === undefined && out.proposedBookingStatus === undefined && out.proposedInterested === undefined) {
+  if (out.sentiment === undefined && out.proposedBookingStatus === undefined) {
     return null;
   }
   return out;
