@@ -31,6 +31,7 @@
     "migrate:drop-venue-legacy-fields": "node build/src/scripts/migrate-drop-venue-legacy-fields.js",
     "migrate:clean-city": "node build/src/scripts/migrate-clean-city.js",
     "migrate:clean-website": "node build/src/scripts/migrate-clean-website.js",
+    "apply-venue-pay-figures": "node build/src/scripts/apply-venue-pay-figures.js",
     "restore:backup": "node scripts/restore-backup.mjs",
     "ts-watch": "tsc -w",
     "ts-start": "DEBUG=web-jam-back:* node --watch --trace-deprecation build/src/index.js",
