@@ -16,16 +16,30 @@
 // their schema defaults on next write; familyNearby is populated by the
 // paired distance-derivation issue).
 //
+// LESSON FROM #954 (do not repeat — this migration mirrors
+// migrate-drop-do-not-contact.ts, the POST-lesson script; NOT
+// migrate-drop-in-scope.ts, which predates it): a schema-bound mongoose
+// update method ($unset via Model.findByIdAndUpdate / Model.updateMany)
+// silently DROPS an unknown-field write instruction once that field is
+// removed from the schema — strict mode casts it away before the write ever
+// reaches Mongo, so the run reports success while changing nothing. All six
+// fields here are removed from venue-schema.ts in the same change, so EVERY
+// $unset would be cast away. The write therefore goes through the RAW
+// MongoDB collection (Model.collection.updateMany), which bypasses mongoose's
+// schema casting entirely. The READ side needs no such treatment: Facade.find
+// uses .lean(), so raw driver documents come back with the legacy fields
+// intact and candidate detection works.
+//
 // Idempotent: only venues where at least one of the six fields still exists
 // are candidates, so a re-run after a prior --apply is a no-op. Read-only DRY
 // RUN by default — prints exactly what it would change; pass --apply to write.
 //
-// SAFETY GUARD (mirrors migrate-drop-in-scope.ts / migrate-gig-venue-id.ts):
-// this migration permanently removes data from real venue records, so it
-// refuses to run at all against anything that doesn't look like local/DEV/TEST
-// (db name containing 'dev'/'test', or localhost/127.0.0.1) unless --force is
-// passed. Running it for real against prod is a deliberate act, run manually
-// post-merge with Josh's explicit go (e.g. `heroku run "npm run
+// SAFETY GUARD (shared, src/lib/migration-cli.ts): this migration permanently
+// removes data from real venue records, so it refuses to run at all against
+// anything that doesn't look like local/DEV/TEST (db name containing
+// 'dev'/'test', or localhost/127.0.0.1) unless --force is passed. Running it
+// for real against prod is a deliberate act, run manually post-merge with
+// Josh's explicit go (e.g. `heroku run "npm run
 // migrate:drop-venue-legacy-fields -- --force" -a webjamsalem` for the dry
 // run, then `--force --apply` to write) — never wired into
 // build/postinstall/Procfile/CI.
@@ -35,30 +49,23 @@
 //   npm run migrate:drop-venue-legacy-fields -- --apply          # writes, DEV/local only
 //   npm run migrate:drop-venue-legacy-fields -- --force --apply  # writes for real (prod)
 
-import { fileURLToPath } from 'url';
 import { config } from 'dotenv';
 import mongoose from 'mongoose';
 import venueModel from '#src/model/venue/venue-facade.js';
+import { guardOrExit, isMainModule } from '#src/lib/migration-cli.js';
 
 config(); // load .env if present
 
 const LEGACY_FIELDS = ['payTier', 'originalsFit', 'travelBand', 'interested', 'relationshipStage', 'priority'] as const;
 
-interface Args { apply: boolean; force: boolean }
-export function parseArgs(argv: string[]): Args {
-  return { apply: argv.includes('--apply'), force: argv.includes('--force') };
-}
+// Idempotent candidate filter: a venue is in scope only while it still
+// carries at least one of the six. Used for BOTH the read (reporting) and
+// the raw write, so the write cannot drift from what was planned.
+const LEGACY_FILTER = { $or: LEGACY_FIELDS.map((f) => ({ [f]: { $exists: true } })) };
 
-// ── SAFETY GUARD ─────────────────────────────────────────────────────────────
-// Mirrors migrate-drop-in-scope.ts's guard exactly: only db names/hosts that
-// look local/DEV/TEST are allowed without --force. Pure predicate (no
-// process.exit) so it's unit-testable; run() below is what actually exits.
-export function isSafeToRun(uri: string, force: boolean): boolean {
-  const dbName = (uri.split('?')[0].split('/').pop() || '').toLowerCase();
-  const isLocal = uri.includes('localhost') || uri.includes('127.0.0.1');
-  const isDevOrTest = dbName.includes('dev') || dbName.includes('test');
-  return isLocal || isDevOrTest || force;
-}
+// $unset every legacy field in one write — $unset of an absent path is a
+// no-op, so a venue carrying only some of the six is unaffected by the rest.
+const LEGACY_UNSET = Object.fromEntries(LEGACY_FIELDS.map((f) => [f, ''])) as Record<string, ''>;
 
 interface VenueDoc {
   _id: unknown;
@@ -71,65 +78,49 @@ interface VenueDoc {
   priority?: unknown;
 }
 
-function logSafetyBlock(uri: string, maskedUri: string): void {
-  console.error('ERROR: migrate-drop-venue-legacy-fields only runs against a local, DEV, or TEST database by default — never release/production.');
-  console.error(`Target MONGO URI: ${maskedUri}`);
-  console.error(`Parsed database name: ${(uri.split('?')[0].split('/').pop() || '').toLowerCase() || '(none)'}`);
-  console.error('Pass --force to run against a different database anyway (a deliberate, reviewed prod backfill).');
-}
-
 // Which of the six legacy fields are actually present on this venue doc.
 function presentLegacyFields(venue: VenueDoc): string[] {
   return LEGACY_FIELDS.filter((f) => venue[f] !== undefined);
 }
 
 async function run(): Promise<void> {
-  const { apply, force } = parseArgs(process.argv.slice(2));
-  const uri = process.env.MONGO_DB_URI || '';
-  const maskedUri = uri.replace(/\/\/[^@]+@/, '//<credentials>@'); // eslint-disable-line sonarjs/slow-regex
-  if (!isSafeToRun(uri, force)) {
-    logSafetyBlock(uri, maskedUri);
-    process.exit(1);
-  }
+  const { apply, uri, maskedUri } = guardOrExit('migrate-drop-venue-legacy-fields', 'migrate:drop-venue-legacy-fields');
 
   await mongoose.connect(uri);
   console.log(`Connected to "${mongoose.connection.name}" (${maskedUri})`);
   console.log(apply ? 'Mode: APPLY — writes will happen.' : 'Mode: DRY RUN — no writes (pass --apply to write).');
 
-  // Idempotent: only venues that still carry at least one of the six fields
-  // are candidates. Deliberately NOT scoped to status != archived — an
-  // archived venue may be unarchived later and should not come back carrying
-  // stale legacy data (mirrors migrate-drop-in-scope.ts's reasoning).
-  const candidates = (await venueModel.find({
-    $or: LEGACY_FIELDS.map((f) => ({ [f]: { $exists: true } })),
-  })) as unknown as VenueDoc[];
+  // Deliberately NOT scoped to status != archived — an archived venue may be
+  // unarchived later and should not come back carrying stale legacy data
+  // (mirrors migrate-drop-in-scope.ts's reasoning).
+  const candidates = (await venueModel.find(LEGACY_FILTER)) as unknown as VenueDoc[];
 
-  let applied = 0;
   for (const venue of candidates) {
     const fields = presentLegacyFields(venue);
-    const unset: Record<string, ''> = {};
-    for (const f of fields) unset[f] = '';
     const verb = apply ? 'WRITE' : 'PLAN';
     console.log(`  ${verb}: venue ${String(venue._id)} "${venue.name}" -> unset [${fields.join(', ')}]`);
-    if (apply) {
-      // eslint-disable-next-line no-await-in-loop
-      await venueModel.findByIdAndUpdate(String(venue._id), { $unset: unset });
-      applied += 1;
-    }
+  }
+
+  let modifiedCount = 0;
+  if (apply && candidates.length) {
+    // RAW COLLECTION WRITE — see the #954 lesson in the header comment above.
+    // One updateMany over the same candidate filter, so the field removal
+    // actually reaches Mongo instead of being cast away by strict mode.
+    const res = await venueModel.Schema.collection.updateMany(LEGACY_FILTER, { $unset: LEGACY_UNSET });
+    modifiedCount = res.modifiedCount || 0;
   }
 
   console.log(`\n${candidates.length} venue(s) scanned (carried at least one of ${LEGACY_FIELDS.join('/')}).`);
   console.log(apply
-    ? `${applied} venue(s) updated.`
+    ? `${modifiedCount} venue(s) updated.`
     : `Dry run — ${candidates.length} venue(s) WOULD be updated. Re-run with --apply to write for real.`);
 
   await mongoose.connection.close();
 }
 
 // Only auto-execute when run directly — NOT when imported by a unit test.
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 /* istanbul ignore if -- exercised only when the script is executed directly, never under vitest */
-if (isMain) {
+if (isMainModule(import.meta.url)) {
   run().catch((err) => {
     console.error('Migration failed:', (err as Error).message);
     process.exit(1);

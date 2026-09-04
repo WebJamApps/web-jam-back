@@ -136,7 +136,7 @@ interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 interface VenueDoc {
   _id?: unknown; name?: string; email?: string; secondaryEmail?: string; contactName?: string; phone?: string;
   venueType?: string; status?: string; outreachEligible?: boolean;
-  bookingStatus?: string; relationshipStage?: string; templateOverride?: string;
+  bookingStatus?: string; templateOverride?: string;
 }
 // introHtml (#903) is the template's addressable intro (greeting + opening
 // line), split out from bodyHtml so customIntro can replace it independently.
@@ -828,11 +828,13 @@ class OutreachController extends Controller {
     return res.status(200).json(doc);
   }
 
-  // Resolve a venue's relationship stage (#848). An explicit venue.relationshipStage
-  // wins; otherwise auto-derive: a currently-booked venue, or one with a prior
-  // outreach that got a reply or a booking, is `returning`; everything else is `cold`.
+  // Resolve a venue's relationship stage (#848). Always derived from gig
+  // history — the hand-pinned `venue.relationshipStage` override was retired
+  // with the field itself (#1059), so a venue that was pinned by hand now
+  // follows its actual history instead. A currently-booked venue, or one with
+  // a prior outreach that got a reply or a booking, is `returning`; everything
+  // else is `cold`.
   async resolveStage(venue: VenueDoc): Promise<'cold' | 'returning'> {
-    if (venue.relationshipStage === 'cold' || venue.relationshipStage === 'returning') return venue.relationshipStage;
     if (venue.bookingStatus === 'booked') return 'returning';
     const prior = await this.model.findOne({ venueId: String(venue._id), status: { $in: ['replied', 'booked'] } });
     return prior ? 'returning' : 'cold';

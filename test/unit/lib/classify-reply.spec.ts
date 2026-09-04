@@ -24,9 +24,21 @@ describe('classify-reply', () => {
         sentiment: 'positive', proposedBookingStatus: 'booking', rationale: 'They said yes',
       });
     });
-    it('drops fields whose values are not recognized enums', () => {
+    it('drops a proposedBookingStatus whose value is not a recognized enum', () => {
       const raw = '{"sentiment":"positive","proposedBookingStatus":"maybe","rationale":"unclear"}';
       expect(parseSuggestion(raw)).toEqual({ sentiment: 'positive', rationale: 'unclear' });
+    });
+    it('drops a sentiment whose value is not a recognized enum', () => {
+      const raw = '{"sentiment":"meh","proposedBookingStatus":"booking","rationale":"unclear"}';
+      expect(parseSuggestion(raw)).toEqual({ proposedBookingStatus: 'booking', rationale: 'unclear' });
+    });
+    // #1059 narrowed the null-guard to sentiment + proposedBookingStatus (it
+    // previously also spared a suggestion carrying only proposedInterested),
+    // so a suggestion whose BOTH enum fields are invalid is now unusable even
+    // though it carries a rationale.
+    it('returns null when both enum fields are invalid, even with a rationale (#1059)', () => {
+      const raw = '{"sentiment":"meh","proposedBookingStatus":"maybe","rationale":"unclear"}';
+      expect(parseSuggestion(raw)).toBeNull();
     });
     it('returns null when no JSON object is present', () => {
       expect(parseSuggestion('no json here')).toBeNull();

@@ -451,9 +451,13 @@ describe('Outreach Controller (#844 batch model)', () => {
   });
 
   describe('template by stage (#848)', () => {
-    it('resolveStage: an explicit relationshipStage wins over auto-derive', async () => {
-      expect(await c.resolveStage(validVenue({ relationshipStage: 'returning' }))).toBe('returning');
-      expect(await c.resolveStage(validVenue({ relationshipStage: 'cold', bookingStatus: 'booked' }))).toBe('cold');
+    // #1059 retired the hand-pinned relationshipStage override. A venue
+    // document that still carries the field (pre-migration data) must be
+    // ignored entirely — the stage derives from gig history either way.
+    it('resolveStage: a stale relationshipStage no longer overrides the derivation (#1059)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      expect(await c.resolveStage(validVenue({ relationshipStage: 'cold', bookingStatus: 'booked' }))).toBe('returning');
+      expect(await c.resolveStage(validVenue({ relationshipStage: 'returning' }))).toBe('cold');
     });
 
     it('resolveStage: a booked venue auto-derives returning', async () => {
