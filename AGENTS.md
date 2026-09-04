@@ -19,6 +19,7 @@ rules and do not reconstruct them from memory or from this file.
 
 ## Development Workflow
 - **Build:** Check package.json for build scripts.
+- **Explicit Permission Required Before Codework / PR Creation:** Never start code implementation, create feature branches/worktrees, commit changes, or open pull requests without explicit permission or a direct command from Josh in chat naming/approving the task. When investigating bugs or discovering root causes, stop after diagnosis to explain the findings and proposed solution, and wait for Josh's explicit go-ahead before writing code, modifying files, or submitting any PR.
 - **Node Engine Version Bumps:** When bumping Node.js in `package.json` `engines.node`, always run `npm install --package-lock-only --ignore-scripts` (or `npm install --ignore-scripts`) to update `package-lock.json` root engine definition without triggering `postinstall` build scripts, so both files are committed together.
 - **Standards:** Follow existing ESM patterns.
 - **Vitest Config & Environment Variables**: Never hardcode test environment variables (such as `test.env.AllowUrl`) in shared, CI-executed `vitest.config.ts` to satisfy local test runs. Vitest's `test.env` overrides project-level CI environment variables across all test workers and silently overwrites production/CI test environments. If local test execution requires environment variables, configure them in uncommitted local `.env` files rather than modifying `vitest.config.ts`.
