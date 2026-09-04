@@ -847,6 +847,7 @@ describe('Venue Controller', () => {
 
       it('a non-empty valid zipCode updates cleanly', async () => {
         const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: id }));
         const upd = vi.fn(() => Promise.resolve({ _id: id }));
         c.model.findByIdAndUpdate = upd;
         await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24153' } }, resStub);
@@ -869,6 +870,18 @@ describe('Venue Controller', () => {
         await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24153' } }, resStub);
         expect(status).toBe(200);
         expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ zipCode: '24153', familyNearby: true }));
+      });
+
+      it('skips familyNearby recompute when findById fails on PATCH with address update (#1060 suggestion)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        c.model.findById = vi.fn(() => Promise.reject(new Error('transient read failure')));
+
+        await c.updateVenue({ user: 'agent', params: { id }, body: { usState: 'VA' } }, resStub);
+        expect(status).toBe(200);
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        expect(written).not.toHaveProperty('familyNearby');
       });
 
       it('explicit "" on a venue that HAS a zipCode ⇒ 400, nothing written', async () => {

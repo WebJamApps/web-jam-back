@@ -27,7 +27,7 @@
 import { config } from 'dotenv';
 import mongoose from 'mongoose';
 import venueModel from '#src/model/venue/venue-facade.js';
-import { isFamilyNearby } from '#src/lib/geo-distance.js';
+import { isFamilyNearby, resolveCoordinates } from '#src/lib/geo-distance.js';
 import { guardOrExit, isMainModule } from '#src/lib/migration-cli.js';
 
 config();
@@ -48,10 +48,13 @@ export interface FamilyNearbyPlan {
   currentValue: boolean | undefined;
   newValue: boolean;
   needsWrite: boolean;
+  coordinatesResolved: boolean;
 }
 
 export function buildFamilyNearbyPlans(docs: VenueBackfillDoc[]): FamilyNearbyPlan[] {
   return docs.map((doc) => {
+    const coords = resolveCoordinates(doc);
+    const coordinatesResolved = coords !== null;
     const newValue = isFamilyNearby(doc);
     const currentValue = typeof doc.familyNearby === 'boolean' ? doc.familyNearby : undefined;
     const needsWrite = currentValue !== newValue;
@@ -61,6 +64,7 @@ export function buildFamilyNearbyPlans(docs: VenueBackfillDoc[]): FamilyNearbyPl
       currentValue,
       newValue,
       needsWrite,
+      coordinatesResolved,
     };
   });
 }
@@ -90,18 +94,28 @@ export async function run(): Promise<void> {
   const allVenues = (await venueModel.find({})) as unknown as VenueBackfillDoc[];
   const plans = buildFamilyNearbyPlans(allVenues);
   const pending = plans.filter((p) => p.needsWrite);
+  const unresolved = plans.filter((p) => !p.coordinatesResolved);
+
+  for (const item of unresolved) {
+    console.warn(
+      `  WARN: venue ${item.venueId} "${item.venueName}" coordinates could not be resolved from address/city/state/zipCode; `
+      + 'defaulting familyNearby to false',
+    );
+  }
 
   for (const plan of pending) {
     const actionLabel = apply ? 'WRITE' : 'PLAN';
     const priorState = plan.currentValue === undefined ? 'unset' : String(plan.currentValue);
-    console.log(`  ${actionLabel}: venue ${plan.venueId} "${plan.venueName}" [${priorState} -> ${plan.newValue}]`);
+    const unresolvedNote = plan.coordinatesResolved ? '' : ' [UNRESOLVED COORDINATES]';
+    console.log(`  ${actionLabel}: venue ${plan.venueId} "${plan.venueName}" [${priorState} -> ${plan.newValue}]${unresolvedNote}`);
   }
 
   const modified = apply ? await executeBackfillWrites(plans) : 0;
 
-  console.log(`\nFamily proximity backfill summary:`);
+  console.log('\nFamily proximity backfill summary:');
   console.log(`  Total venues inspected: ${allVenues.length}`);
   console.log(`  Venues requiring update: ${pending.length}`);
+  console.log(`  Venues with unresolved coordinates: ${unresolved.length}`);
   console.log(`  Venues modified in DB: ${modified}`);
 
   await mongoose.connection.close();

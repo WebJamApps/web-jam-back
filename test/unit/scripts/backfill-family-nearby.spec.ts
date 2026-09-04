@@ -33,10 +33,14 @@ describe('backfill-family-nearby (#1060)', () => {
         {
           _id: '6', zipCode: '24153',
         },
+        // Venue with unresolvable coordinates -> coordinatesResolved: false, newValue: false
+        {
+          _id: '7', name: 'Nowhere Spot', zipCode: '00000', city: 'Nowhere',
+        },
       ];
 
       const plans = buildFamilyNearbyPlans(venues);
-      expect(plans).toHaveLength(6);
+      expect(plans).toHaveLength(7);
 
       expect(plans[0]).toEqual({
         venueId: '1',
@@ -44,6 +48,7 @@ describe('backfill-family-nearby (#1060)', () => {
         currentValue: undefined,
         newValue: true,
         needsWrite: true,
+        coordinatesResolved: true,
       });
 
       expect(plans[1]).toEqual({
@@ -52,6 +57,7 @@ describe('backfill-family-nearby (#1060)', () => {
         currentValue: undefined,
         newValue: false,
         needsWrite: true,
+        coordinatesResolved: true,
       });
 
       expect(plans[2]).toEqual({
@@ -60,6 +66,7 @@ describe('backfill-family-nearby (#1060)', () => {
         currentValue: true,
         newValue: true,
         needsWrite: false,
+        coordinatesResolved: true,
       });
 
       expect(plans[3]).toEqual({
@@ -68,6 +75,7 @@ describe('backfill-family-nearby (#1060)', () => {
         currentValue: false,
         newValue: false,
         needsWrite: false,
+        coordinatesResolved: true,
       });
 
       expect(plans[4]).toEqual({
@@ -76,10 +84,21 @@ describe('backfill-family-nearby (#1060)', () => {
         currentValue: true,
         newValue: false,
         needsWrite: true,
+        coordinatesResolved: true,
       });
 
       expect(plans[5].venueName).toBe('Unnamed Venue');
       expect(plans[5].needsWrite).toBe(true);
+      expect(plans[5].coordinatesResolved).toBe(true);
+
+      expect(plans[6]).toEqual({
+        venueId: '7',
+        venueName: 'Nowhere Spot',
+        currentValue: undefined,
+        newValue: false,
+        needsWrite: true,
+        coordinatesResolved: false,
+      });
     });
   });
 
@@ -93,10 +112,10 @@ describe('backfill-family-nearby (#1060)', () => {
 
       const plans = [
         {
-          venueId: id1, venueName: 'A', currentValue: undefined, newValue: true, needsWrite: true,
+          venueId: id1, venueName: 'A', currentValue: undefined, newValue: true, needsWrite: true, coordinatesResolved: true,
         },
         {
-          venueId: id2, venueName: 'B', currentValue: false, newValue: false, needsWrite: false,
+          venueId: id2, venueName: 'B', currentValue: false, newValue: false, needsWrite: false, coordinatesResolved: true,
         },
       ];
 
@@ -138,7 +157,10 @@ describe('backfill-family-nearby (#1060)', () => {
       const updateOneSpy = vi.spyOn(venueModel.Schema.collection, 'updateOne')
         .mockImplementation(() => Promise.resolve(fakeResult) as unknown as ReturnType<typeof venueModel.Schema.collection.updateOne>);
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      return { findSpy, updateOneSpy, logSpy };
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      return {
+        findSpy, updateOneSpy, logSpy, warnSpy,
+      };
     }
 
     it('dry run: plans updates and executes zero database writes', async () => {
@@ -160,6 +182,30 @@ describe('backfill-family-nearby (#1060)', () => {
       expect(planLines).toHaveLength(1);
       expect(planLines[0]).toContain('Salem Spot');
       expect(planLines[0]).toContain('unset -> true');
+    });
+
+    it('warns when venue coordinates are unresolvable and logs count in summary', async () => {
+      process.argv = ['node', 'backfill-family-nearby.js'];
+      const id = new mongoose.Types.ObjectId().toString();
+      const { warnSpy, logSpy } = stubMongo([
+        {
+          _id: id, name: 'Mystery Venue', zipCode: '00000', city: 'Unknown',
+        },
+      ]);
+
+      await run();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('coordinates could not be resolved from address/city/state/zipCode'),
+      );
+      const planLines = logSpy.mock.calls.map((c) => c[0]).filter(
+        (l): l is string => typeof l === 'string' && l.includes('PLAN'),
+      );
+      expect(planLines[0]).toContain('[UNRESOLVED COORDINATES]');
+      const summaryLine = logSpy.mock.calls.map((c) => c[0]).find(
+        (l): l is string => typeof l === 'string' && l.includes('Venues with unresolved coordinates: 1'),
+      );
+      expect(summaryLine).toBeTruthy();
     });
 
     it('apply: writes updates to Mongo via collection.updateOne', async () => {

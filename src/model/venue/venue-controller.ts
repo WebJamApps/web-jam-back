@@ -745,12 +745,17 @@ class VenueController extends Controller {
     if (addressErr) return res.status(addressErr.status).json({ message: addressErr.message });
     const zipErr = await this.applyZipCodeUpdate(req.params.id, body);
     if (zipErr) return res.status(zipErr.status).json({ message: zipErr.message });
+    // #1060 — recompute familyNearby when location fields change. Merges the
+    // existing document so partial PATCHes (e.g. updating only city or zipCode)
+    // evaluate complete location state. If the lookup fails/errors, skip recomputing
+    // rather than calculating from an incomplete body and corrupting stored data.
     const hasAddressUpdate = ['address', 'city', 'usState', 'zipCode'].some((k) => Object.prototype.hasOwnProperty.call(body, k));
     if (hasAddressUpdate) {
       let currentDoc: Record<string, unknown> | null = null;
       try { currentDoc = await this.model.findById(req.params.id); } catch { /* best-effort lookup */ }
-      const candidate = currentDoc ? { ...currentDoc, ...body } : body;
-      body.familyNearby = isFamilyNearby(candidate);
+      if (currentDoc) {
+        body.familyNearby = isFamilyNearby({ ...currentDoc, ...body });
+      }
     }
     let doc;
     try {
