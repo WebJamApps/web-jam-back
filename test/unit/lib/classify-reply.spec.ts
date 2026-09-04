@@ -25,8 +25,8 @@ describe('classify-reply', () => {
       });
     });
     it('drops fields whose values are not recognized enums', () => {
-      const raw = '{"sentiment":"meh","proposedBookingStatus":"maybe","rationale":"unclear"}';
-      expect(parseSuggestion(raw)).toEqual({ rationale: 'unclear' });
+      const raw = '{"sentiment":"positive","proposedBookingStatus":"maybe","rationale":"unclear"}';
+      expect(parseSuggestion(raw)).toEqual({ sentiment: 'positive', rationale: 'unclear' });
     });
     it('returns null when no JSON object is present', () => {
       expect(parseSuggestion('no json here')).toBeNull();

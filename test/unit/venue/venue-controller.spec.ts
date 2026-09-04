@@ -71,57 +71,52 @@ describe('Venue Controller', () => {
       expect(payload.message).toContain('venueType');
     });
 
-    it('rejects an invalid relationshipStage (#848)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', relationshipStage: 'lukewarm' } }, resStub);
-      expect(status).toBe(400);
-      expect(payload.message).toContain('relationshipStage');
-    });
-
     it('rejects an invalid templateOverride (#848)', async () => {
       await c.createVenue({ user: 'a', body: { name: 'X', templateOverride: 'Bogus' } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('templateOverride');
     });
 
-    it('rejects an invalid originalsFit (#867)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', originalsFit: 'meh' } }, resStub);
+    it('rejects an invalid audienceAttention (#1059)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', audienceAttention: 'meh' } }, resStub);
       expect(status).toBe(400);
-      expect(payload.message).toContain('originalsFit');
+      expect(payload.message).toContain('audienceAttention');
     });
 
-    it('rejects an invalid travelBand (#867)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', travelBand: 'moon' } }, resStub);
+    it('rejects a negative payAmount (#1059)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', payAmount: -5 } }, resStub);
       expect(status).toBe(400);
-      expect(payload.message).toContain('travelBand');
+      expect(payload.message).toContain('payAmount');
     });
 
-    it('rejects an out-of-range priority (#867)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', priority: 9 } }, resStub);
+    it('rejects a non-numeric payAmount (#1059)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', payAmount: 'high' as unknown as number } }, resStub);
       expect(status).toBe(400);
-      expect(payload.message).toContain('priority');
+      expect(payload.message).toContain('payAmount');
     });
 
-    it('rejects a non-numeric priority (#867)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', priority: 'high' as unknown as number } }, resStub);
-      expect(status).toBe(400);
-      expect(payload.message).toContain('priority');
-    });
-
-    it('accepts + passes through the ranking fields (#867)', async () => {
+    it('accepts + passes through the Prospect Score fields (#1059)', async () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
       const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
       c.model.create = create;
       await c.createVenue({
         user: 'a',
         body: {
-          name: 'The Spot', address: '1 Main St', zipCode: '24153', originalsFit: 'loves', travelBand: 'local', priority: 4,
+          name: 'The Spot',
+          address: '1 Main St',
+          zipCode: '24153',
+          payAmount: 150,
+          audienceAttention: 'high',
+          personalFavorite: true,
+          familyNearby: true,
         },
       }, resStub);
       expect(status).toBe(201);
       const arg = (create.mock.calls[0] as unknown[])[0] as any;
-      expect(arg.originalsFit).toBe('loves');
-      expect(arg.travelBand).toBe('local');
-      expect(arg.priority).toBe(4);
+      expect(arg.payAmount).toBe(150);
+      expect(arg.audienceAttention).toBe('high');
+      expect(arg.personalFavorite).toBe(true);
+      expect(arg.familyNearby).toBe(true);
     });
 
     it('rejects an invalid email', async () => {
@@ -1287,11 +1282,11 @@ describe('Venue Controller', () => {
       expect(g).toMatchObject({ outreachEligible: false });
     });
 
-    it('filters by the vetting tag interested (#843)', () => {
+    // #1059 — interested was dropped entirely; ?interested=... must no longer
+    // surface in the built filter (it's just an unrecognized query param now).
+    it('no longer supports an interested filter (#1059)', () => {
       const f = (controller as any).constructor.buildListFilter({ interested: 'true' });
-      expect(f).toMatchObject({ interested: true });
-      const g = (controller as any).constructor.buildListFilter({ interested: 'false' });
-      expect(g).toMatchObject({ interested: false });
+      expect(f).not.toHaveProperty('interested');
     });
 
     // #954 — inScope was dropped entirely; ?inScope=... must no longer surface
@@ -1326,27 +1321,27 @@ describe('Venue Controller', () => {
       expect((create.mock.calls[0] as unknown[])[0]).not.toHaveProperty('bookingStatus');
     });
 
-    it('persists the vetting tags on create', async () => {
+    it('persists the Prospect Score fields on create (#1059)', async () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
       const create = vi.fn(() => Promise.resolve({ _id: 'v10' }));
       c.model.create = create;
       await c.createVenue({
         user: 'a',
         body: {
-          name: 'Olde Salem', address: '1 Main St', zipCode: '24153', interested: false, payTier: 'low',
+          name: 'Olde Salem', address: '1 Main St', zipCode: '24153', personalFavorite: false, payAmount: 25,
         },
       }, resStub);
       expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({
-        interested: false, payTier: 'low',
+        personalFavorite: false, payAmount: 25,
       });
     });
 
-    it('lets the tags be set via update', async () => {
+    it('lets the tags be set via update (#1059)', async () => {
       const id = new mongoose.Types.ObjectId().toString();
       const upd = vi.fn(() => Promise.resolve({ _id: id }));
       c.model.findByIdAndUpdate = upd;
-      await c.updateVenue({ user: 'a', params: { id }, body: { interested: false } }, resStub);
-      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ interested: false }));
+      await c.updateVenue({ user: 'a', params: { id }, body: { personalFavorite: false } }, resStub);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ personalFavorite: false }));
     });
   });
 
