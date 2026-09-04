@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.12.1",
+  "version": "2.13.0",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -28,6 +28,7 @@
     "migrate:drop-in-scope": "node build/src/scripts/migrate-drop-in-scope.js",
     "migrate:drop-contact-verified": "node build/src/scripts/migrate-drop-contact-verified.js",
     "migrate:drop-do-not-contact": "node build/src/scripts/migrate-drop-do-not-contact.js",
+    "migrate:drop-venue-legacy-fields": "node build/src/scripts/migrate-drop-venue-legacy-fields.js",
     "migrate:clean-city": "node build/src/scripts/migrate-clean-city.js",
     "migrate:clean-website": "node build/src/scripts/migrate-clean-website.js",
     "restore:backup": "node scripts/restore-backup.mjs",

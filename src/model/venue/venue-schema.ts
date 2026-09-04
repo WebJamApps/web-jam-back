@@ -130,10 +130,8 @@ const venueSchema = new Schema({
   // the criteria review of the 5 mis-sent venues:
   // - bookingStatus: `booking` = open to booking; `not-booking` = closed / new
   //   management that stopped (Radford); `booked` = currently full (Olde Salem).
-  // - interested: false = not worth pursuing (pay too low / declined — Harrisonburg).
-  // - payTier: free-text pay note. lastVerified: when the info was last checked
-  //   (stale venues get re-verified; its own fate is still open, unresolved by
-  //   #974).
+  // - lastVerified: when the info was last checked (stale venues get
+  //   re-verified; its own fate is still open, unresolved by #974).
   //
   // `contactVerified` (was: has a human confirmed this contact is correct?)
   // was dropped (#974, 2026-07-18) — a valid, present primary `email` IS the
@@ -157,8 +155,12 @@ const venueSchema = new Schema({
   bookingStatus: {
     type: String, required: false, enum: ['booking', 'not-booking', 'booked'], default: 'booking',
   },
-  interested: { type: Boolean, required: false, default: true },
-  payTier: { type: String, required: false, trim: true },
+  // #1059 — replaces `payTier` (a hand-maintained `$`/`$$`/`$$$` note): what
+  // the venue itself pays Josh & Maria to play there, tips excluded. `0`
+  // means a venue that agreed a fee and never paid (recorded in `notes`); the
+  // penny default distinguishes a venue nobody has entered a real figure for
+  // yet from one truthfully paying nothing, and sorts below every real figure.
+  payAmount: { type: Number, required: false, default: 0.01 },
   lastVerified: { type: Date, required: false },
   // #980 — minimum spacing (in months) Josh wants between gigs at this venue
   // before it's offered as a candidate again for a new target window W (the
@@ -191,23 +193,26 @@ const venueSchema = new Schema({
   // bookingStatus readout above.
   bookedThrough: { type: Date, required: false },
   notes: { type: String, required: false },
-  // Template-selection inputs (#848). `relationshipStage` overrides the
-  // auto-derived cold/returning stage when set; left unset = auto-derive
-  // (booked / prior replied-or-booked outreach => returning, else cold).
+  // Template-selection input. `relationshipStage` (#848) was dropped (#1059)
+  // — returning vs. cold is now derived solely from linked gig history, with
+  // no hand-typed override left to silently disagree with it.
   // `templateOverride` forces a specific template type for special cases,
   // beating the venue's own venueType.
-  relationshipStage: { type: String, required: false, enum: ['cold', 'returning'] },
   templateOverride: { type: String, required: false, enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'] },
-  // Prospect-ranking inputs (#867) — surfaced in the AdminVenues "Prospect
-  // Score" sort (JaMmusic#1139). All optional/soft; the score is computed
-  // client-side so its weights stay tunable without a deploy.
-  // - originalsFit: how much the venue welcomes ORIGINAL music (heaviest weight).
-  // - travelBand: coarse distance band from Salem, VA (no geocoding) — farther =
-  //   higher travel cost in the net-value calc.
-  // - priority: manual 0-5 boost/override. (payTier above feeds pay value $/$$/$$$.)
-  originalsFit: { type: String, required: false, enum: ['none', 'some', 'loves'] },
-  travelBand: { type: String, required: false, enum: ['local', 'regional', 'far'] },
-  priority: { type: Number, required: false, min: 0, max: 5 },
+  // Prospect Score inputs (#1059, replacing #867's originalsFit/travelBand/
+  // priority — each near-empty on existing records or a default value
+  // masquerading as a signal). Surfaced in the AdminVenues "Prospect Score"
+  // sort (JaMmusic#1139).
+  // - audienceAttention: is the room there to hear the act, or background
+  //   noise — `low`/`medium`/`high`, left unset until a human rates it.
+  // - personalFavorite: would Josh & Maria go here themselves as patrons.
+  // - familyNearby: is the venue within 20 miles of a city where Josh & Maria
+  //   have family — derived from the venue's address (see the paired
+  //   distance-derivation issue), not hand-set; no default here since this
+  //   issue only adds the field slot and does not populate it.
+  audienceAttention: { type: String, required: false, enum: ['low', 'medium', 'high'] },
+  personalFavorite: { type: Boolean, required: false, default: false },
+  familyNearby: { type: Boolean, required: false },
   lastContacted: { type: Date, required: false },
   // #980 (2026-07-18) — `doNotContact` (#923's permanent global outcome
   // standing, set by a `not-interested` outreach outcome) is DELETED: folded

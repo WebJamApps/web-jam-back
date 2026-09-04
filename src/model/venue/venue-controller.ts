@@ -21,9 +21,9 @@ const STATUS_OPTIONS = ['active', 'archived'];
 // computeBookingStatus below (no settable BOOKING_STATUSES const anymore —
 // bookingStatus is never accepted in a request body).
 type DerivedBookingStatus = 'booked' | 'not-booking' | 'booking';
-// Prospect-ranking enums (#867) — drive the AdminVenues "Prospect Score" sort.
-const ORIGINALS_FIT = ['none', 'some', 'loves'];
-const TRAVEL_BANDS = ['local', 'regional', 'far'];
+// Prospect Score enum (#1059, replacing #867's originalsFit/travelBand) — drives
+// the AdminVenues "Prospect Score" sort.
+const AUDIENCE_ATTENTION = ['low', 'medium', 'high'];
 // Per-venue timeline (#898) — mirrors touchSchema's enums in venue-schema.ts.
 const TOUCH_TYPES = ['visit', 'form', 'card', 'call', 'email', 'gig', 'other', 'outcome'];
 const TOUCH_OUTCOMES = ['interested', 'not-interested', 'booked', 'target-filled'];
@@ -74,15 +74,16 @@ interface VenueBody {
   website?: string;
   status?: string;
   outreachEligible?: boolean;
-  interested?: boolean;
-  payTier?: string;
+  // #1059 — payAmount replaces payTier; audienceAttention/personalFavorite
+  // replace originalsFit/priority; familyNearby is new (populated by a paired
+  // issue, not this one). See venue-schema.ts.
+  payAmount?: number;
+  audienceAttention?: string;
+  personalFavorite?: boolean;
+  familyNearby?: boolean;
   lastVerified?: string;
   notes?: string;
-  relationshipStage?: string;
   templateOverride?: string;
-  originalsFit?: string;
-  travelBand?: string;
-  priority?: number;
   lastContacted?: string;
   // #980 — minimum gig-spacing (months, 0 = off) and the manual "pause until"
   // cooldown date. See venue-schema.ts. `bookingStatus` is intentionally NOT
@@ -146,15 +147,12 @@ function resolveActor(req: AuthRequest, body: { actor?: string }): string {
 // `partial` (PATCH) only validates the fields that are present.
 // Enum-validated string fields ('' = unset, allowed). Data-driven so adding a
 // field doesn't grow validateBody's cognitive complexity (#867).
-type EnumKey = 'venueType' | 'status' | 'relationshipStage'
-  | 'templateOverride' | 'originalsFit' | 'travelBand';
+type EnumKey = 'venueType' | 'status' | 'templateOverride' | 'audienceAttention';
 const ENUM_FIELDS: { key: EnumKey; allowed: string[] }[] = [
   { key: 'venueType', allowed: VENUE_TYPES },
   { key: 'status', allowed: STATUS_OPTIONS },
-  { key: 'relationshipStage', allowed: ['cold', 'returning'] },
   { key: 'templateOverride', allowed: VENUE_TYPES },
-  { key: 'originalsFit', allowed: ORIGINALS_FIT },
-  { key: 'travelBand', allowed: TRAVEL_BANDS },
+  { key: 'audienceAttention', allowed: AUDIENCE_ATTENTION },
 ];
 
 function invalidEnum(body: VenueBody): string {
@@ -228,9 +226,11 @@ function buildTouch(body: TouchBody, actor: string): Record<string, unknown> {
   };
 }
 
-function invalidPriority(priority: number | undefined): boolean {
-  return priority !== undefined && priority !== null
-    && (typeof priority !== 'number' || priority < 0 || priority > 5);
+// #1059 — payAmount replaces payTier; no upper bound (unlike the retired 0-5
+// priority), just a non-negative number.
+function invalidPayAmount(payAmount: number | undefined): boolean {
+  return payAmount !== undefined && payAmount !== null
+    && (typeof payAmount !== 'number' || payAmount < 0);
 }
 
 // #980 — gigInterval is a non-negative integer count of months (0 = spacing
@@ -288,7 +288,7 @@ function validateBody(body: VenueBody, partial: boolean): string {
   if ((!partial || body.name !== undefined) && (!body.name || !body.name.trim())) return 'Name is required';
   const enumErr = invalidEnum(body);
   if (enumErr) return enumErr;
-  if (invalidPriority(body.priority)) return 'priority must be a number 0-5';
+  if (invalidPayAmount(body.payAmount)) return 'payAmount must be a non-negative number';
   if (invalidGigInterval(body.gigInterval)) return 'gigInterval must be a non-negative whole number of months';
   if (invalidOptionalDate(body.resumeBooking)) return 'resumeBooking must be a valid date';
   // #995 — bookedThrough validated identically to resumeBooking above.
@@ -350,9 +350,9 @@ class VenueController extends Controller {
     else filter.status = { $ne: 'archived' };
     if (typeof query.venueType === 'string') filter.venueType = query.venueType;
     // Outreach targeting (#843): ?outreachEligible=true returns only vetted
-    // venues — the pool #844's approval flow proposes from. The vetting tag
-    // below filters the candidate set further (interested).
+    // venues — the pool #844's approval flow proposes from.
     // (`inScope` filter support was dropped with the field itself — #954.)
+    // (`interested` filter support was dropped with the field itself — #1059.)
     // #980 — `bookingStatus` filter support was dropped with the field's
     // settable meaning: it's now derived/computed on read (see
     // computeBookingStatus), so the RAW stored value a Mongo query would
@@ -360,8 +360,6 @@ class VenueController extends Controller {
     // `bookingStatus` client-side after the list comes back instead.
     if (query.outreachEligible === 'true') filter.outreachEligible = true;
     else if (query.outreachEligible === 'false') filter.outreachEligible = false;
-    if (query.interested === 'true') filter.interested = true;
-    else if (query.interested === 'false') filter.interested = false;
     return filter;
   }
 
