@@ -119,6 +119,50 @@ describe('Venue Controller', () => {
       expect(arg.familyNearby).toBe(true);
     });
 
+    it('strips a stray distanceKm from create body (#1060)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'The Spot',
+          address: '1 Main St',
+          zipCode: '24153',
+          distanceKm: 50 as any,
+        },
+      }, resStub);
+      expect(status).toBe(201);
+      const arg = (create.mock.calls[0] as unknown[])[0] as any;
+      expect(arg).not.toHaveProperty('distanceKm');
+    });
+
+    it('automatically derives familyNearby from address on create (#1060)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'Salem Spot',
+          address: '1 Main St',
+          zipCode: '24153',
+        },
+      }, resStub);
+      expect(status).toBe(201);
+      expect(((create.mock.calls[0] as unknown[])[0] as any).familyNearby).toBe(true);
+
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'Marion Spot',
+          address: '1 Main St',
+          zipCode: '24354',
+        },
+      }, resStub);
+      expect(((create.mock.calls[1] as unknown[])[0] as any).familyNearby).toBe(false);
+    });
+
     it('rejects an invalid email', async () => {
       await c.createVenue({ user: 'a', body: { name: 'X', email: 'nope' } }, resStub);
       expect(status).toBe(400);
@@ -675,6 +719,19 @@ describe('Venue Controller', () => {
       expect(written).toMatchObject({ notes: 'x' });
     });
 
+    it('strips a stray distanceKm from the body instead of writing or erroring (#1060)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({
+        user: 'agent', params: { id }, body: { distanceKm: 99.5 as any, notes: 'x' },
+      }, resStub);
+      expect(status).toBe(200);
+      const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+      expect(written).not.toHaveProperty('distanceKm');
+      expect(written).toMatchObject({ notes: 'x' });
+    });
+
     // #987 — address normalization on PUT (Part A) + the once-set-cannot-be-
     // removed rule (Part B).
     describe('address handling on update (#987)', () => {
@@ -794,7 +851,24 @@ describe('Venue Controller', () => {
         c.model.findByIdAndUpdate = upd;
         await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24153' } }, resStub);
         expect(status).toBe(200);
-        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ zipCode: '24153' }));
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ zipCode: '24153', familyNearby: true }));
+      });
+
+      it('automatically recomputes familyNearby on PATCH /venue/:id when address/zip changes (#1060)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: id, name: 'Spot', zipCode: '24153' }));
+
+        // Change zip to Marion -> false
+        await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24354' } }, resStub);
+        expect(status).toBe(200);
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ zipCode: '24354', familyNearby: false }));
+
+        // Change zip back to Salem -> true
+        await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24153' } }, resStub);
+        expect(status).toBe(200);
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ zipCode: '24153', familyNearby: true }));
       });
 
       it('explicit "" on a venue that HAS a zipCode ⇒ 400, nothing written', async () => {
@@ -975,6 +1049,15 @@ describe('Venue Controller', () => {
       expect(payload.locationFallback).toEqual({ city: 'Roanoke', usState: 'Virginia' });
     });
 
+    it('attaches computed distanceKm and familyNearby on GET /venue/:id (#1060)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, name: 'The Spot', zipCode: '24153' }));
+      await c.getVenue({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(200);
+      expect(payload.distanceKm).toBe(4);
+      expect(payload.familyNearby).toBe(true);
+    });
+
     it('500s when the gig-link query throws', async () => {
       const id = new mongoose.Types.ObjectId().toString();
       c.model.findById = vi.fn(() => Promise.resolve({ _id: id, name: 'The Spot' }));
@@ -1093,6 +1176,26 @@ describe('Venue Controller', () => {
         expect(payload[0].locationFallback).toBeNull();
         expect(payload[0].lastGig).toBeNull();
         expect(payload[0].nextGig).toBeNull();
+      });
+
+      it('attaches computed distanceKm and familyNearby (#1060)', async () => {
+        const id1 = new mongoose.Types.ObjectId().toString();
+        const id2 = new mongoose.Types.ObjectId().toString();
+        const id3 = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([
+          { _id: id1, name: 'Salem Spot', zipCode: '24153' },
+          { _id: id2, name: 'Marion Spot', zipCode: '24354' },
+          { _id: id3, name: 'Unknown Spot' },
+        ]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload[0].distanceKm).toBe(4);
+        expect(payload[0].familyNearby).toBe(true);
+        expect(payload[1].distanceKm).toBe(139.5);
+        expect(payload[1].familyNearby).toBe(false);
+        expect(payload[2].distanceKm).toBeNull();
+        expect(payload[2].familyNearby).toBe(false);
       });
 
       it('500s when the gig-link query throws', async () => {
