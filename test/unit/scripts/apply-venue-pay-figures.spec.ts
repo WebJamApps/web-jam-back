@@ -71,7 +71,7 @@ describe('apply-venue-pay-figures (#1061)', () => {
       // Verify each venue was updated with correct payAmount
       expect(updateSpy).toHaveBeenCalledTimes(9);
       VENUE_FIGURES.forEach((figure, idx) => {
-        const expectedUpdate = { payAmount: figure.payAmount };
+        const expectedUpdate: Record<string, unknown> = { payAmount: figure.payAmount };
         if (figure.noteToAdd) {
           expectedUpdate.notes = figure.noteToAdd;
         }
@@ -99,8 +99,9 @@ describe('apply-venue-pay-figures (#1061)', () => {
           return Promise.resolve({
             _id: venueId,
             name: 'Botetourt Farmers Market',
+            payAmount: undefined,
             notes: existingNotes,
-          });
+          } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
         }
         return Promise.resolve(null);
       });
@@ -133,8 +134,9 @@ describe('apply-venue-pay-figures (#1061)', () => {
           return Promise.resolve({
             _id: venueId,
             name: 'Botetourt Farmers Market',
+            payAmount: undefined,
             notes: undefined,
-          });
+          } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
         }
         return Promise.resolve(null);
       });
