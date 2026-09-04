@@ -29,6 +29,7 @@
     "migrate:drop-contact-verified": "node build/src/scripts/migrate-drop-contact-verified.js",
     "migrate:drop-do-not-contact": "node build/src/scripts/migrate-drop-do-not-contact.js",
     "migrate:drop-venue-legacy-fields": "node build/src/scripts/migrate-drop-venue-legacy-fields.js",
+    "migrate:backfill-family-nearby": "node build/src/scripts/backfill-family-nearby.js",
     "migrate:clean-city": "node build/src/scripts/migrate-clean-city.js",
     "migrate:clean-website": "node build/src/scripts/migrate-clean-website.js",
     "apply-venue-pay-figures": "node build/src/scripts/apply-venue-pay-figures.js",

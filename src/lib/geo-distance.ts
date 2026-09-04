@@ -14,7 +14,6 @@ export interface LocatableVenue {
   city?: string;
   usState?: string;
   zipCode?: string;
-  [key: string]: unknown;
 }
 
 export interface Coordinates {

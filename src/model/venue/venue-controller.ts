@@ -313,6 +313,7 @@ function stripReadOnlyFields(body: Record<string, unknown>): void {
   delete body.bookingStatus;
   delete body.doNotContact;
   delete body.distanceKm;
+  delete body.familyNearby;
 }
 
 // Privilege-first, role-fallback gate (mirrors PromoController). Reused for both
@@ -628,6 +629,9 @@ class VenueController extends Controller {
     // #987 Part A — normalize the (now-guaranteed-present, per validateBody
     // above) address on write, identically to the PATCH path (updateVenue).
     body.address = normalizeAddress(body.address);
+    // #1060 — derive familyNearby from the stored address fields (Salem, Roanoke,
+    // Martinsville, Lynchburg, Gastonia, Rock Hill, Harrisonburg <= 20 miles).
+    body.familyNearby = isFamilyNearby(body);
 
     const actor = resolveActor(req, body);
     const resolved = await this.resolveExistingForCreate(body);
