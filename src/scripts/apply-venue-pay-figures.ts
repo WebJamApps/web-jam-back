@@ -70,8 +70,11 @@ async function run(): Promise<void> {
     // For Botetourt Farmers Market, append the note instead of overwriting
     if (figure.noteToAdd) {
       const currentNotes = venue.notes || '';
-      const newNotes = currentNotes ? `${currentNotes} ${figure.noteToAdd}` : figure.noteToAdd;
-      updateData.notes = newNotes;
+      // Only append the note if it's not already present (idempotency check)
+      if (!currentNotes.includes(figure.noteToAdd)) {
+        const newNotes = currentNotes ? `${currentNotes} ${figure.noteToAdd}` : figure.noteToAdd;
+        updateData.notes = newNotes;
+      }
     }
 
     // eslint-disable-next-line no-await-in-loop

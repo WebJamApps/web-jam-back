@@ -192,5 +192,78 @@ describe('apply-venue-pay-figures (#1061)', () => {
         .find((l): l is string => typeof l === 'string' && l.includes('venue(s) found and updated'));
       expect(summaryLog).toContain('8 venue(s) found and updated; 1 not found');
     });
+
+    it('does not duplicate Botetourt note when run a second time (idempotency)', async () => {
+      const botetourt = VENUE_FIGURES.find((v) => v.name === 'Botetourt Farmers Market')!;
+      const venueId = new mongoose.Types.ObjectId().toString();
+
+      vi.spyOn(mongoose, 'connect').mockResolvedValue(undefined as unknown as typeof mongoose);
+      vi.spyOn(mongoose.connection, 'close').mockResolvedValue(undefined);
+
+      // Track the state of the Botetourt venue note across calls
+      let botetourtNotes: string | undefined;
+
+      vi.spyOn(venueModel, 'findOne').mockImplementation((filter: unknown) => {
+        const f = filter as { name?: string } | undefined;
+        // Only Botetourt is found; others return null (simulating rest of venues not found)
+        if (f?.name === 'Botetourt Farmers Market') {
+          return Promise.resolve({
+            _id: venueId,
+            name: 'Botetourt Farmers Market',
+            payAmount: undefined,
+            notes: botetourtNotes,
+          } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+        }
+        return Promise.resolve(null);
+      });
+
+      const updateSpy = vi.spyOn(venueModel, 'findByIdAndUpdate').mockImplementation(
+        async (id: string, updateData: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+          // Simulate the database update by tracking the notes
+          if (updateData.notes !== undefined) {
+            botetourtNotes = updateData.notes;
+          }
+          return {};
+        },
+      );
+
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      // First run: Botetourt has no notes, so the note gets appended
+      await run();
+
+      // After first run, the note should be set
+      expect(botetourtNotes).toBe(botetourt.noteToAdd);
+      expect(updateSpy).toHaveBeenCalledWith(venueId, {
+        payAmount: 0,
+        notes: botetourt.noteToAdd,
+      });
+
+      // Reset the spy to check the second run separately
+      updateSpy.mockClear();
+
+      // Second run: Botetourt now has the note already, so it should not be appended again
+      await run();
+
+      // On second run, since the note is already present, notes should not be in updateData
+      // (or if it is, it should be unchanged)
+      const secondRunCall = updateSpy.mock.calls[0];
+      expect(secondRunCall).toBeDefined();
+      const [secondVenueId, secondUpdateData] = secondRunCall!;
+      expect(secondVenueId).toBe(venueId);
+      expect(secondUpdateData.payAmount).toBe(0);
+
+      // The notes should either not be included in updateData, or if included, should be unchanged
+      if (secondUpdateData.notes !== undefined) {
+        // If notes are included, they should not contain a duplicate
+        expect(secondUpdateData.notes).toBe(botetourt.noteToAdd);
+        expect(secondUpdateData.notes).not.toContain(
+          `${botetourt.noteToAdd} ${botetourt.noteToAdd}`,
+        );
+      }
+
+      // Most importantly, after the second run, the venue's notes should still only have one copy
+      expect(botetourtNotes).toBe(botetourt.noteToAdd);
+    });
   });
 });
