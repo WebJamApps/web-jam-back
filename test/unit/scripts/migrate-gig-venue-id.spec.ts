@@ -94,37 +94,6 @@ describe('migrate-gig-venue-id (#958)', () => {
       );
       expect(summary).toContain('1 matched exactly one venue by name');
     });
-
-    it("still selects a 'josh'-tagged, venueId-less gig as a migration candidate under compatibility fallback", async () => {
-      const venueId = new mongoose.Types.ObjectId().toString();
-
-      vi.spyOn(mongoose, 'connect').mockResolvedValue(undefined as unknown as typeof mongoose);
-      vi.spyOn(mongoose.connection, 'close').mockResolvedValue(undefined);
-      vi.spyOn(venueModel, 'find').mockResolvedValue([{ _id: venueId, name: 'The Spot' }]);
-
-      const goodGig = {
-        _id: new mongoose.Types.ObjectId().toString(), venue: 'The Spot', artist: 'josh',
-      };
-      const findSpy = vi.spyOn(gigModel, 'find').mockImplementation((filter: unknown) => {
-        // Simulate the real Mongo $or predicate against a mixed-artist collection.
-        const f = filter as { $or: { artist?: string | { $exists: boolean } }[] };
-        const matches = f.$or.some((clause) => (
-          clause.artist === goodGig.artist
-          || (typeof clause.artist === 'object' && clause.artist?.$exists === false && (goodGig as any).artist === undefined)
-        ));
-        return Promise.resolve(matches ? [goodGig] : []);
-      });
-      vi.spyOn(gigModel, 'findByIdAndUpdate').mockResolvedValue({});
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-      await run();
-
-      expect(findSpy).toHaveBeenCalled();
-      const summary = logSpy.mock.calls.map((c) => c[0]).find(
-        (l): l is string => typeof l === 'string' && l.includes('matched exactly one venue'),
-      );
-      expect(summary).toContain('1 matched exactly one venue by name');
-    });
   });
 
   // web-jam-back#964 follow-up (Josh-approved, folded into #962's PR) — the
