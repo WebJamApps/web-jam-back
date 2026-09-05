@@ -10,6 +10,7 @@ import gigModel from '../gig/gig-facade.js';
 import {
   JOSH_GIGS_FILTER, groupGigsByVenue, type LinkableGig, type LinkableVenue,
 } from '#src/lib/gig-venue-link.js';
+import { computeDistanceKm, isFamilyNearby } from '#src/lib/geo-distance.js';
 
 // #972 — country is a 2-letter code (ISO 3166-1 alpha-2 style, e.g. 'US',
 // 'CA'); case-insensitive here since the schema uppercase-normalizes on save.
@@ -81,6 +82,7 @@ interface VenueBody {
   audienceAttention?: string;
   personalFavorite?: boolean;
   familyNearby?: boolean;
+  distanceKm?: number | null;
   lastVerified?: string;
   notes?: string;
   templateOverride?: string;
@@ -304,14 +306,14 @@ function validateBody(body: VenueBody, partial: boolean): string {
 
 // #980 — `bookingStatus` is derived/read-only (computeBookingStatus below)
 // and `doNotContact` was deleted entirely (folded into `outreachEligible`).
-// Neither is in the VenueBody type anymore, but an older/stale client could
-// still send them in the raw JSON body — silently drop both here (mirrors
-// the existing `delete body._id` pattern) rather than erroring, so a
-// round-tripped venue-edit form that still includes the old value is a
-// harmless no-op instead of a 400.
+// #1060 — `distanceKm` is also derived/read-only (attached on read).
+// None of them are persisted via request bodies; silently drop them here
+// rather than erroring, so a round-tripped venue-edit form is a harmless no-op.
 function stripReadOnlyFields(body: Record<string, unknown>): void {
   delete body.bookingStatus;
   delete body.doNotContact;
+  delete body.distanceKm;
+  delete body.familyNearby;
 }
 
 // Privilege-first, role-fallback gate (mirrors PromoController). Reused for both
@@ -452,8 +454,10 @@ class VenueController extends Controller {
         ? { city: fallbackGig.city, usState: fallbackGig.usState }
         : null;
       const bookingStatus = VenueController.computeBookingStatus(v, future.length > 0, now);
+      const distanceKm = computeDistanceKm(v);
+      const familyNearby = typeof v.familyNearby === 'boolean' ? v.familyNearby : isFamilyNearby(v);
       return {
-        ...v, lastGig, nextGig, locationFallback, bookingStatus,
+        ...v, lastGig, nextGig, locationFallback, bookingStatus, distanceKm, familyNearby,
       };
     });
   }
@@ -625,6 +629,9 @@ class VenueController extends Controller {
     // #987 Part A — normalize the (now-guaranteed-present, per validateBody
     // above) address on write, identically to the PATCH path (updateVenue).
     body.address = normalizeAddress(body.address);
+    // #1060 — derive familyNearby from the stored address fields (Salem, Roanoke,
+    // Martinsville, Lynchburg, Gastonia, Rock Hill, Harrisonburg <= 20 miles).
+    body.familyNearby = isFamilyNearby(body);
 
     const actor = resolveActor(req, body);
     const resolved = await this.resolveExistingForCreate(body);
@@ -651,6 +658,7 @@ class VenueController extends Controller {
     }
 
     if (existing) {
+      body.familyNearby = isFamilyNearby({ ...existing, ...body });
       let updated;
       try {
         updated = await this.model.findByIdAndUpdate(String(existing._id), {
@@ -659,6 +667,7 @@ class VenueController extends Controller {
       } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
       return res.status(200).json(updated);
     }
+    body.familyNearby = isFamilyNearby(body);
     const createBody: Record<string, unknown> = { ...body, status: body.status || 'active', lastModifiedBy: actor };
     if (emailNote) createBody.notes = VenueController.appendNote(body.notes, emailNote);
     let doc;
@@ -736,6 +745,18 @@ class VenueController extends Controller {
     if (addressErr) return res.status(addressErr.status).json({ message: addressErr.message });
     const zipErr = await this.applyZipCodeUpdate(req.params.id, body);
     if (zipErr) return res.status(zipErr.status).json({ message: zipErr.message });
+    // #1060 — recompute familyNearby when location fields change. Merges the
+    // existing document so partial PATCHes (e.g. updating only city or zipCode)
+    // evaluate complete location state. If the lookup fails/errors, skip recomputing
+    // rather than calculating from an incomplete body and corrupting stored data.
+    const hasAddressUpdate = ['address', 'city', 'usState', 'zipCode'].some((k) => Object.prototype.hasOwnProperty.call(body, k));
+    if (hasAddressUpdate) {
+      let currentDoc: Record<string, unknown> | null = null;
+      try { currentDoc = await this.model.findById(req.params.id); } catch { /* best-effort lookup */ }
+      if (currentDoc) {
+        body.familyNearby = isFamilyNearby({ ...currentDoc, ...body });
+      }
+    }
     let doc;
     try {
       doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, lastModifiedBy: resolveActor(req, body) });
