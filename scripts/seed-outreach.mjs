@@ -65,10 +65,7 @@ const venueSchema = new Schema({
   email: { type: String, lowercase: true, trim: true },
   status: { type: String, enum: ['active', 'archived'], default: 'active' },
   outreachEligible: { type: Boolean, default: false },
-  inScope: { type: Boolean, default: true },
   bookingStatus: { type: String, enum: ['booking', 'not-booking', 'booked'], default: 'booking' },
-  interested: { type: Boolean, default: true },
-  relationshipStage: { type: String, enum: ['cold', 'returning'] },
   templateOverride: { type: String, enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'] },
   lastModifiedBy: String,
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
@@ -253,8 +250,8 @@ const venues = [
     city: 'Roanoke', usState: 'VA',
     venueType: 'Originals', contactName: 'Alex Rivera',
     email: 'booking@stageatroanoke.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -263,8 +260,8 @@ const venues = [
     city: 'Roanoke', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Sam Estes',
     email: 'events@blueridgebrewing.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -273,8 +270,8 @@ const venues = [
     city: 'Harrisonburg', usState: 'VA',
     venueType: 'MidRangeCafeBar', contactName: 'Jordan Lee',
     email: 'music@mossycreekcafe.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -284,9 +281,8 @@ const venues = [
     city: 'Salem', usState: 'VA',
     venueType: 'Originals', contactName: 'Dana Marsh',
     email: 'dana@hideawaylounge.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
-    relationshipStage: 'returning', // explicit; bypasses auto-derive
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -297,8 +293,8 @@ const venues = [
     city: 'Lexington', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Pat Goodwin',
     email: 'live@spottydogtaphouse.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     templateOverride: 'MidRangeCafeBar', // forces the MidRangeCafeBar template
     lastModifiedBy: 'seed-outreach',
   },
@@ -307,8 +303,8 @@ const venues = [
     city: 'Blacksburg', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Morgan Vance',
     email: 'booking@copperkettle.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -316,9 +312,8 @@ const venues = [
     city: 'Charlottesville', usState: 'VA',
     venueType: 'Originals', contactName: 'Elena Rostova',
     email: 'shows@starlightroom.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
-    relationshipStage: 'cold',
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -326,9 +321,8 @@ const venues = [
     city: 'Lynchburg', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Marcus Cole',
     email: 'events@timberlinetavern.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
-    relationshipStage: 'returning',
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -336,8 +330,8 @@ const venues = [
     city: 'Richmond', usState: 'VA',
     venueType: 'MidRangeCafeBar', contactName: 'Claire Bennet',
     email: 'music@velvetoakbistro.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -345,8 +339,8 @@ const venues = [
     city: 'Staunton', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Wyatt Russell',
     email: 'cider@shenandoahcider.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     templateOverride: 'Originals',
     lastModifiedBy: 'seed-outreach',
   },
@@ -355,8 +349,8 @@ const venues = [
     city: 'Roanoke', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Gwen Stacy',
     email: 'booking@ironcladale.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booked', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booked',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -364,9 +358,8 @@ const venues = [
     city: 'Floyd', usState: 'VA',
     venueType: 'Originals', contactName: 'Arlo Guthrie',
     email: 'arlo@oldmillmusichall.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
-    relationshipStage: 'returning',
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -374,8 +367,8 @@ const venues = [
     city: 'Bedford', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Captain Dave',
     email: 'dave@rustyanchor.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'not-booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'not-booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -383,8 +376,8 @@ const venues = [
     city: 'Salem', usState: 'VA',
     venueType: 'MidRangeCafeBar', contactName: 'Fiona Gallagher',
     email: 'fiona@dailygrindsalem.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -392,8 +385,8 @@ const venues = [
     city: 'Christiansburg', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Liam Miller',
     email: 'events@foggymountaincellars.seed.example',
-    status: 'active', outreachEligible: false, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: false,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -401,8 +394,8 @@ const venues = [
     city: 'Charlottesville', usState: 'VA',
     venueType: 'MidRangeCafeBar', contactName: 'Victor Creed',
     email: 'vic@speakeasyunderground.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: false,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -410,8 +403,8 @@ const venues = [
     city: 'Radford', usState: 'VA',
     venueType: 'Originals', contactName: 'Hanna Abbot',
     email: 'hanna@whisperingpines.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -419,9 +412,8 @@ const venues = [
     city: 'Damascus', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Travis Scott',
     email: 'gigs@trailsidebrewery.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
-    relationshipStage: 'returning',
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -429,8 +421,8 @@ const venues = [
     city: 'Harrisonburg', usState: 'VA',
     venueType: 'MidRangeCafeBar', contactName: 'Maria Santos',
     email: 'maria@mainstreetcantina.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     templateOverride: 'PubFestivalBrewery',
     lastModifiedBy: 'seed-outreach',
   },
@@ -439,8 +431,8 @@ const venues = [
     city: 'Boone', usState: 'NC',
     venueType: 'MidRangeCafeBar', contactName: 'Chloe Price',
     email: 'contact@highcountrywine.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -448,9 +440,8 @@ const venues = [
     city: 'Staunton', usState: 'VA',
     venueType: 'Originals', contactName: 'Jonah Hex',
     email: 'jonah@valleyviewbarn.seed.example',
-    status: 'active', outreachEligible: true, inScope: true,
-    bookingStatus: 'booking', interested: true,
-    relationshipStage: 'cold',
+    status: 'active', outreachEligible: true,
+    bookingStatus: 'booking',
     lastModifiedBy: 'seed-outreach',
   },
   {
@@ -458,8 +449,8 @@ const venues = [
     city: 'Roanoke', usState: 'VA',
     venueType: 'PubFestivalBrewery', contactName: 'Zack Morris',
     email: 'zack@rustynailsaloon.seed.example',
-    status: 'archived', outreachEligible: false, inScope: false,
-    bookingStatus: 'not-booking', interested: false,
+    status: 'archived', outreachEligible: false,
+    bookingStatus: 'not-booking',
     lastModifiedBy: 'seed-outreach',
   },
 ];
@@ -533,7 +524,7 @@ async function run() {
     const doc = await upsertVenue(v); // eslint-disable-line no-await-in-loop
     venueRecords.push(doc);
     vUpserted++;
-    console.log(`  venue upserted: "${v.name}" (${v.venueType}${v.relationshipStage ? ', ' + v.relationshipStage : ''}${v.templateOverride ? ', override→' + v.templateOverride : ''})`);
+    console.log(`  venue upserted: "${v.name}" (${v.venueType}${v.templateOverride ? ', override→' + v.templateOverride : ''})`);
   }
 
   // 3. Test Users — 1 total

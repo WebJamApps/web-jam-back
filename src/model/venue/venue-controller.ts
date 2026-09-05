@@ -10,6 +10,7 @@ import gigModel from '../gig/gig-facade.js';
 import {
   JOSH_GIGS_FILTER, groupGigsByVenue, type LinkableGig, type LinkableVenue,
 } from '#src/lib/gig-venue-link.js';
+import { computeDistanceKm, isFamilyNearby } from '#src/lib/geo-distance.js';
 
 // #972 — country is a 2-letter code (ISO 3166-1 alpha-2 style, e.g. 'US',
 // 'CA'); case-insensitive here since the schema uppercase-normalizes on save.
@@ -21,9 +22,9 @@ const STATUS_OPTIONS = ['active', 'archived'];
 // computeBookingStatus below (no settable BOOKING_STATUSES const anymore —
 // bookingStatus is never accepted in a request body).
 type DerivedBookingStatus = 'booked' | 'not-booking' | 'booking';
-// Prospect-ranking enums (#867) — drive the AdminVenues "Prospect Score" sort.
-const ORIGINALS_FIT = ['none', 'some', 'loves'];
-const TRAVEL_BANDS = ['local', 'regional', 'far'];
+// Prospect Score enum (#1059, replacing #867's originalsFit/travelBand) — drives
+// the AdminVenues "Prospect Score" sort.
+const AUDIENCE_ATTENTION = ['low', 'medium', 'high'];
 // Per-venue timeline (#898) — mirrors touchSchema's enums in venue-schema.ts.
 const TOUCH_TYPES = ['visit', 'form', 'card', 'call', 'email', 'gig', 'other', 'outcome'];
 const TOUCH_OUTCOMES = ['interested', 'not-interested', 'booked', 'target-filled'];
@@ -74,15 +75,17 @@ interface VenueBody {
   website?: string;
   status?: string;
   outreachEligible?: boolean;
-  interested?: boolean;
-  payTier?: string;
+  // #1059 — payAmount replaces payTier; audienceAttention/personalFavorite
+  // replace originalsFit/priority; familyNearby is new (populated by a paired
+  // issue, not this one). See venue-schema.ts.
+  payAmount?: number;
+  audienceAttention?: string;
+  personalFavorite?: boolean;
+  familyNearby?: boolean;
+  distanceKm?: number | null;
   lastVerified?: string;
   notes?: string;
-  relationshipStage?: string;
   templateOverride?: string;
-  originalsFit?: string;
-  travelBand?: string;
-  priority?: number;
   lastContacted?: string;
   // #980 — minimum gig-spacing (months, 0 = off) and the manual "pause until"
   // cooldown date. See venue-schema.ts. `bookingStatus` is intentionally NOT
@@ -146,15 +149,12 @@ function resolveActor(req: AuthRequest, body: { actor?: string }): string {
 // `partial` (PATCH) only validates the fields that are present.
 // Enum-validated string fields ('' = unset, allowed). Data-driven so adding a
 // field doesn't grow validateBody's cognitive complexity (#867).
-type EnumKey = 'venueType' | 'status' | 'relationshipStage'
-  | 'templateOverride' | 'originalsFit' | 'travelBand';
+type EnumKey = 'venueType' | 'status' | 'templateOverride' | 'audienceAttention';
 const ENUM_FIELDS: { key: EnumKey; allowed: string[] }[] = [
   { key: 'venueType', allowed: VENUE_TYPES },
   { key: 'status', allowed: STATUS_OPTIONS },
-  { key: 'relationshipStage', allowed: ['cold', 'returning'] },
   { key: 'templateOverride', allowed: VENUE_TYPES },
-  { key: 'originalsFit', allowed: ORIGINALS_FIT },
-  { key: 'travelBand', allowed: TRAVEL_BANDS },
+  { key: 'audienceAttention', allowed: AUDIENCE_ATTENTION },
 ];
 
 function invalidEnum(body: VenueBody): string {
@@ -228,9 +228,11 @@ function buildTouch(body: TouchBody, actor: string): Record<string, unknown> {
   };
 }
 
-function invalidPriority(priority: number | undefined): boolean {
-  return priority !== undefined && priority !== null
-    && (typeof priority !== 'number' || priority < 0 || priority > 5);
+// #1059 — payAmount replaces payTier; no upper bound (unlike the retired 0-5
+// priority), just a non-negative number.
+function invalidPayAmount(payAmount: number | undefined): boolean {
+  return payAmount !== undefined && payAmount !== null
+    && (typeof payAmount !== 'number' || payAmount < 0);
 }
 
 // #980 — gigInterval is a non-negative integer count of months (0 = spacing
@@ -288,7 +290,7 @@ function validateBody(body: VenueBody, partial: boolean): string {
   if ((!partial || body.name !== undefined) && (!body.name || !body.name.trim())) return 'Name is required';
   const enumErr = invalidEnum(body);
   if (enumErr) return enumErr;
-  if (invalidPriority(body.priority)) return 'priority must be a number 0-5';
+  if (invalidPayAmount(body.payAmount)) return 'payAmount must be a non-negative number';
   if (invalidGigInterval(body.gigInterval)) return 'gigInterval must be a non-negative whole number of months';
   if (invalidOptionalDate(body.resumeBooking)) return 'resumeBooking must be a valid date';
   // #995 — bookedThrough validated identically to resumeBooking above.
@@ -304,14 +306,14 @@ function validateBody(body: VenueBody, partial: boolean): string {
 
 // #980 — `bookingStatus` is derived/read-only (computeBookingStatus below)
 // and `doNotContact` was deleted entirely (folded into `outreachEligible`).
-// Neither is in the VenueBody type anymore, but an older/stale client could
-// still send them in the raw JSON body — silently drop both here (mirrors
-// the existing `delete body._id` pattern) rather than erroring, so a
-// round-tripped venue-edit form that still includes the old value is a
-// harmless no-op instead of a 400.
+// #1060 — `distanceKm` is also derived/read-only (attached on read).
+// None of them are persisted via request bodies; silently drop them here
+// rather than erroring, so a round-tripped venue-edit form is a harmless no-op.
 function stripReadOnlyFields(body: Record<string, unknown>): void {
   delete body.bookingStatus;
   delete body.doNotContact;
+  delete body.distanceKm;
+  delete body.familyNearby;
 }
 
 // Privilege-first, role-fallback gate (mirrors PromoController). Reused for both
@@ -350,9 +352,9 @@ class VenueController extends Controller {
     else filter.status = { $ne: 'archived' };
     if (typeof query.venueType === 'string') filter.venueType = query.venueType;
     // Outreach targeting (#843): ?outreachEligible=true returns only vetted
-    // venues — the pool #844's approval flow proposes from. The vetting tag
-    // below filters the candidate set further (interested).
+    // venues — the pool #844's approval flow proposes from.
     // (`inScope` filter support was dropped with the field itself — #954.)
+    // (`interested` filter support was dropped with the field itself — #1059.)
     // #980 — `bookingStatus` filter support was dropped with the field's
     // settable meaning: it's now derived/computed on read (see
     // computeBookingStatus), so the RAW stored value a Mongo query would
@@ -360,8 +362,6 @@ class VenueController extends Controller {
     // `bookingStatus` client-side after the list comes back instead.
     if (query.outreachEligible === 'true') filter.outreachEligible = true;
     else if (query.outreachEligible === 'false') filter.outreachEligible = false;
-    if (query.interested === 'true') filter.interested = true;
-    else if (query.interested === 'false') filter.interested = false;
     return filter;
   }
 
@@ -375,9 +375,9 @@ class VenueController extends Controller {
     const end = new Date(target); end.setMonth(end.getMonth() + ELIGIBILITY_WINDOW_MONTHS);
     let gigs: GigDoc[];
     try {
-      gigs = await gigModel.find({
-        $or: [{ artist: 'josh' }, { artist: { $exists: false } }],
-      }) as unknown as GigDoc[];
+      // web-jam-back#1058: reference the shared constant (was an inlined
+      // duplicate of it) so the two can never drift out of sync again.
+      gigs = await gigModel.find(JOSH_GIGS_FILTER) as unknown as GigDoc[];
     } catch (e) { return Promise.reject(e); }
     // `booked` entries are already lowercased by stripHtml, matching `name` below.
     const booked = gigs
@@ -454,8 +454,10 @@ class VenueController extends Controller {
         ? { city: fallbackGig.city, usState: fallbackGig.usState }
         : null;
       const bookingStatus = VenueController.computeBookingStatus(v, future.length > 0, now);
+      const distanceKm = computeDistanceKm(v);
+      const familyNearby = typeof v.familyNearby === 'boolean' ? v.familyNearby : isFamilyNearby(v);
       return {
-        ...v, lastGig, nextGig, locationFallback, bookingStatus,
+        ...v, lastGig, nextGig, locationFallback, bookingStatus, distanceKm, familyNearby,
       };
     });
   }
@@ -627,6 +629,9 @@ class VenueController extends Controller {
     // #987 Part A — normalize the (now-guaranteed-present, per validateBody
     // above) address on write, identically to the PATCH path (updateVenue).
     body.address = normalizeAddress(body.address);
+    // #1060 — derive familyNearby from the stored address fields (Salem, Roanoke,
+    // Martinsville, Lynchburg, Gastonia, Rock Hill, Harrisonburg <= 20 miles).
+    body.familyNearby = isFamilyNearby(body);
 
     const actor = resolveActor(req, body);
     const resolved = await this.resolveExistingForCreate(body);
@@ -653,6 +658,7 @@ class VenueController extends Controller {
     }
 
     if (existing) {
+      body.familyNearby = isFamilyNearby({ ...existing, ...body });
       let updated;
       try {
         updated = await this.model.findByIdAndUpdate(String(existing._id), {
@@ -661,6 +667,7 @@ class VenueController extends Controller {
       } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
       return res.status(200).json(updated);
     }
+    body.familyNearby = isFamilyNearby(body);
     const createBody: Record<string, unknown> = { ...body, status: body.status || 'active', lastModifiedBy: actor };
     if (emailNote) createBody.notes = VenueController.appendNote(body.notes, emailNote);
     let doc;
@@ -738,6 +745,18 @@ class VenueController extends Controller {
     if (addressErr) return res.status(addressErr.status).json({ message: addressErr.message });
     const zipErr = await this.applyZipCodeUpdate(req.params.id, body);
     if (zipErr) return res.status(zipErr.status).json({ message: zipErr.message });
+    // #1060 — recompute familyNearby when location fields change. Merges the
+    // existing document so partial PATCHes (e.g. updating only city or zipCode)
+    // evaluate complete location state. If the lookup fails/errors, skip recomputing
+    // rather than calculating from an incomplete body and corrupting stored data.
+    const hasAddressUpdate = ['address', 'city', 'usState', 'zipCode'].some((k) => Object.prototype.hasOwnProperty.call(body, k));
+    if (hasAddressUpdate) {
+      let currentDoc: Record<string, unknown> | null = null;
+      try { currentDoc = await this.model.findById(req.params.id); } catch { /* best-effort lookup */ }
+      if (currentDoc) {
+        body.familyNearby = isFamilyNearby({ ...currentDoc, ...body });
+      }
+    }
     let doc;
     try {
       doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, lastModifiedBy: resolveActor(req, body) });

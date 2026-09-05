@@ -451,9 +451,13 @@ describe('Outreach Controller (#844 batch model)', () => {
   });
 
   describe('template by stage (#848)', () => {
-    it('resolveStage: an explicit relationshipStage wins over auto-derive', async () => {
-      expect(await c.resolveStage(validVenue({ relationshipStage: 'returning' }))).toBe('returning');
-      expect(await c.resolveStage(validVenue({ relationshipStage: 'cold', bookingStatus: 'booked' }))).toBe('cold');
+    // #1059 retired the hand-pinned relationshipStage override. A venue
+    // document that still carries the field (pre-migration data) must be
+    // ignored entirely — the stage derives from gig history either way.
+    it('resolveStage: a stale relationshipStage no longer overrides the derivation (#1059)', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+      expect(await c.resolveStage(validVenue({ relationshipStage: 'cold', bookingStatus: 'booked' }))).toBe('returning');
+      expect(await c.resolveStage(validVenue({ relationshipStage: 'returning' }))).toBe('cold');
     });
 
     it('resolveStage: a booked venue auto-derives returning', async () => {
@@ -942,6 +946,31 @@ describe('Outreach Controller (#844 batch model)', () => {
         (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db down')));
         await c.getCandidates({ user: 'a', query: {} }, resStub);
         expect(status).toBe(500);
+      });
+    });
+
+    // web-jam-back#1058 widening-phase regression: production still carries
+    // the retired 'josh' slug on every gig record until the manual
+    // post-merge migration runs. Simulate the real Mongo $or predicate
+    // (rather than mocking gigModel.find to ignore the filter, as the other
+    // tests in this block do) to prove a not-yet-migrated 'josh'-tagged gig
+    // still triggers the safety exclusion — a filter narrowed to
+    // DEFAULT_ARTIST alone would see zero of these records and silently stop
+    // excluding a venue Josh is already booked at.
+    describe("JOSH_GIGS_FILTER widening (#1058) — 'josh'-tagged gigs still count", () => {
+      it("still drops a venue whose linked gig is not-yet-migrated ('josh'-tagged) and within the spacing window", async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
+        (gigModel as any).find = vi.fn((filter: any) => {
+          const gig = { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString(), artist: 'josh' };
+          const matches = filter.$or.some((clause: any) => (
+            clause.artist === gig.artist
+            || (clause.artist && clause.artist.$exists === false && gig.artist === undefined)
+          ));
+          return Promise.resolve(matches ? [gig] : []);
+        });
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toHaveLength(0);
       });
     });
 
@@ -1998,7 +2027,7 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     describe('applySuggestion', () => {
       const withSuggestion = (over = {}) => ({
-        _id: oid(), venueId: oid(), suggestion: { proposedBookingStatus: 'booking', proposedInterested: true }, ...over,
+        _id: oid(), venueId: oid(), suggestion: { proposedBookingStatus: 'booking' }, ...over,
       });
 
       it('403s without venue:edit', async () => {
@@ -2032,7 +2061,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         c.model.findById = vi.fn(() => Promise.resolve(rec));
         await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: {} }, resStub);
         expect((venueModel as any).findByIdAndUpdate).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
-          bookingStatus: 'booking', interested: true,
+          bookingStatus: 'booking',
         }));
         expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({ 'suggestion.reviewed': true }));
         expect(status).toBe(200);
@@ -2042,9 +2071,9 @@ describe('Outreach Controller (#844 batch model)', () => {
         asAgent(['venue:edit']);
         const rec = withSuggestion();
         c.model.findById = vi.fn(() => Promise.resolve(rec));
-        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { bookingStatus: 'booked', interested: false } }, resStub);
+        await c.applySuggestion({ user: 'a', params: { id: String(rec._id) }, body: { bookingStatus: 'booked' } }, resStub);
         expect((venueModel as any).findByIdAndUpdate).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
-          bookingStatus: 'booked', interested: false,
+          bookingStatus: 'booked',
         }));
       });
 

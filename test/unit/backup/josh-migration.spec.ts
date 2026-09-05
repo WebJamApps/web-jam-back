@@ -17,13 +17,16 @@ async function loadTransform(): Promise<JoshMigrationTransform> {
 
 describe('scripts/transforms/josh-migration.mjs', () => {
   describe('gigs', () => {
-    it('tags every gig doc with artist: "josh", leaving other fields untouched', async () => {
+    // web-jam-back#1058: updated from 'josh' to 'jammusic' so a future re-run
+    // of this restore path never reintroduces the retired slug that #1058's
+    // live-data migration re-tags away from.
+    it('tags every gig doc with artist: "jammusic", leaving other fields untouched', async () => {
       const transform = await loadTransform();
       const doc = { _id: 'abc123', venue: 'The Bridge', date: 'Oct 4, 2019' };
 
       const result = transform(doc, 'gigs');
 
-      expect(result).toEqual({ _id: 'abc123', venue: 'The Bridge', date: 'Oct 4, 2019', artist: 'josh' });
+      expect(result).toEqual({ _id: 'abc123', venue: 'The Bridge', date: 'Oct 4, 2019', artist: 'jammusic' });
     });
 
     it('does not mutate the original doc object', async () => {

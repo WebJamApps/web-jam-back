@@ -136,7 +136,7 @@ interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 interface VenueDoc {
   _id?: unknown; name?: string; email?: string; secondaryEmail?: string; contactName?: string; phone?: string;
   venueType?: string; status?: string; outreachEligible?: boolean;
-  bookingStatus?: string; relationshipStage?: string; templateOverride?: string;
+  bookingStatus?: string; templateOverride?: string;
 }
 // introHtml (#903) is the template's addressable intro (greeting + opening
 // line), split out from bodyHtml so customIntro can replace it independently.
@@ -828,11 +828,13 @@ class OutreachController extends Controller {
     return res.status(200).json(doc);
   }
 
-  // Resolve a venue's relationship stage (#848). An explicit venue.relationshipStage
-  // wins; otherwise auto-derive: a currently-booked venue, or one with a prior
-  // outreach that got a reply or a booking, is `returning`; everything else is `cold`.
+  // Resolve a venue's relationship stage (#848). Always derived from gig
+  // history — the hand-pinned `venue.relationshipStage` override was retired
+  // with the field itself (#1059), so a venue that was pinned by hand now
+  // follows its actual history instead. A currently-booked venue, or one with
+  // a prior outreach that got a reply or a booking, is `returning`; everything
+  // else is `cold`.
   async resolveStage(venue: VenueDoc): Promise<'cold' | 'returning'> {
-    if (venue.relationshipStage === 'cold' || venue.relationshipStage === 'returning') return venue.relationshipStage;
     if (venue.bookingStatus === 'booked') return 'returning';
     const prior = await this.model.findOne({ venueId: String(venue._id), status: { $in: ['replied', 'booked'] } });
     return prior ? 'returning' : 'cold';
@@ -1603,20 +1605,21 @@ class OutreachController extends Controller {
   // Write a reply suggestion's values (Josh's edited body values win, else the
   // AI's proposed ones) onto the venue. Returns an error envelope to relay, or
   // null on success. Split out of applySuggestion to keep its branching simple.
+  //
+  // #1059 — `interested`/`proposedInterested` handling dropped along with the
+  // venue field itself (see classify-reply.ts).
   async writeSuggestedVenue(
     o: OutreachDoc,
-    suggestion: { proposedBookingStatus?: string; proposedInterested?: boolean },
-    body: { bookingStatus?: string; interested?: boolean },
+    suggestion: { proposedBookingStatus?: string },
+    body: { bookingStatus?: string },
     actor: string,
   ): Promise<AuthzError | null> { // eslint-disable-line class-methods-use-this
     const bookingStatus = body.bookingStatus !== undefined ? body.bookingStatus : suggestion.proposedBookingStatus;
-    const interested = body.interested !== undefined ? body.interested : suggestion.proposedInterested;
     if (bookingStatus !== undefined && OUTREACH_BOOKING_STATUSES.indexOf(bookingStatus) === -1) {
       return { status: 400, message: 'bookingStatus not valid' };
     }
     const venueUpdate: Record<string, unknown> = { lastModifiedBy: actor };
     if (bookingStatus !== undefined && bookingStatus !== null) venueUpdate.bookingStatus = bookingStatus;
-    if (interested !== undefined && interested !== null) venueUpdate.interested = interested;
     if (Object.keys(venueUpdate).length === 1) return null;
     try { await venueModel.findByIdAndUpdate(String(o.venueId), venueUpdate); } catch (e) {
       return { status: 500, message: (e as Error).message };
@@ -1645,9 +1648,9 @@ class OutreachController extends Controller {
   }
 
   // POST /outreach/:id/apply-suggestion — Josh's review of a detected reply.
-  // Default: writes the venue's bookingStatus/interested (from the edited body,
-  // else the suggestion's proposed values) and marks the suggestion reviewed so
-  // it leaves the queue. `dismiss: true` reviews WITHOUT writing the venue.
+  // Default: writes the venue's bookingStatus (from the edited body, else the
+  // suggestion's proposed value) and marks the suggestion reviewed so it
+  // leaves the queue. `dismiss: true` reviews WITHOUT writing the venue.
   // `reopen: true` reverts a false-positive back to `sent` (cadence resumes).
   // The apply path is the ONLY one that turns an AI suggestion into a venue
   // write — guarded by venue:edit, never automatic.
@@ -1658,7 +1661,7 @@ class OutreachController extends Controller {
       return res.status(400).json({ message: 'Update id is invalid' });
     }
     const body = (req.body || {}) as {
-      bookingStatus?: string; interested?: boolean; dismiss?: boolean; reopen?: boolean; actor?: string;
+      bookingStatus?: string; dismiss?: boolean; reopen?: boolean; actor?: string;
     };
     let o: OutreachDoc | null;
     try { o = await this.model.findById(req.params.id) as unknown as OutreachDoc | null; } catch (e) {
@@ -1669,7 +1672,7 @@ class OutreachController extends Controller {
 
     if (body.reopen) return this.reopenOutreach(req.params.id, o, actor, res);
 
-    const suggestion = (o as { suggestion?: { proposedBookingStatus?: string; proposedInterested?: boolean } }).suggestion;
+    const suggestion = (o as { suggestion?: { proposedBookingStatus?: string } }).suggestion;
     if (!suggestion) return res.status(400).json({ message: 'no suggestion to apply' });
 
     if (!body.dismiss) {

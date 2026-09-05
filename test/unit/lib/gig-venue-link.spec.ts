@@ -148,8 +148,15 @@ describe('gig-venue-link (#958)', () => {
   });
 
   describe('JOSH_GIGS_FILTER', () => {
-    it("scopes to Josh's gigs or pre-#885 records with no artist field", () => {
-      expect(JOSH_GIGS_FILTER).toEqual({ $or: [{ artist: 'josh' }, { artist: { $exists: false } }] });
+    // web-jam-back#1058: widening phase (issue item 1) — matches BOTH the
+    // retired 'josh' slug (still on every one of the 138 prod records until
+    // the manual migration runs) AND the shared 'jammusic' slug (records
+    // already migrated), plus pre-#885 field-less records. Narrowing to
+    // 'jammusic' alone is the issue's later item 3, not part of this filter.
+    it("scopes to Josh's gigs (artist: 'josh' OR 'jammusic') or pre-#885 records with no artist field", () => {
+      expect(JOSH_GIGS_FILTER).toEqual({
+        $or: [{ artist: 'josh' }, { artist: 'jammusic' }, { artist: { $exists: false } }],
+      });
     });
   });
 });

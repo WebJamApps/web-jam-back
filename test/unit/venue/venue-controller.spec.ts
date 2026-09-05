@@ -71,57 +71,96 @@ describe('Venue Controller', () => {
       expect(payload.message).toContain('venueType');
     });
 
-    it('rejects an invalid relationshipStage (#848)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', relationshipStage: 'lukewarm' } }, resStub);
-      expect(status).toBe(400);
-      expect(payload.message).toContain('relationshipStage');
-    });
-
     it('rejects an invalid templateOverride (#848)', async () => {
       await c.createVenue({ user: 'a', body: { name: 'X', templateOverride: 'Bogus' } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('templateOverride');
     });
 
-    it('rejects an invalid originalsFit (#867)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', originalsFit: 'meh' } }, resStub);
+    it('rejects an invalid audienceAttention (#1059)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', audienceAttention: 'meh' } }, resStub);
       expect(status).toBe(400);
-      expect(payload.message).toContain('originalsFit');
+      expect(payload.message).toContain('audienceAttention');
     });
 
-    it('rejects an invalid travelBand (#867)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', travelBand: 'moon' } }, resStub);
+    it('rejects a negative payAmount (#1059)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', payAmount: -5 } }, resStub);
       expect(status).toBe(400);
-      expect(payload.message).toContain('travelBand');
+      expect(payload.message).toContain('payAmount');
     });
 
-    it('rejects an out-of-range priority (#867)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', priority: 9 } }, resStub);
+    it('rejects a non-numeric payAmount (#1059)', async () => {
+      await c.createVenue({ user: 'a', body: { name: 'X', payAmount: 'high' as unknown as number } }, resStub);
       expect(status).toBe(400);
-      expect(payload.message).toContain('priority');
+      expect(payload.message).toContain('payAmount');
     });
 
-    it('rejects a non-numeric priority (#867)', async () => {
-      await c.createVenue({ user: 'a', body: { name: 'X', priority: 'high' as unknown as number } }, resStub);
-      expect(status).toBe(400);
-      expect(payload.message).toContain('priority');
-    });
-
-    it('accepts + passes through the ranking fields (#867)', async () => {
+    it('accepts + passes through the Prospect Score fields (#1059)', async () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
       const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
       c.model.create = create;
       await c.createVenue({
         user: 'a',
         body: {
-          name: 'The Spot', address: '1 Main St', zipCode: '24153', originalsFit: 'loves', travelBand: 'local', priority: 4,
+          name: 'The Spot',
+          address: '1 Main St',
+          zipCode: '24153',
+          payAmount: 150,
+          audienceAttention: 'high',
+          personalFavorite: true,
+          familyNearby: true,
         },
       }, resStub);
       expect(status).toBe(201);
       const arg = (create.mock.calls[0] as unknown[])[0] as any;
-      expect(arg.originalsFit).toBe('loves');
-      expect(arg.travelBand).toBe('local');
-      expect(arg.priority).toBe(4);
+      expect(arg.payAmount).toBe(150);
+      expect(arg.audienceAttention).toBe('high');
+      expect(arg.personalFavorite).toBe(true);
+      expect(arg.familyNearby).toBe(true);
+    });
+
+    it('strips a stray distanceKm from create body (#1060)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'The Spot',
+          address: '1 Main St',
+          zipCode: '24153',
+          distanceKm: 50 as any,
+        },
+      }, resStub);
+      expect(status).toBe(201);
+      const arg = (create.mock.calls[0] as unknown[])[0] as any;
+      expect(arg).not.toHaveProperty('distanceKm');
+    });
+
+    it('automatically derives familyNearby from address on create (#1060)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'Salem Spot',
+          address: '1 Main St',
+          zipCode: '24153',
+        },
+      }, resStub);
+      expect(status).toBe(201);
+      expect(((create.mock.calls[0] as unknown[])[0] as any).familyNearby).toBe(true);
+
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'Marion Spot',
+          address: '1 Main St',
+          zipCode: '24354',
+        },
+      }, resStub);
+      expect(((create.mock.calls[1] as unknown[])[0] as any).familyNearby).toBe(false);
     });
 
     it('rejects an invalid email', async () => {
@@ -680,6 +719,19 @@ describe('Venue Controller', () => {
       expect(written).toMatchObject({ notes: 'x' });
     });
 
+    it('strips a stray distanceKm from the body instead of writing or erroring (#1060)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({
+        user: 'agent', params: { id }, body: { distanceKm: 99.5 as any, notes: 'x' },
+      }, resStub);
+      expect(status).toBe(200);
+      const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+      expect(written).not.toHaveProperty('distanceKm');
+      expect(written).toMatchObject({ notes: 'x' });
+    });
+
     // #987 — address normalization on PUT (Part A) + the once-set-cannot-be-
     // removed rule (Part B).
     describe('address handling on update (#987)', () => {
@@ -795,11 +847,41 @@ describe('Venue Controller', () => {
 
       it('a non-empty valid zipCode updates cleanly', async () => {
         const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: id }));
         const upd = vi.fn(() => Promise.resolve({ _id: id }));
         c.model.findByIdAndUpdate = upd;
         await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24153' } }, resStub);
         expect(status).toBe(200);
-        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ zipCode: '24153' }));
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ zipCode: '24153', familyNearby: true }));
+      });
+
+      it('automatically recomputes familyNearby on PATCH /venue/:id when address/zip changes (#1060)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: id, name: 'Spot', zipCode: '24153' }));
+
+        // Change zip to Marion -> false
+        await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24354' } }, resStub);
+        expect(status).toBe(200);
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ zipCode: '24354', familyNearby: false }));
+
+        // Change zip back to Salem -> true
+        await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24153' } }, resStub);
+        expect(status).toBe(200);
+        expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ zipCode: '24153', familyNearby: true }));
+      });
+
+      it('skips familyNearby recompute when findById fails on PATCH with address update (#1060 suggestion)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        c.model.findById = vi.fn(() => Promise.reject(new Error('transient read failure')));
+
+        await c.updateVenue({ user: 'agent', params: { id }, body: { usState: 'VA' } }, resStub);
+        expect(status).toBe(200);
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        expect(written).not.toHaveProperty('familyNearby');
       });
 
       it('explicit "" on a venue that HAS a zipCode ⇒ 400, nothing written', async () => {
@@ -980,6 +1062,15 @@ describe('Venue Controller', () => {
       expect(payload.locationFallback).toEqual({ city: 'Roanoke', usState: 'Virginia' });
     });
 
+    it('attaches computed distanceKm and familyNearby on GET /venue/:id (#1060)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, name: 'The Spot', zipCode: '24153' }));
+      await c.getVenue({ user: 'a', params: { id } }, resStub);
+      expect(status).toBe(200);
+      expect(payload.distanceKm).toBe(4);
+      expect(payload.familyNearby).toBe(true);
+    });
+
     it('500s when the gig-link query throws', async () => {
       const id = new mongoose.Types.ObjectId().toString();
       c.model.findById = vi.fn(() => Promise.resolve({ _id: id, name: 'The Spot' }));
@@ -1014,17 +1105,23 @@ describe('Venue Controller', () => {
     });
 
     // web-jam-back#922: gigs is a shared collection — Tim's calendar must never
-    // gate Josh's outreach eligibility.
-    it('does not drop a venue for a Tim-only gig, but still drops for josh/artist-less gigs', async () => {
+    // gate Josh's outreach eligibility. web-jam-back#1058: this is the
+    // WIDENING phase (issue item 1) — production still carries the retired
+    // 'josh' slug on all 138 records until the manual post-merge migration
+    // runs, so the fixture proves BOTH the still-untouched 'josh' slug and
+    // the already-migrated 'jammusic' slug are excluded from eligibility,
+    // while a Tim-only gig is not.
+    it('does not drop a venue for a Tim-only gig, but still drops for josh/jammusic/artist-less gigs', async () => {
       c.model.find = vi.fn(() => Promise.resolve([
-        { name: 'Venue X' }, { name: 'Venue Y' }, { name: 'Venue Z' },
+        { name: 'Venue X' }, { name: 'Venue Y' }, { name: 'Venue Z' }, { name: 'Venue W' },
       ]));
       (gigModel as any).find = vi.fn((filter: any) => {
         // Simulate the real Mongo $or predicate against a mixed-artist collection.
         const all = [
           { venue: 'Venue X', datetime: '2026-07-15T00:00:00.000Z', artist: 'tim' },
-          { venue: 'Venue Y', datetime: '2026-07-15T00:00:00.000Z', artist: 'josh' },
+          { venue: 'Venue Y', datetime: '2026-07-15T00:00:00.000Z', artist: 'jammusic' },
           { venue: 'Venue Z', datetime: '2026-07-15T00:00:00.000Z' }, // pre-migration, no artist field
+          { venue: 'Venue W', datetime: '2026-07-15T00:00:00.000Z', artist: 'josh' }, // not yet migrated
         ];
         const matches = all.filter((g) => filter.$or.some((clause: any) => (
           clause.artist === g.artist
@@ -1051,6 +1148,28 @@ describe('Venue Controller', () => {
         expect(status).toBe(200);
         expect(payload[0].lastGig.datetime).toBe('2026-01-01T00:00:00.000Z');
         expect(payload[0].nextGig.datetime).toBe('2099-01-01T00:00:00.000Z');
+      });
+
+      // web-jam-back#1058 widening-phase regression: a still-untouched
+      // 'josh'-tagged gig (the actual prod data shape until the manual
+      // post-merge migration runs) must still resolve lastGig — proving
+      // JOSH_GIGS_FILTER was not narrowed to DEFAULT_ARTIST alone, which
+      // would drop every one of the 138 existing records to blank linkage.
+      it("still resolves lastGig via venueId for a not-yet-migrated 'josh'-tagged gig", async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'The Spot' }]));
+        (gigModel as any).find = vi.fn((filter: any) => {
+          const gig = { venueId: idA, datetime: '2026-01-01T00:00:00.000Z', artist: 'josh' };
+          const matches = filter.$or.some((clause: any) => (
+            clause.artist === gig.artist
+            || (clause.artist && clause.artist.$exists === false && gig.artist === undefined)
+          ));
+          return Promise.resolve(matches ? [gig] : []);
+        });
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload[0].lastGig).toBeTruthy();
+        expect(payload[0].lastGig.datetime).toBe('2026-01-01T00:00:00.000Z');
       });
 
       it('resolves via exact normalized-name match when venueId is absent', async () => {
@@ -1098,6 +1217,26 @@ describe('Venue Controller', () => {
         expect(payload[0].locationFallback).toBeNull();
         expect(payload[0].lastGig).toBeNull();
         expect(payload[0].nextGig).toBeNull();
+      });
+
+      it('attaches computed distanceKm and familyNearby (#1060)', async () => {
+        const id1 = new mongoose.Types.ObjectId().toString();
+        const id2 = new mongoose.Types.ObjectId().toString();
+        const id3 = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([
+          { _id: id1, name: 'Salem Spot', zipCode: '24153' },
+          { _id: id2, name: 'Marion Spot', zipCode: '24354' },
+          { _id: id3, name: 'Unknown Spot' },
+        ]));
+        (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload[0].distanceKm).toBe(4);
+        expect(payload[0].familyNearby).toBe(true);
+        expect(payload[1].distanceKm).toBe(139.5);
+        expect(payload[1].familyNearby).toBe(false);
+        expect(payload[2].distanceKm).toBeNull();
+        expect(payload[2].familyNearby).toBe(false);
       });
 
       it('500s when the gig-link query throws', async () => {
@@ -1287,11 +1426,11 @@ describe('Venue Controller', () => {
       expect(g).toMatchObject({ outreachEligible: false });
     });
 
-    it('filters by the vetting tag interested (#843)', () => {
+    // #1059 — interested was dropped entirely; ?interested=... must no longer
+    // surface in the built filter (it's just an unrecognized query param now).
+    it('no longer supports an interested filter (#1059)', () => {
       const f = (controller as any).constructor.buildListFilter({ interested: 'true' });
-      expect(f).toMatchObject({ interested: true });
-      const g = (controller as any).constructor.buildListFilter({ interested: 'false' });
-      expect(g).toMatchObject({ interested: false });
+      expect(f).not.toHaveProperty('interested');
     });
 
     // #954 — inScope was dropped entirely; ?inScope=... must no longer surface
@@ -1326,27 +1465,27 @@ describe('Venue Controller', () => {
       expect((create.mock.calls[0] as unknown[])[0]).not.toHaveProperty('bookingStatus');
     });
 
-    it('persists the vetting tags on create', async () => {
+    it('persists the Prospect Score fields on create (#1059)', async () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
       const create = vi.fn(() => Promise.resolve({ _id: 'v10' }));
       c.model.create = create;
       await c.createVenue({
         user: 'a',
         body: {
-          name: 'Olde Salem', address: '1 Main St', zipCode: '24153', interested: false, payTier: 'low',
+          name: 'Olde Salem', address: '1 Main St', zipCode: '24153', personalFavorite: false, payAmount: 25,
         },
       }, resStub);
       expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({
-        interested: false, payTier: 'low',
+        personalFavorite: false, payAmount: 25,
       });
     });
 
-    it('lets the tags be set via update', async () => {
+    it('lets the tags be set via update (#1059)', async () => {
       const id = new mongoose.Types.ObjectId().toString();
       const upd = vi.fn(() => Promise.resolve({ _id: id }));
       c.model.findByIdAndUpdate = upd;
-      await c.updateVenue({ user: 'a', params: { id }, body: { interested: false } }, resStub);
-      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ interested: false }));
+      await c.updateVenue({ user: 'a', params: { id }, body: { personalFavorite: false } }, resStub);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ personalFavorite: false }));
     });
   });
 
