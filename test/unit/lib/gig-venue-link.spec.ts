@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import {
   normalizeVenueName, buildUnambiguousNameIndex, resolveGigVenueId, groupGigsByVenue, JOSH_GIGS_FILTER,
 } from '#src/lib/gig-venue-link.js';
+import { DEFAULT_ARTIST } from '#src/lib/artist.js';
 
 const oid = () => new mongoose.Types.ObjectId().toString();
 
@@ -148,15 +149,16 @@ describe('gig-venue-link (#958)', () => {
   });
 
   describe('JOSH_GIGS_FILTER', () => {
-    // web-jam-back#1058: widening phase (issue item 1) — matches BOTH the
-    // retired 'josh' slug (still on every one of the 138 prod records until
-    // the manual migration runs) AND the shared 'jammusic' slug (records
-    // already migrated), plus pre-#885 field-less records. Narrowing to
-    // 'jammusic' alone is the issue's later item 3, not part of this filter.
-    it("scopes to Josh's gigs (artist: 'josh' OR 'jammusic') or pre-#885 records with no artist field", () => {
+    it("scopes to Josh's gigs with DEFAULT_ARTIST ('jammusic') as primary, 'josh' as compatibility fallback, and field-less records", () => {
       expect(JOSH_GIGS_FILTER).toEqual({
-        $or: [{ artist: 'josh' }, { artist: 'jammusic' }, { artist: { $exists: false } }],
+        $or: [{ artist: DEFAULT_ARTIST }, { artist: 'josh' }, { artist: { $exists: false } }],
       });
+    });
+
+    it("matches DEFAULT_ARTIST and retains 'josh' as compatibility fallback", () => {
+      expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: DEFAULT_ARTIST });
+      expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: 'josh' });
+      expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: { $exists: false } });
     });
   });
 });
