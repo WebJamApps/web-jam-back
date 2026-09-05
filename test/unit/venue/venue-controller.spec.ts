@@ -1105,13 +1105,12 @@ describe('Venue Controller', () => {
     });
 
     // web-jam-back#922: gigs is a shared collection — Tim's calendar must never
-    // gate Josh's outreach eligibility. web-jam-back#1058: this is the
-    // WIDENING phase (issue item 1) — production still carries the retired
-    // web-jam-back#1058: narrowed to DEFAULT_ARTIST ('jammusic') and pre-migration
-    // field-less gigs, while a Tim-only gig is not.
-    it('does not drop a venue for a Tim-only gig, but still drops for jammusic/artist-less gigs', async () => {
+    // gate Josh's outreach eligibility. web-jam-back#1058: standardizes on
+    // DEFAULT_ARTIST ('jammusic') as primary and retains 'josh' as compatibility
+    // fallback, while a Tim-only gig is not.
+    it('does not drop a venue for a Tim-only gig, but still drops for josh/jammusic/artist-less gigs', async () => {
       c.model.find = vi.fn(() => Promise.resolve([
-        { name: 'Venue X' }, { name: 'Venue Y' }, { name: 'Venue Z' },
+        { name: 'Venue X' }, { name: 'Venue Y' }, { name: 'Venue Z' }, { name: 'Venue W' },
       ]));
       (gigModel as any).find = vi.fn((filter: any) => {
         // Simulate the real Mongo $or predicate against a mixed-artist collection.
@@ -1119,6 +1118,7 @@ describe('Venue Controller', () => {
           { venue: 'Venue X', datetime: '2026-07-15T00:00:00.000Z', artist: 'tim' },
           { venue: 'Venue Y', datetime: '2026-07-15T00:00:00.000Z', artist: 'jammusic' },
           { venue: 'Venue Z', datetime: '2026-07-15T00:00:00.000Z' }, // pre-migration, no artist field
+          { venue: 'Venue W', datetime: '2026-07-15T00:00:00.000Z', artist: 'josh' }, // compatibility fallback
         ];
         const matches = all.filter((g) => filter.$or.some((clause: any) => (
           clause.artist === g.artist
@@ -1154,6 +1154,23 @@ describe('Venue Controller', () => {
         c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'The Spot' }]));
         (gigModel as any).find = vi.fn((filter: any) => {
           const gig = { venueId: idA, datetime: '2026-01-01T00:00:00.000Z', artist: 'jammusic' };
+          const matches = filter.$or.some((clause: any) => (
+            clause.artist === gig.artist
+            || (clause.artist && clause.artist.$exists === false && gig.artist === undefined)
+          ));
+          return Promise.resolve(matches ? [gig] : []);
+        });
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload[0].lastGig).toBeTruthy();
+        expect(payload[0].lastGig.datetime).toBe('2026-01-01T00:00:00.000Z');
+      });
+
+      it("still resolves lastGig via venueId for a fallback 'josh'-tagged gig", async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'The Spot' }]));
+        (gigModel as any).find = vi.fn((filter: any) => {
+          const gig = { venueId: idA, datetime: '2026-01-01T00:00:00.000Z', artist: 'josh' };
           const matches = filter.$or.some((clause: any) => (
             clause.artist === gig.artist
             || (clause.artist && clause.artist.$exists === false && gig.artist === undefined)

@@ -18,10 +18,13 @@ import { DEFAULT_ARTIST } from './artist.js';
 // filterEligible so Tim's calendar (#922) never leaks into Josh's venue/outreach
 // linkage.
 //
-// web-jam-back#1058: narrowed to DEFAULT_ARTIST ('jammusic') and field-less
-// records. The retired 'josh' literal is no longer matched.
+// web-jam-back#1058: standardizes on DEFAULT_ARTIST ('jammusic') as the
+// primary tenant filter alongside pre-#885 field-less records. While the
+// migration script is deployed and pending production execution, the retired
+// 'josh' slug is safely retained as an explicit backward-compatibility fallback so
+// unmigrated production records remain visible to venue/outreach consumers.
 export const JOSH_GIGS_FILTER = {
-  $or: [{ artist: DEFAULT_ARTIST }, { artist: { $exists: false } }],
+  $or: [{ artist: DEFAULT_ARTIST }, { artist: 'josh' }, { artist: { $exists: false } }],
 };
 
 export interface LinkableGig {

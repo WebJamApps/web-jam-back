@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import {
   normalizeVenueName, buildUnambiguousNameIndex, resolveGigVenueId, groupGigsByVenue, JOSH_GIGS_FILTER,
 } from '#src/lib/gig-venue-link.js';
+import { DEFAULT_ARTIST } from '#src/lib/artist.js';
 
 const oid = () => new mongoose.Types.ObjectId().toString();
 
@@ -148,16 +149,16 @@ describe('gig-venue-link (#958)', () => {
   });
 
   describe('JOSH_GIGS_FILTER', () => {
-    // web-jam-back#1058: narrowed to DEFAULT_ARTIST ('jammusic') and field-less
-    // records; the retired 'josh' slug is no longer included.
-    it("scopes to Josh's gigs (artist: 'jammusic') or pre-#885 records with no artist field", () => {
+    it("scopes to Josh's gigs with DEFAULT_ARTIST ('jammusic') as primary, 'josh' as compatibility fallback, and field-less records", () => {
       expect(JOSH_GIGS_FILTER).toEqual({
-        $or: [{ artist: 'jammusic' }, { artist: { $exists: false } }],
+        $or: [{ artist: DEFAULT_ARTIST }, { artist: 'josh' }, { artist: { $exists: false } }],
       });
     });
 
-    it("does not match the retired 'josh' slug", () => {
-      expect((JOSH_GIGS_FILTER as any).$or).not.toContainEqual({ artist: 'josh' });
+    it("matches DEFAULT_ARTIST and retains 'josh' as compatibility fallback", () => {
+      expect((JOSH_GIGS_FILTER as any).$or).toContainEqual({ artist: DEFAULT_ARTIST });
+      expect((JOSH_GIGS_FILTER as any).$or).toContainEqual({ artist: 'josh' });
+      expect((JOSH_GIGS_FILTER as any).$or).toContainEqual({ artist: { $exists: false } });
     });
   });
 });

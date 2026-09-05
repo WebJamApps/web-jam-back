@@ -949,14 +949,29 @@ describe('Outreach Controller (#844 batch model)', () => {
       });
     });
 
-    // web-jam-back#1058: narrowed to DEFAULT_ARTIST ('jammusic').
-    // Simulate the real Mongo $or predicate to prove a 'jammusic'-tagged gig
-    // triggers the safety exclusion.
-    describe("JOSH_GIGS_FILTER narrowing (#1058) — 'jammusic'-tagged gigs count", () => {
+    // web-jam-back#1058: standardizes on DEFAULT_ARTIST ('jammusic') as primary and
+    // retains 'josh' as compatibility fallback. Simulate the real Mongo $or predicate
+    // to prove both 'jammusic'-tagged and fallback 'josh'-tagged gigs trigger the safety exclusion.
+    describe("JOSH_GIGS_FILTER (#1058) — 'jammusic' primary and 'josh' fallback gigs count", () => {
       it("drops a venue whose linked gig is 'jammusic'-tagged and within the spacing window", async () => {
         (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
         (gigModel as any).find = vi.fn((filter: any) => {
           const gig = { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString(), artist: 'jammusic' };
+          const matches = filter.$or.some((clause: any) => (
+            clause.artist === gig.artist
+            || (clause.artist && clause.artist.$exists === false && gig.artist === undefined)
+          ));
+          return Promise.resolve(matches ? [gig] : []);
+        });
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toHaveLength(0);
+      });
+
+      it("drops a venue whose linked gig is 'josh'-tagged under compatibility fallback and within the spacing window", async () => {
+        (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
+        (gigModel as any).find = vi.fn((filter: any) => {
+          const gig = { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString(), artist: 'josh' };
           const matches = filter.$or.some((clause: any) => (
             clause.artist === gig.artist
             || (clause.artist && clause.artist.$exists === false && gig.artist === undefined)
