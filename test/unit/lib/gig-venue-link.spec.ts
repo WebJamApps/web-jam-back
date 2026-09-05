@@ -149,16 +149,16 @@ describe('gig-venue-link (#958)', () => {
   });
 
   describe('JOSH_GIGS_FILTER', () => {
-    it("scopes to Josh's gigs with DEFAULT_ARTIST ('jammusic') as primary, 'josh' as compatibility fallback, and field-less records", () => {
+    it("scopes to Josh's gigs with DEFAULT_ARTIST ('jammusic') and field-less records", () => {
       expect(JOSH_GIGS_FILTER).toEqual({
-        $or: [{ artist: DEFAULT_ARTIST }, { artist: 'josh' }, { artist: { $exists: false } }],
+        $or: [{ artist: DEFAULT_ARTIST }, { artist: { $exists: false } }],
       });
     });
 
-    it("matches DEFAULT_ARTIST and retains 'josh' as compatibility fallback", () => {
+    it('matches DEFAULT_ARTIST and field-less records, and does not match retired josh slug', () => {
       expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: DEFAULT_ARTIST });
-      expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: 'josh' });
       expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: { $exists: false } });
+      expect(JOSH_GIGS_FILTER.$or).not.toContainEqual({ artist: 'josh' });
     });
   });
 });

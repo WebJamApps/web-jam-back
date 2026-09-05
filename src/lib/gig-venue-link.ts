@@ -19,12 +19,12 @@ import { DEFAULT_ARTIST } from './artist.js';
 // linkage.
 //
 // web-jam-back#1058: standardizes on DEFAULT_ARTIST ('jammusic') as the
-// primary tenant filter alongside pre-#885 field-less records. While the
-// migration script is deployed and pending production execution, the retired
-// 'josh' slug is safely retained as an explicit backward-compatibility fallback so
-// unmigrated production records remain visible to venue/outreach consumers.
+// primary tenant filter alongside pre-#885 field-less records. With the
+// operational data migration completed in production, JOSH_GIGS_FILTER is now
+// standardized strictly on DEFAULT_ARTIST ('jammusic') and pre-#885 field-less
+// records (Phase 3 narrowing).
 export const JOSH_GIGS_FILTER = {
-  $or: [{ artist: DEFAULT_ARTIST }, { artist: 'josh' }, { artist: { $exists: false } }],
+  $or: [{ artist: DEFAULT_ARTIST }, { artist: { $exists: false } }],
 };
 
 export interface LinkableGig {
