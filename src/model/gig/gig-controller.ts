@@ -90,7 +90,7 @@ class GigController extends ArtistController {
   async getDefaultPromoImage(_req: Request, res: Response): Promise<unknown> { // eslint-disable-line class-methods-use-this
     const assetPath = resolveDefaultPromoAsset();
     if (!assetPath) return res.status(404).json({ message: 'default promo image not found' });
-    return res.sendFile(assetPath);
+    return res.sendFile(assetPath, { dotfiles: 'allow' });
   }
 
   // POST /gig/:id/announce (#962) — publish an approved caption + image to

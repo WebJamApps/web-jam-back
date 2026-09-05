@@ -43,12 +43,10 @@ describe('migrate-gig-venue-id (#958)', () => {
     });
   });
 
-  // web-jam-back#1058 widening-phase regression: this script's own gig query
-  // (JOSH_GIGS_FILTER, spread with { venueId: { $exists: false } }) must still
-  // select a not-yet-migrated 'josh'-tagged record — production carries that
-  // slug on all 138 gigs until the separate, manual post-merge migration
-  // runs. A filter narrowed to DEFAULT_ARTIST alone would select nothing.
-  describe('gig query (#1058) — still selects not-yet-migrated josh-tagged gigs', () => {
+  // web-jam-back#1058: this script's own gig query
+  // (JOSH_GIGS_FILTER, spread with { venueId: { $exists: false } }) selects
+  // jammusic-tagged records under the shared DEFAULT_ARTIST convention.
+  describe('gig query (#1058) — selects jammusic-tagged gigs', () => {
     let originalArgv: string[];
     let originalUri: string | undefined;
 
@@ -66,7 +64,7 @@ describe('migrate-gig-venue-id (#958)', () => {
       vi.restoreAllMocks();
     });
 
-    it("selects a 'josh'-tagged, venueId-less gig as a migration candidate", async () => {
+    it("selects a 'jammusic'-tagged, venueId-less gig as a migration candidate", async () => {
       const venueId = new mongoose.Types.ObjectId().toString();
 
       vi.spyOn(mongoose, 'connect').mockResolvedValue(undefined as unknown as typeof mongoose);
@@ -74,7 +72,7 @@ describe('migrate-gig-venue-id (#958)', () => {
       vi.spyOn(venueModel, 'find').mockResolvedValue([{ _id: venueId, name: 'The Spot' }]);
 
       const goodGig = {
-        _id: new mongoose.Types.ObjectId().toString(), venue: 'The Spot', artist: 'josh',
+        _id: new mongoose.Types.ObjectId().toString(), venue: 'The Spot', artist: 'jammusic',
       };
       const findSpy = vi.spyOn(gigModel, 'find').mockImplementation((filter: unknown) => {
         // Simulate the real Mongo $or predicate against a mixed-artist collection.

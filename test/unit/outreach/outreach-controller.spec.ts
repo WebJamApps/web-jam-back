@@ -949,19 +949,14 @@ describe('Outreach Controller (#844 batch model)', () => {
       });
     });
 
-    // web-jam-back#1058 widening-phase regression: production still carries
-    // the retired 'josh' slug on every gig record until the manual
-    // post-merge migration runs. Simulate the real Mongo $or predicate
-    // (rather than mocking gigModel.find to ignore the filter, as the other
-    // tests in this block do) to prove a not-yet-migrated 'josh'-tagged gig
-    // still triggers the safety exclusion — a filter narrowed to
-    // DEFAULT_ARTIST alone would see zero of these records and silently stop
-    // excluding a venue Josh is already booked at.
-    describe("JOSH_GIGS_FILTER widening (#1058) — 'josh'-tagged gigs still count", () => {
-      it("still drops a venue whose linked gig is not-yet-migrated ('josh'-tagged) and within the spacing window", async () => {
+    // web-jam-back#1058: narrowed to DEFAULT_ARTIST ('jammusic').
+    // Simulate the real Mongo $or predicate to prove a 'jammusic'-tagged gig
+    // triggers the safety exclusion.
+    describe("JOSH_GIGS_FILTER narrowing (#1058) — 'jammusic'-tagged gigs count", () => {
+      it("drops a venue whose linked gig is 'jammusic'-tagged and within the spacing window", async () => {
         (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'a', gigInterval: 0 }]));
         (gigModel as any).find = vi.fn((filter: any) => {
-          const gig = { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString(), artist: 'josh' };
+          const gig = { venueId: 'a', datetime: new Date(Date.now() + 86400000).toISOString(), artist: 'jammusic' };
           const matches = filter.$or.some((clause: any) => (
             clause.artist === gig.artist
             || (clause.artist && clause.artist.$exists === false && gig.artist === undefined)
