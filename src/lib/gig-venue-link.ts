@@ -18,15 +18,24 @@ import { DEFAULT_ARTIST } from './artist.js';
 // filterEligible so Tim's calendar (#922) never leaks into Josh's venue/outreach
 // linkage.
 //
-// web-jam-back#1058: matches the shared DEFAULT_ARTIST slug ('jammusic'),
-// NOT the literal string 'josh'. Josh & Maria's gig records used to carry
-// `artist: 'josh'` explicitly, which never matched artistListFilter's own
-// default-tenant $or (src/lib/artist.ts) — a plain `GET /gig` with no query
-// returned an empty array even though the records existed. #1058's migration
-// re-tags every one of those records to `artist: 'jammusic'`; this filter is
-// updated to match, and reuses the shared constant so the two can never drift
-// again.
-export const JOSH_GIGS_FILTER = { $or: [{ artist: DEFAULT_ARTIST }, { artist: { $exists: false } }] };
+// web-jam-back#1058: WIDENING phase (issue item 1), not the final narrowing
+// (item 2). Josh & Maria's gig records still carry the retired literal
+// `'josh'` slug in production — the migration script that re-tags them to
+// the shared DEFAULT_ARTIST ('jammusic') is a manual, post-merge step run
+// separately against prod. Until that migration actually runs, every one of
+// the 138 existing gig records is tagged `'josh'`, not `'jammusic'`. If this
+// filter matched ONLY DEFAULT_ARTIST (plus the field-less case), every
+// consumer below would see zero of those records in the window between this
+// deploy and the manual migration run — silently, with no error anywhere.
+// So this filter matches BOTH slugs for that transition window: the retired
+// `'josh'` literal (still-untouched prod data), the shared DEFAULT_ARTIST
+// ('jammusic', for records already migrated), and pre-#885 field-less
+// records. Narrowing this back down to DEFAULT_ARTIST alone, once the
+// migration has actually run against production, is the issue's own item 3
+// — a separate, later change, not part of this one.
+export const JOSH_GIGS_FILTER = {
+  $or: [{ artist: 'josh' }, { artist: DEFAULT_ARTIST }, { artist: { $exists: false } }],
+};
 
 export interface LinkableGig {
   _id?: unknown;

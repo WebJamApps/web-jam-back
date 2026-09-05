@@ -43,6 +43,61 @@ describe('migrate-gig-venue-id (#958)', () => {
     });
   });
 
+  // web-jam-back#1058 widening-phase regression: this script's own gig query
+  // (JOSH_GIGS_FILTER, spread with { venueId: { $exists: false } }) must still
+  // select a not-yet-migrated 'josh'-tagged record — production carries that
+  // slug on all 138 gigs until the separate, manual post-merge migration
+  // runs. A filter narrowed to DEFAULT_ARTIST alone would select nothing.
+  describe('gig query (#1058) — still selects not-yet-migrated josh-tagged gigs', () => {
+    let originalArgv: string[];
+    let originalUri: string | undefined;
+
+    beforeEach(() => {
+      originalArgv = process.argv;
+      originalUri = process.env.MONGO_DB_URI;
+      process.argv = ['node', 'migrate-gig-venue-id.js'];
+      process.env.MONGO_DB_URI = 'mongodb://localhost:27017/web-jam-test';
+    });
+
+    afterEach(() => {
+      process.argv = originalArgv;
+      if (originalUri === undefined) delete process.env.MONGO_DB_URI;
+      else process.env.MONGO_DB_URI = originalUri;
+      vi.restoreAllMocks();
+    });
+
+    it("selects a 'josh'-tagged, venueId-less gig as a migration candidate", async () => {
+      const venueId = new mongoose.Types.ObjectId().toString();
+
+      vi.spyOn(mongoose, 'connect').mockResolvedValue(undefined as unknown as typeof mongoose);
+      vi.spyOn(mongoose.connection, 'close').mockResolvedValue(undefined);
+      vi.spyOn(venueModel, 'find').mockResolvedValue([{ _id: venueId, name: 'The Spot' }]);
+
+      const goodGig = {
+        _id: new mongoose.Types.ObjectId().toString(), venue: 'The Spot', artist: 'josh',
+      };
+      const findSpy = vi.spyOn(gigModel, 'find').mockImplementation((filter: unknown) => {
+        // Simulate the real Mongo $or predicate against a mixed-artist collection.
+        const f = filter as { $or: { artist?: string | { $exists: boolean } }[] };
+        const matches = f.$or.some((clause) => (
+          clause.artist === goodGig.artist
+          || (typeof clause.artist === 'object' && clause.artist?.$exists === false && (goodGig as any).artist === undefined)
+        ));
+        return Promise.resolve(matches ? [goodGig] : []);
+      });
+      vi.spyOn(gigModel, 'findByIdAndUpdate').mockResolvedValue({});
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await run();
+
+      expect(findSpy).toHaveBeenCalled();
+      const summary = logSpy.mock.calls.map((c) => c[0]).find(
+        (l): l is string => typeof l === 'string' && l.includes('matched exactly one venue'),
+      );
+      expect(summary).toContain('1 matched exactly one venue by name');
+    });
+  });
+
   // web-jam-back#964 follow-up (Josh-approved, folded into #962's PR) — the
   // venue fetch must exclude archived venues, so an archived venue can
   // neither link a gig nor create an ambiguous same-name collision against an
