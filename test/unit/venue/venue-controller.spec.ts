@@ -1105,8 +1105,11 @@ describe('Venue Controller', () => {
     });
 
     // web-jam-back#922: gigs is a shared collection — Tim's calendar must never
-    // gate Josh's outreach eligibility.
-    it('does not drop a venue for a Tim-only gig, but still drops for josh/artist-less gigs', async () => {
+    // gate Josh's outreach eligibility. web-jam-back#1058: the fixture uses
+    // the current 'jammusic' slug (the retired 'josh' slug no longer matches
+    // JOSH_GIGS_FILTER after the #1058 re-tag) so this still proves artist
+    // scoping under the new convention.
+    it('does not drop a venue for a Tim-only gig, but still drops for jammusic/artist-less gigs', async () => {
       c.model.find = vi.fn(() => Promise.resolve([
         { name: 'Venue X' }, { name: 'Venue Y' }, { name: 'Venue Z' },
       ]));
@@ -1114,7 +1117,7 @@ describe('Venue Controller', () => {
         // Simulate the real Mongo $or predicate against a mixed-artist collection.
         const all = [
           { venue: 'Venue X', datetime: '2026-07-15T00:00:00.000Z', artist: 'tim' },
-          { venue: 'Venue Y', datetime: '2026-07-15T00:00:00.000Z', artist: 'josh' },
+          { venue: 'Venue Y', datetime: '2026-07-15T00:00:00.000Z', artist: 'jammusic' },
           { venue: 'Venue Z', datetime: '2026-07-15T00:00:00.000Z' }, // pre-migration, no artist field
         ];
         const matches = all.filter((g) => filter.$or.some((clause: any) => (

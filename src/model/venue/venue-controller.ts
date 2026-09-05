@@ -375,9 +375,9 @@ class VenueController extends Controller {
     const end = new Date(target); end.setMonth(end.getMonth() + ELIGIBILITY_WINDOW_MONTHS);
     let gigs: GigDoc[];
     try {
-      gigs = await gigModel.find({
-        $or: [{ artist: 'josh' }, { artist: { $exists: false } }],
-      }) as unknown as GigDoc[];
+      // web-jam-back#1058: reference the shared constant (was an inlined
+      // duplicate of it) so the two can never drift out of sync again.
+      gigs = await gigModel.find(JOSH_GIGS_FILTER) as unknown as GigDoc[];
     } catch (e) { return Promise.reject(e); }
     // `booked` entries are already lowercased by stripHtml, matching `name` below.
     const booked = gigs

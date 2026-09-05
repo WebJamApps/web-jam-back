@@ -148,8 +148,11 @@ describe('gig-venue-link (#958)', () => {
   });
 
   describe('JOSH_GIGS_FILTER', () => {
-    it("scopes to Josh's gigs or pre-#885 records with no artist field", () => {
-      expect(JOSH_GIGS_FILTER).toEqual({ $or: [{ artist: 'josh' }, { artist: { $exists: false } }] });
+    // web-jam-back#1058: matches the shared 'jammusic' slug, not the retired
+    // 'josh' one — Josh & Maria's gig records were re-tagged to 'jammusic'
+    // so they agree with artistListFilter's own default-tenant convention.
+    it("scopes to Josh's gigs (artist: 'jammusic') or pre-#885 records with no artist field", () => {
+      expect(JOSH_GIGS_FILTER).toEqual({ $or: [{ artist: 'jammusic' }, { artist: { $exists: false } }] });
     });
   });
 });

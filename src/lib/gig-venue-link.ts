@@ -10,13 +10,23 @@
 // GET /outreach/candidates safety exclusion + weekend-gig surfacing
 // (outreach-controller.ts) can never drift into three subtly different
 // matching implementations.
-//
+import { DEFAULT_ARTIST } from './artist.js';
+
 // Gigs are shared across artists (#885); every caller here scopes its OWN gig
 // query with JOSH_GIGS_FILTER (Josh & Maria's gigs, or pre-#885 records with no
 // artist field) — mirrors the existing convention in venue-controller's
 // filterEligible so Tim's calendar (#922) never leaks into Josh's venue/outreach
 // linkage.
-export const JOSH_GIGS_FILTER = { $or: [{ artist: 'josh' }, { artist: { $exists: false } }] };
+//
+// web-jam-back#1058: matches the shared DEFAULT_ARTIST slug ('jammusic'),
+// NOT the literal string 'josh'. Josh & Maria's gig records used to carry
+// `artist: 'josh'` explicitly, which never matched artistListFilter's own
+// default-tenant $or (src/lib/artist.ts) — a plain `GET /gig` with no query
+// returned an empty array even though the records existed. #1058's migration
+// re-tags every one of those records to `artist: 'jammusic'`; this filter is
+// updated to match, and reuses the shared constant so the two can never drift
+// again.
+export const JOSH_GIGS_FILTER = { $or: [{ artist: DEFAULT_ARTIST }, { artist: { $exists: false } }] };
 
 export interface LinkableGig {
   _id?: unknown;
