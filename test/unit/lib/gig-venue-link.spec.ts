@@ -156,9 +156,9 @@ describe('gig-venue-link (#958)', () => {
     });
 
     it("matches DEFAULT_ARTIST and retains 'josh' as compatibility fallback", () => {
-      expect((JOSH_GIGS_FILTER as any).$or).toContainEqual({ artist: DEFAULT_ARTIST });
-      expect((JOSH_GIGS_FILTER as any).$or).toContainEqual({ artist: 'josh' });
-      expect((JOSH_GIGS_FILTER as any).$or).toContainEqual({ artist: { $exists: false } });
+      expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: DEFAULT_ARTIST });
+      expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: 'josh' });
+      expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: { $exists: false } });
     });
   });
 });
