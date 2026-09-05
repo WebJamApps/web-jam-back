@@ -11,9 +11,13 @@
 //
 // Per-collection behavior:
 //   - gigs (133 docs in the wj-prod export): web-jam-data has no gigs of its
-//     own, so this is a clean move — every doc is tagged `artist: "josh"`
+//     own, so this is a clean move — every doc is tagged `artist: "jammusic"`
 //     (web-jam-data is expected to host more than one artist's gigs
-//     eventually; wj-prod only ever tracked Josh's).
+//     eventually; wj-prod only ever tracked Josh's). Originally tagged
+//     `"josh"` at the time of the #897a restore; updated to `"jammusic"` by
+//     web-jam-back#1058 so a future re-run of this restore path (disaster
+//     recovery from an old wj-prod backup) never reintroduces the retired
+//     slug that #1058's migration re-tagged away from live data.
 //   - books (11 docs, JaMmusic slideshow images): only docs with
 //     `type === 'JaMmusic-music'` are kept; everything else is dropped. Kept
 //     docs are redirected into a NEW collection, `jamPics` — NOT `books`,
@@ -28,7 +32,7 @@
 //     transform at an export containing other collections is harmless.
 export default function joshMigrationTransform(doc, collectionName) {
   if (collectionName === 'gigs') {
-    return { ...doc, artist: 'josh' };
+    return { ...doc, artist: 'jammusic' };
   }
   if (collectionName === 'books') {
     if (doc.type !== 'JaMmusic-music') return null;

@@ -1105,17 +1105,23 @@ describe('Venue Controller', () => {
     });
 
     // web-jam-back#922: gigs is a shared collection — Tim's calendar must never
-    // gate Josh's outreach eligibility.
-    it('does not drop a venue for a Tim-only gig, but still drops for josh/artist-less gigs', async () => {
+    // gate Josh's outreach eligibility. web-jam-back#1058: this is the
+    // WIDENING phase (issue item 1) — production still carries the retired
+    // 'josh' slug on all 138 records until the manual post-merge migration
+    // runs, so the fixture proves BOTH the still-untouched 'josh' slug and
+    // the already-migrated 'jammusic' slug are excluded from eligibility,
+    // while a Tim-only gig is not.
+    it('does not drop a venue for a Tim-only gig, but still drops for josh/jammusic/artist-less gigs', async () => {
       c.model.find = vi.fn(() => Promise.resolve([
-        { name: 'Venue X' }, { name: 'Venue Y' }, { name: 'Venue Z' },
+        { name: 'Venue X' }, { name: 'Venue Y' }, { name: 'Venue Z' }, { name: 'Venue W' },
       ]));
       (gigModel as any).find = vi.fn((filter: any) => {
         // Simulate the real Mongo $or predicate against a mixed-artist collection.
         const all = [
           { venue: 'Venue X', datetime: '2026-07-15T00:00:00.000Z', artist: 'tim' },
-          { venue: 'Venue Y', datetime: '2026-07-15T00:00:00.000Z', artist: 'josh' },
+          { venue: 'Venue Y', datetime: '2026-07-15T00:00:00.000Z', artist: 'jammusic' },
           { venue: 'Venue Z', datetime: '2026-07-15T00:00:00.000Z' }, // pre-migration, no artist field
+          { venue: 'Venue W', datetime: '2026-07-15T00:00:00.000Z', artist: 'josh' }, // not yet migrated
         ];
         const matches = all.filter((g) => filter.$or.some((clause: any) => (
           clause.artist === g.artist
@@ -1142,6 +1148,28 @@ describe('Venue Controller', () => {
         expect(status).toBe(200);
         expect(payload[0].lastGig.datetime).toBe('2026-01-01T00:00:00.000Z');
         expect(payload[0].nextGig.datetime).toBe('2099-01-01T00:00:00.000Z');
+      });
+
+      // web-jam-back#1058 widening-phase regression: a still-untouched
+      // 'josh'-tagged gig (the actual prod data shape until the manual
+      // post-merge migration runs) must still resolve lastGig — proving
+      // JOSH_GIGS_FILTER was not narrowed to DEFAULT_ARTIST alone, which
+      // would drop every one of the 138 existing records to blank linkage.
+      it("still resolves lastGig via venueId for a not-yet-migrated 'josh'-tagged gig", async () => {
+        const idA = new mongoose.Types.ObjectId().toString();
+        c.model.find = vi.fn(() => Promise.resolve([{ _id: idA, name: 'The Spot' }]));
+        (gigModel as any).find = vi.fn((filter: any) => {
+          const gig = { venueId: idA, datetime: '2026-01-01T00:00:00.000Z', artist: 'josh' };
+          const matches = filter.$or.some((clause: any) => (
+            clause.artist === gig.artist
+            || (clause.artist && clause.artist.$exists === false && gig.artist === undefined)
+          ));
+          return Promise.resolve(matches ? [gig] : []);
+        });
+        await c.listVenues({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(payload[0].lastGig).toBeTruthy();
+        expect(payload[0].lastGig.datetime).toBe('2026-01-01T00:00:00.000Z');
       });
 
       it('resolves via exact normalized-name match when venueId is absent', async () => {

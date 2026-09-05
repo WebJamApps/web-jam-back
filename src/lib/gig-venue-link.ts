@@ -10,13 +10,32 @@
 // GET /outreach/candidates safety exclusion + weekend-gig surfacing
 // (outreach-controller.ts) can never drift into three subtly different
 // matching implementations.
-//
+import { DEFAULT_ARTIST } from './artist.js';
+
 // Gigs are shared across artists (#885); every caller here scopes its OWN gig
 // query with JOSH_GIGS_FILTER (Josh & Maria's gigs, or pre-#885 records with no
 // artist field) — mirrors the existing convention in venue-controller's
 // filterEligible so Tim's calendar (#922) never leaks into Josh's venue/outreach
 // linkage.
-export const JOSH_GIGS_FILTER = { $or: [{ artist: 'josh' }, { artist: { $exists: false } }] };
+//
+// web-jam-back#1058: WIDENING phase (issue item 1), not the final narrowing
+// (item 2). Josh & Maria's gig records still carry the retired literal
+// `'josh'` slug in production — the migration script that re-tags them to
+// the shared DEFAULT_ARTIST ('jammusic') is a manual, post-merge step run
+// separately against prod. Until that migration actually runs, every one of
+// the 138 existing gig records is tagged `'josh'`, not `'jammusic'`. If this
+// filter matched ONLY DEFAULT_ARTIST (plus the field-less case), every
+// consumer below would see zero of those records in the window between this
+// deploy and the manual migration run — silently, with no error anywhere.
+// So this filter matches BOTH slugs for that transition window: the retired
+// `'josh'` literal (still-untouched prod data), the shared DEFAULT_ARTIST
+// ('jammusic', for records already migrated), and pre-#885 field-less
+// records. Narrowing this back down to DEFAULT_ARTIST alone, once the
+// migration has actually run against production, is the issue's own item 3
+// — a separate, later change, not part of this one.
+export const JOSH_GIGS_FILTER = {
+  $or: [{ artist: 'josh' }, { artist: DEFAULT_ARTIST }, { artist: { $exists: false } }],
+};
 
 export interface LinkableGig {
   _id?: unknown;

@@ -36,6 +36,19 @@ describe('The Gig API', () => {
     expect(Array.isArray(r.body)).toBe(true);
     expect(r.body[0].venue).toBe('The Spot on Kirk');
   });
+  // web-jam-back#1058: Josh & Maria's gig records were re-tagged from
+  // artist:'josh' to artist:'jammusic' so they agree with artistListFilter's
+  // default-tenant convention (src/lib/artist.ts) — before that migration, a
+  // plain GET /gig with no query returned an empty array even with matching
+  // records in the collection.
+  it('returns jammusic-tagged gigs on GET /gig with no artist query (#1058)', async () => {
+    await GigModel.create({ venue: 'Jammusic Tagged Venue', artist: 'jammusic' });
+    r = await request(app)
+      .get('/gig')
+      .set({ origin: allowedUrl });
+    expect(r.status).toBe(200);
+    expect(r.body.map((g: { venue: string }) => g.venue)).toContain('Jammusic Tagged Venue');
+  });
   it('finds a gig by id', async () => {
     const gig = await GigModel.create({ venue: 'Hamlet Vineyards', city: 'Bassett', usState: 'Virginia' });
     r = await request(app)
