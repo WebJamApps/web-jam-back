@@ -533,7 +533,13 @@ function initTableSorting() {
           return newDir === 'asc' ? cmp : -cmp;
         });
 
-        rows.forEach(function(r) { tbody.appendChild(r); });
+        rows.forEach(function(r, idx) {
+          tbody.appendChild(r);
+          var numCell = r.querySelector('.num-col');
+          if (numCell) {
+            numCell.textContent = String(idx + 1);
+          }
+        });
       });
     });
   });
