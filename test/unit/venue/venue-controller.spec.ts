@@ -163,6 +163,104 @@ describe('Venue Controller', () => {
       expect(((create.mock.calls[1] as unknown[])[0] as any).familyNearby).toBe(false);
     });
 
+    // JaMmusic#1345 — familyNearby is derive-by-default AND hand-settable.
+    // The derive-only tests above still pass unchanged; these cover the new
+    // explicit-value mode on the create path.
+    it('an explicit familyNearby:true on create beats an address that derives false (JaMmusic#1345)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        // Marion (24354) is outside every family anchor -> derives false.
+        body: {
+          name: 'Marion Spot', address: '1 Main St', zipCode: '24354', familyNearby: true,
+        },
+      }, resStub);
+      expect(status).toBe(201);
+      const arg = (create.mock.calls[0] as unknown[])[0] as any;
+      expect(arg.familyNearby).toBe(true);
+      expect(arg.familyNearbyOverride).toBe(true);
+    });
+
+    it('an explicit familyNearby:false on create beats an address that derives true (JaMmusic#1345)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        // Salem (24153) is a family anchor -> derives true.
+        body: {
+          name: 'Salem Spot', address: '1 Main St', zipCode: '24153', familyNearby: false,
+        },
+      }, resStub);
+      expect(status).toBe(201);
+      const arg = (create.mock.calls[0] as unknown[])[0] as any;
+      expect(arg.familyNearby).toBe(false);
+      expect(arg.familyNearbyOverride).toBe(true);
+    });
+
+    it('no explicit familyNearby on create marks the record as NOT overridden (JaMmusic#1345)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        body: { name: 'Salem Spot', address: '1 Main St', zipCode: '24153' },
+      }, resStub);
+      expect(status).toBe(201);
+      const arg = (create.mock.calls[0] as unknown[])[0] as any;
+      expect(arg.familyNearby).toBe(true);
+      expect(arg.familyNearbyOverride).toBe(false);
+    });
+
+    it('an explicit familyNearby survives an upsert onto an existing venue (JaMmusic#1345)', async () => {
+      const existingId = new mongoose.Types.ObjectId().toString();
+      c.model.find = vi.fn(() => Promise.resolve([
+        { _id: existingId, name: 'Marion Spot', city: 'Marion', address: '1 Main St', zipCode: '24354' },
+      ]));
+      const upd = vi.fn(() => Promise.resolve({ _id: existingId }));
+      c.model.findByIdAndUpdate = upd;
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'Marion Spot', city: 'Marion', address: '1 Main St', zipCode: '24354', familyNearby: true,
+        },
+      }, resStub);
+      expect(status).toBe(200);
+      const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+      expect(written.familyNearby).toBe(true);
+      expect(written.familyNearbyOverride).toBe(true);
+    });
+
+    it('a client-supplied familyNearbyOverride is stripped from the create body (JaMmusic#1345)', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'Marion Spot', address: '1 Main St', zipCode: '24354', familyNearbyOverride: true as any,
+        },
+      }, resStub);
+      expect(status).toBe(201);
+      const arg = (create.mock.calls[0] as unknown[])[0] as any;
+      // Stripped, so the derive path ran and reset the marker to false.
+      expect(arg.familyNearby).toBe(false);
+      expect(arg.familyNearbyOverride).toBe(false);
+    });
+
+    it('rejects a non-boolean familyNearby (JaMmusic#1345)', async () => {
+      await c.createVenue({
+        user: 'a',
+        body: {
+          name: 'X', address: '1 Main St', zipCode: '24153', familyNearby: 'yes' as any,
+        },
+      }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('familyNearby must be a boolean');
+    });
+
     it('rejects an invalid email', async () => {
       await c.createVenue({ user: 'a', body: { name: 'X', email: 'nope' } }, resStub);
       expect(status).toBe(400);
@@ -882,6 +980,132 @@ describe('Venue Controller', () => {
         expect(status).toBe(200);
         const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
         expect(written).not.toHaveProperty('familyNearby');
+      });
+
+      // JaMmusic#1345 — the PATCH half of the two-mode contract.
+      it('an explicit familyNearby on PATCH is stored and marked hand-set (JaMmusic#1345)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const find = vi.fn(() => Promise.resolve({ _id: id, name: 'Marion Spot', zipCode: '24354' }));
+        c.model.findById = find;
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { familyNearby: true } }, resStub);
+        expect(status).toBe(200);
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        // Marion derives false; the explicit true wins.
+        expect(written.familyNearby).toBe(true);
+        expect(written.familyNearbyOverride).toBe(true);
+        // No address key in the body and an explicit value given ⇒ no lookup needed.
+        expect(find).not.toHaveBeenCalled();
+      });
+
+      it('an explicit familyNearby wins even alongside an address change (JaMmusic#1345)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve({ _id: id, name: 'Spot', zipCode: '24354' }));
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        // Salem derives true, but the caller explicitly said false.
+        await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24153', familyNearby: false } }, resStub);
+        expect(status).toBe(200);
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        expect(written.familyNearby).toBe(false);
+        expect(written.familyNearbyOverride).toBe(true);
+      });
+
+      it('a hand-set familyNearby SURVIVES a later address-only PATCH (JaMmusic#1345)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        // Stored: Marion + a hand-set true.
+        c.model.findById = vi.fn(() => Promise.resolve({
+          _id: id, name: 'Spot', zipCode: '24354', familyNearby: true, familyNearbyOverride: true,
+        }));
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        // Correcting the street address must NOT silently un-tick the box.
+        await c.updateVenue({ user: 'agent', params: { id }, body: { address: '99 Elm St' } }, resStub);
+        expect(status).toBe(200);
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        expect(written).not.toHaveProperty('familyNearby');
+        expect(written).not.toHaveProperty('familyNearbyOverride');
+      });
+
+      it('with NO override present an address-only PATCH still recomputes as before (JaMmusic#1345)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve({
+          _id: id, name: 'Spot', zipCode: '24354', familyNearby: false,
+        }));
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { zipCode: '24153' } }, resStub);
+        expect(status).toBe(200);
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        expect(written.familyNearby).toBe(true);
+        expect(written.familyNearbyOverride).toBe(false);
+      });
+
+      it('familyNearby:null clears the override and restores the derived value (JaMmusic#1345)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.resolve({
+          _id: id, name: 'Marion Spot', zipCode: '24354', familyNearby: true, familyNearbyOverride: true,
+        }));
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { familyNearby: null as any } }, resStub);
+        expect(status).toBe(200);
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        // Back to deriving: Marion is not near family.
+        expect(written.familyNearby).toBe(false);
+        expect(written.familyNearbyOverride).toBe(false);
+      });
+
+      it('familyNearby:null with a failed lookup writes neither field (JaMmusic#1345)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        c.model.findById = vi.fn(() => Promise.reject(new Error('transient read failure')));
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { familyNearby: null as any } }, resStub);
+        expect(status).toBe(200);
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        expect(written).not.toHaveProperty('familyNearby');
+        expect(written).not.toHaveProperty('familyNearbyOverride');
+      });
+
+      it('a PATCH touching neither address nor familyNearby leaves both alone (JaMmusic#1345)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const find = vi.fn();
+        c.model.findById = find;
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { notes: 'nice room' } }, resStub);
+        expect(status).toBe(200);
+        expect(find).not.toHaveBeenCalled();
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        expect(written).not.toHaveProperty('familyNearby');
+        expect(written).not.toHaveProperty('familyNearbyOverride');
+      });
+
+      it('a client-supplied familyNearbyOverride is stripped from the PATCH body (JaMmusic#1345)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const find = vi.fn();
+        c.model.findById = find;
+        const upd = vi.fn(() => Promise.resolve({ _id: id }));
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({
+          user: 'agent', params: { id }, body: { familyNearbyOverride: true as any },
+        }, resStub);
+        expect(status).toBe(200);
+        const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+        expect(written).not.toHaveProperty('familyNearbyOverride');
+        expect(find).not.toHaveBeenCalled();
+      });
+
+      it('rejects a non-boolean familyNearby on PATCH (JaMmusic#1345)', async () => {
+        const id = new mongoose.Types.ObjectId().toString();
+        const upd = vi.fn();
+        c.model.findByIdAndUpdate = upd;
+        await c.updateVenue({ user: 'agent', params: { id }, body: { familyNearby: 1 as any } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('familyNearby must be a boolean');
+        expect(upd).not.toHaveBeenCalled();
       });
 
       it('explicit "" on a venue that HAS a zipCode ⇒ 400, nothing written', async () => {

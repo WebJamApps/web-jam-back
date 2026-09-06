@@ -10,7 +10,7 @@ import gigModel from '../gig/gig-facade.js';
 import {
   JOSH_GIGS_FILTER, groupGigsByVenue, type LinkableGig, type LinkableVenue,
 } from '#src/lib/gig-venue-link.js';
-import { computeDistanceKm, isFamilyNearby } from '#src/lib/geo-distance.js';
+import { computeDistanceKm, isFamilyNearby, type LocatableVenue } from '#src/lib/geo-distance.js';
 
 // #972 — country is a 2-letter code (ISO 3166-1 alpha-2 style, e.g. 'US',
 // 'CA'); case-insensitive here since the schema uppercase-normalizes on save.
@@ -81,7 +81,12 @@ interface VenueBody {
   payAmount?: number;
   audienceAttention?: string;
   personalFavorite?: boolean;
-  familyNearby?: boolean;
+  // JaMmusic#1345 — derived-by-default AND hand-settable (see venue-schema.ts
+  // for the full two-mode contract). `null` from a client means "clear my
+  // override, go back to deriving"; `familyNearbyOverride` is server-managed
+  // and stripped off request bodies, never accepted from a caller.
+  familyNearby?: boolean | null;
+  familyNearbyOverride?: boolean;
   distanceKm?: number | null;
   lastVerified?: string;
   notes?: string;
@@ -251,6 +256,40 @@ function invalidOptionalDate(value: string | undefined): boolean {
   return value !== undefined && value !== '' && Number.isNaN(new Date(value).getTime());
 }
 
+// JaMmusic#1345 — what a request body is asking for on `familyNearby`:
+//   'set'   an explicit boolean -> store it verbatim, mark it hand-set.
+//   'clear' an explicit null    -> drop the override, go back to deriving.
+//   'none'  key absent          -> #1060's original derive-only behaviour.
+type FamilyNearbyIntent = { kind: 'set'; value: boolean } | { kind: 'clear' } | { kind: 'none' };
+
+function readFamilyNearbyIntent(body: VenueBody): FamilyNearbyIntent {
+  if (!Object.prototype.hasOwnProperty.call(body, 'familyNearby')) return { kind: 'none' };
+  if (typeof body.familyNearby === 'boolean') return { kind: 'set', value: body.familyNearby };
+  return { kind: 'clear' };
+}
+
+// Only a boolean (set) or null/'' (clear) are meaningful; anything else is a
+// caller mistake worth a 400 rather than a silently-ignored field.
+function invalidFamilyNearby(body: VenueBody): boolean {
+  if (!Object.prototype.hasOwnProperty.call(body, 'familyNearby')) return false;
+  const { familyNearby } = body;
+  return typeof familyNearby !== 'boolean' && familyNearby !== null && (familyNearby as unknown) !== '';
+}
+
+// The CREATE half of the two-mode contract: an explicit boolean wins and is
+// marked as hand-set, otherwise derive from `source` exactly as #1060 did. A
+// fresh/upserted record always gets a definite `familyNearbyOverride` so its
+// mode is never ambiguous in storage.
+function applyFamilyNearbyOnWrite(body: VenueBody, source: LocatableVenue, intent: FamilyNearbyIntent): void {
+  if (intent.kind === 'set') {
+    body.familyNearby = intent.value;
+    body.familyNearbyOverride = true;
+    return;
+  }
+  body.familyNearby = isFamilyNearby(source);
+  body.familyNearbyOverride = false;
+}
+
 function validateFormatFields(body: VenueBody): string {
   if (body.email !== undefined && body.email !== '' && !isValidEmail(body.email)) {
     return 'A valid email is required';
@@ -292,6 +331,9 @@ function validateBody(body: VenueBody, partial: boolean): string {
   if (enumErr) return enumErr;
   if (invalidPayAmount(body.payAmount)) return 'payAmount must be a non-negative number';
   if (invalidGigInterval(body.gigInterval)) return 'gigInterval must be a non-negative whole number of months';
+  // JaMmusic#1345 — familyNearby is now writable; reject a non-boolean rather
+  // than dropping it on the floor.
+  if (invalidFamilyNearby(body)) return 'familyNearby must be a boolean, or null to restore the derived value';
   if (invalidOptionalDate(body.resumeBooking)) return 'resumeBooking must be a valid date';
   // #995 — bookedThrough validated identically to resumeBooking above.
   if (invalidOptionalDate(body.bookedThrough)) return 'bookedThrough must be a valid date';
@@ -309,11 +351,16 @@ function validateBody(body: VenueBody, partial: boolean): string {
 // #1060 — `distanceKm` is also derived/read-only (attached on read).
 // None of them are persisted via request bodies; silently drop them here
 // rather than erroring, so a round-tripped venue-edit form is a harmless no-op.
+// JaMmusic#1345 — `familyNearby` is NO LONGER stripped here: an explicit
+// boolean from the client is now honoured (see the two-mode contract in
+// venue-schema.ts). Its companion marker `familyNearbyOverride` IS stripped —
+// it is server-managed, set only as a side effect of an explicit familyNearby,
+// never accepted straight off a request body.
 function stripReadOnlyFields(body: Record<string, unknown>): void {
   delete body.bookingStatus;
   delete body.doNotContact;
   delete body.distanceKm;
-  delete body.familyNearby;
+  delete body.familyNearbyOverride;
 }
 
 // Privilege-first, role-fallback gate (mirrors PromoController). Reused for both
@@ -631,7 +678,10 @@ class VenueController extends Controller {
     body.address = normalizeAddress(body.address);
     // #1060 — derive familyNearby from the stored address fields (Salem, Roanoke,
     // Martinsville, Lynchburg, Gastonia, Rock Hill, Harrisonburg <= 20 miles).
-    body.familyNearby = isFamilyNearby(body);
+    // JaMmusic#1345 — unless the caller sent an explicit boolean, which wins and
+    // is recorded as hand-set (see the two-mode contract in venue-schema.ts).
+    const familyIntent = readFamilyNearbyIntent(body);
+    applyFamilyNearbyOnWrite(body, body, familyIntent);
 
     const actor = resolveActor(req, body);
     const resolved = await this.resolveExistingForCreate(body);
@@ -658,7 +708,10 @@ class VenueController extends Controller {
     }
 
     if (existing) {
-      body.familyNearby = isFamilyNearby({ ...existing, ...body });
+      // Re-derive against the merged record (the incoming body may omit
+      // address fields the stored venue already has) — but an explicit
+      // boolean still wins, same as the fresh-insert path above.
+      applyFamilyNearbyOnWrite(body, { ...existing, ...body } as LocatableVenue, familyIntent);
       let updated;
       try {
         updated = await this.model.findByIdAndUpdate(String(existing._id), {
@@ -667,7 +720,6 @@ class VenueController extends Controller {
       } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
       return res.status(200).json(updated);
     }
-    body.familyNearby = isFamilyNearby(body);
     const createBody: Record<string, unknown> = { ...body, status: body.status || 'active', lastModifiedBy: actor };
     if (emailNote) createBody.notes = VenueController.appendNote(body.notes, emailNote);
     let doc;
@@ -730,6 +782,39 @@ class VenueController extends Controller {
     return null;
   }
 
+  // The PATCH half of the two-mode familyNearby contract (venue-schema.ts).
+  // Mutates `body` in place; never errors — a failed lookup just means "leave
+  // the stored value alone", same conservative stance #1060 took.
+  //   - explicit boolean  -> store it, mark it hand-set. Wins over everything.
+  //   - explicit null      -> drop the override and recompute from the merged
+  //                          record, restoring derive-by-default.
+  //   - key absent          -> #1060's behaviour, with ONE addition: a venue
+  //                          whose `familyNearbyOverride` is true is left
+  //                          untouched, so editing its street address can never
+  //                          silently un-tick a value Josh chose by hand.
+  async applyFamilyNearbyUpdate(id: string, body: VenueBody): Promise<void> {
+    const intent = readFamilyNearbyIntent(body);
+    if (intent.kind === 'set') {
+      body.familyNearby = intent.value;
+      body.familyNearbyOverride = true;
+      return;
+    }
+    // Never write a raw null/'' through to storage — from here on the value is
+    // either recomputed below or left off the update entirely.
+    delete body.familyNearby;
+    const hasAddressUpdate = ['address', 'city', 'usState', 'zipCode'].some((k) => Object.prototype.hasOwnProperty.call(body, k));
+    if (intent.kind === 'none' && !hasAddressUpdate) return;
+    // Merge the existing document so a partial PATCH (e.g. only city or
+    // zipCode) evaluates complete location state. If the lookup fails, skip
+    // recomputing rather than deriving from an incomplete body.
+    let currentDoc: Record<string, unknown> | null = null;
+    try { currentDoc = await this.model.findById(id); } catch { /* best-effort lookup */ }
+    if (!currentDoc) return;
+    if (intent.kind === 'none' && currentDoc.familyNearbyOverride === true) return;
+    body.familyNearby = isFamilyNearby({ ...currentDoc, ...body } as LocatableVenue);
+    body.familyNearbyOverride = false;
+  }
+
   // PATCH /venue/:id — partial update. See applyAddressUpdate & applyZipCodeUpdate above for the
   // address- and zipCode-immutability rules this enforces.
   async updateVenue(req: AuthIdRequest, res: Response): Promise<unknown> {
@@ -745,18 +830,7 @@ class VenueController extends Controller {
     if (addressErr) return res.status(addressErr.status).json({ message: addressErr.message });
     const zipErr = await this.applyZipCodeUpdate(req.params.id, body);
     if (zipErr) return res.status(zipErr.status).json({ message: zipErr.message });
-    // #1060 — recompute familyNearby when location fields change. Merges the
-    // existing document so partial PATCHes (e.g. updating only city or zipCode)
-    // evaluate complete location state. If the lookup fails/errors, skip recomputing
-    // rather than calculating from an incomplete body and corrupting stored data.
-    const hasAddressUpdate = ['address', 'city', 'usState', 'zipCode'].some((k) => Object.prototype.hasOwnProperty.call(body, k));
-    if (hasAddressUpdate) {
-      let currentDoc: Record<string, unknown> | null = null;
-      try { currentDoc = await this.model.findById(req.params.id); } catch { /* best-effort lookup */ }
-      if (currentDoc) {
-        body.familyNearby = isFamilyNearby({ ...currentDoc, ...body });
-      }
-    }
+    await this.applyFamilyNearbyUpdate(req.params.id, body);
     let doc;
     try {
       doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, lastModifiedBy: resolveActor(req, body) });
