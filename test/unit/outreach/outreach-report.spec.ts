@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
 
-const { default: controller } = await import('#src/model/outreach/outreach-controller.js');
+const { default: controller, TABLE_SORT_JS } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: reportModel } = await import('#src/model/outreach/outreach-report-facade.js');
 
@@ -242,6 +242,80 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
       expect(headers['Cache-Control']).toBe('public, max-age=31536000, immutable');
       expect(rawBody).toContain('initTableSorting');
       expect(rawBody).toContain('copyPitch');
+    });
+
+    it('includes sequential row re-indexing logic in served script', () => {
+      const req: any = {};
+      c.getTableSortScript(req, resStub);
+      expect(status).toBe(200);
+      expect(rawBody).toContain('.num-col');
+      expect(rawBody).toContain('numCell.textContent = String(idx + 1)');
+    });
+
+    it('re-numbers row numbers sequentially when sorting rows via TABLE_SORT_JS', () => {
+      let sortCol1Handler: (() => void) | null = null;
+      const makeTh = (colIndex: number) => ({
+        classList: { add: vi.fn() },
+        appendChild: vi.fn(),
+        getAttribute: vi.fn(() => null),
+        setAttribute: vi.fn(),
+        removeAttribute: vi.fn(),
+        querySelector: vi.fn(() => ({ textContent: '' })),
+        addEventListener: vi.fn((event: string, handler: () => void) => {
+          if (event === 'click' && colIndex === 1) sortCol1Handler = handler;
+        }),
+      });
+
+      const th0 = makeTh(0);
+      const th1 = makeTh(1);
+
+      const row1Cell0 = { textContent: '1', innerText: '1' };
+      const row1Cell1 = { textContent: 'Zeta Venue', innerText: 'Zeta Venue' };
+      const row1 = {
+        children: [row1Cell0, row1Cell1],
+        querySelector: vi.fn((sel: string) => (sel === '.num-col' ? row1Cell0 : null)),
+      };
+
+      const row2Cell0 = { textContent: '2', innerText: '2' };
+      const row2Cell1 = { textContent: 'Alpha Venue', innerText: 'Alpha Venue' };
+      const row2 = {
+        children: [row2Cell0, row2Cell1],
+        querySelector: vi.fn((sel: string) => (sel === '.num-col' ? row2Cell0 : null)),
+      };
+
+      const rowsList: any[] = [row1, row2];
+      const tbodyMock: any = {
+        querySelectorAll: vi.fn(() => rowsList),
+        appendChild: vi.fn((r: any) => {
+          const idx = rowsList.indexOf(r);
+          if (idx !== -1) rowsList.splice(idx, 1);
+          rowsList.push(r);
+        }),
+      };
+
+      const tableMock: any = {
+        querySelectorAll: vi.fn((sel: string) => (sel === 'thead th' ? [th0, th1] : [])),
+        querySelector: vi.fn((sel: string) => (sel === 'tbody' ? tbodyMock : null)),
+      };
+
+      const docMock: any = {
+        querySelectorAll: vi.fn((sel: string) => (sel === 'table.candidate-table' ? [tableMock] : [])),
+        createElement: vi.fn(() => ({ className: '', textContent: '' })),
+        readyState: 'complete',
+      };
+
+      // eslint-disable-next-line sonarjs/code-eval
+      new Function('document', TABLE_SORT_JS)(docMock);
+
+      expect(sortCol1Handler).toBeDefined();
+      if (sortCol1Handler) {
+        (sortCol1Handler as () => void)();
+      }
+
+      // After sorting by column 1 asc ("Alpha Venue" before "Zeta Venue"):
+      // row2 (Alpha Venue) is now row 0, row1 (Zeta Venue) is now row 1.
+      expect(row2Cell0.textContent).toBe('1');
+      expect(row1Cell0.textContent).toBe('2');
     });
   });
 
