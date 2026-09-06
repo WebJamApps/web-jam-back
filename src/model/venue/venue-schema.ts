@@ -207,12 +207,32 @@ const venueSchema = new Schema({
   //   noise — `low`/`medium`/`high`, left unset until a human rates it.
   // - personalFavorite: would Josh & Maria go here themselves as patrons.
   // - familyNearby: is the venue within 20 miles of a city where Josh & Maria
-  //   have family — derived from the venue's address (see the paired
-  //   distance-derivation issue), not hand-set; no default here since this
-  //   issue only adds the field slot and does not populate it.
+  //   have family. TWO-MODE CONTRACT (JaMmusic#1345, widening #1060's
+  //   derive-only behaviour): it is DERIVED from the venue's address by
+  //   default, AND hand-settable — not one or the other.
+  //     * A write that carries no `familyNearby` key behaves exactly as
+  //       #1060 did: the value is computed from address/city/usState/zipCode
+  //       via isFamilyNearby() and `familyNearbyOverride` stays false.
+  //     * A write that carries an explicit boolean `familyNearby` stores that
+  //       boolean verbatim and sets `familyNearbyOverride: true`.
+  //     * `familyNearby: null` clears the override and restores the derived
+  //       value (the ONLY way back to derive-by-default).
+  //   Either way the stored `familyNearby` is a plain boolean, so every
+  //   reader (the list/detail read paths, backfill-family-nearby.ts, the
+  //   AdminVenues Prospect Score sort — JaMmusic#1139) is unaffected and does
+  //   not need to know which mode produced it.
+  // - familyNearbyOverride: the persisted marker for "a human chose this".
+  //   Its whole job is to survive a LATER ADDRESS EDIT — updateVenue's
+  //   address recompute skips a venue whose override is true, so correcting a
+  //   street address can never silently un-tick a box Josh ticked. Server-
+  //   managed: a client never writes this field directly (it is stripped from
+  //   request bodies like the other read-only fields); it is set as a side
+  //   effect of sending `familyNearby`. Absent/false on every legacy record,
+  //   which is exactly the derive-by-default behaviour they already had.
   audienceAttention: { type: String, required: false, enum: ['low', 'medium', 'high'] },
   personalFavorite: { type: Boolean, required: false, default: false },
   familyNearby: { type: Boolean, required: false },
+  familyNearbyOverride: { type: Boolean, required: false, default: false },
   lastContacted: { type: Date, required: false },
   // #980 (2026-07-18) — `doNotContact` (#923's permanent global outcome
   // standing, set by a `not-interested` outreach outcome) is DELETED: folded
