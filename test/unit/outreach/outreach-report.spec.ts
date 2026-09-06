@@ -249,7 +249,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
       c.getTableSortScript(req, resStub);
       expect(status).toBe(200);
       expect(rawBody).toContain('.num-col');
-      expect(rawBody).toContain('numCell.textContent = idx + 1');
+      expect(rawBody).toContain('numCell.textContent = String(idx + 1)');
     });
 
     it('re-numbers row numbers sequentially when sorting rows via TABLE_SORT_JS', () => {
@@ -280,7 +280,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
       const row2Cell1 = { textContent: 'Alpha Venue', innerText: 'Alpha Venue' };
       const row2 = {
         children: [row2Cell0, row2Cell1],
-        querySelector: vi.fn(() => null), // fallback to children[0]
+        querySelector: vi.fn((sel: string) => (sel === '.num-col' ? row2Cell0 : null)),
       };
 
       const rowsList: any[] = [row1, row2];
@@ -305,7 +305,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
       };
 
       // eslint-disable-next-line sonarjs/code-eval
-      new Function('document', `${TABLE_SORT_JS}; initTableSorting();`)(docMock);
+      new Function('document', TABLE_SORT_JS)(docMock);
 
       expect(sortCol1Handler).toBeDefined();
       if (sortCol1Handler) {
@@ -314,8 +314,8 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
 
       // After sorting by column 1 asc ("Alpha Venue" before "Zeta Venue"):
       // row2 (Alpha Venue) is now row 0, row1 (Zeta Venue) is now row 1.
-      expect(row2Cell0.textContent).toBe(1);
-      expect(row1Cell0.textContent).toBe(2);
+      expect(row2Cell0.textContent).toBe('1');
+      expect(row1Cell0.textContent).toBe('2');
     });
   });
 

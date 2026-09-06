@@ -535,9 +535,9 @@ function initTableSorting() {
 
         rows.forEach(function(r, idx) {
           tbody.appendChild(r);
-          var numCell = r.querySelector('.num-col') || r.children[0];
+          var numCell = r.querySelector('.num-col');
           if (numCell) {
-            numCell.textContent = idx + 1;
+            numCell.textContent = String(idx + 1);
           }
         });
       });
