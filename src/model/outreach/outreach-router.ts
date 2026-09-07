@@ -133,6 +133,41 @@ router.route('/report/:weekend')
     void action();
   });
 
+// Gate 1: target venue-set approval (web-jam-back#1078, D-39, D-40, D-41).
+const handleVenueApprovalPost = (req: express.Request, res: express.Response) => {
+  const action = routeUtils.makeAction(req, res, 'recordVenueApproval', controller, authUtils);
+  void action();
+};
+const handleVenueApprovalGet = (req: express.Request, res: express.Response) => {
+  const action = routeUtils.makeAction(req, res, 'getVenueApproval', controller, authUtils);
+  void action();
+};
+router.route('/approval/venue-set').post(handleVenueApprovalPost).get(handleVenueApprovalGet);
+router.route('/approval/venue-set/:batchId').get(handleVenueApprovalGet);
+router.route('/approval/gate1').post(handleVenueApprovalPost).get(handleVenueApprovalGet);
+router.route('/approval/gate1/:batchId').get(handleVenueApprovalGet);
+
+// Gate 2: per-email draft fingerprints approval (web-jam-back#1078, D-39, D-40, D-41).
+const handleDraftApprovalPost = (req: express.Request, res: express.Response) => {
+  const action = routeUtils.makeAction(req, res, 'recordDraftApproval', controller, authUtils);
+  void action();
+};
+const handleDraftApprovalGet = (req: express.Request, res: express.Response) => {
+  const action = routeUtils.makeAction(req, res, 'getDraftApproval', controller, authUtils);
+  void action();
+};
+router.route('/approval/draft-fingerprints').post(handleDraftApprovalPost).get(handleDraftApprovalGet);
+router.route('/approval/draft-fingerprints/:batchId').get(handleDraftApprovalGet);
+router.route('/approval/gate2').post(handleDraftApprovalPost).get(handleDraftApprovalGet);
+router.route('/approval/gate2/:batchId').get(handleDraftApprovalGet);
+
+// Combined batch approval read-back
+router.route('/approval/:batchId')
+  .get((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'getBatchApproval', controller, authUtils);
+    void action();
+  });
+
 router.route('/:id')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'getOutreach', controller, authUtils);
