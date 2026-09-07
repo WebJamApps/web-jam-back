@@ -116,6 +116,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     // exclusion + weekend surfacing); default to empty so unrelated tests
     // never hit the real DB. Tests exercising the linkage override this.
     (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+    c.verifyBatchDispatch = vi.fn(() => Promise.resolve({ ok: true }));
   });
 
   describe('authorize', () => {
@@ -618,6 +619,19 @@ describe('Outreach Controller (#844 batch model)', () => {
       await c.sendBatch({ user: 'opus', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(200);
       expect(payload.sent).toBe(1);
+    });
+
+    it('refuses dispatch when verifyBatchDispatch check fails (#1079)', async () => {
+      asApprover();
+      c.verifyBatchDispatch = vi.fn(() => Promise.resolve({
+        ok: false,
+        status: 403,
+        message: 'dispatch refused: Gate 1 venue-set approval is missing',
+      }));
+      await c.sendBatch({ user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+      expect(status).toBe(403);
+      expect(payload.message).toContain('dispatch refused: Gate 1 venue-set approval is missing');
+      expect(sendMail).not.toHaveBeenCalled();
     });
   });
 
