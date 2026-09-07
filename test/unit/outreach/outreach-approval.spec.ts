@@ -42,6 +42,15 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
     status = 0;
     payload = undefined;
     vi.restoreAllMocks();
+    // findLatestOne is the deterministic (sorted) weekend-fallback lookup. It
+    // is stubbed HERE, in the test, rather than production branching on the
+    // presence of a vitest `.mock` property (web-jam-back#1082 review) — that
+    // branch meant no test ever ran the real sorted query. The default
+    // delegates to whatever findOne the individual test installs; the tests
+    // that care about ordering override it, and the sort itself is asserted
+    // against the real Schema.findOne(...).sort(...) chain below.
+    (venueApprovalModel as any).findLatestOne = vi.fn((q: any) => (venueApprovalModel as any).findOne(q));
+    (draftApprovalModel as any).findLatestOne = vi.fn((q: any) => (draftApprovalModel as any).findOne(q));
   });
 
   const asAgent = (privileges = ['outreach:create', 'outreach:edit']) => {
@@ -523,6 +532,34 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
       expect(vRes).toEqual({ batchId: 'b-del' });
       expect(dRes).toEqual({ batchId: 'b-del' });
     });
+
+    // web-jam-back#1082 review — assert the REAL findLatestOne against the
+    // Schema.findOne(...).sort(...).lean().exec() chain. Production no longer
+    // degrades to an unsorted findOne under test, so this is the query that
+    // actually runs against Mongo.
+    it('facades run findLatestOne as a deterministically sorted query', async () => {
+      const mockExec = vi.fn(() => Promise.resolve({ batchId: 'b-latest' }));
+      const mockLean = vi.fn(() => ({ exec: mockExec }));
+      const vSort = vi.fn(() => ({ lean: mockLean }));
+      const dSort = vi.fn(() => ({ lean: mockLean }));
+      (venueApprovalModel.Schema as any).findOne = vi.fn(() => ({ sort: vSort }));
+      (draftApprovalModel.Schema as any).findOne = vi.fn(() => ({ sort: dSort }));
+
+      // Drop the beforeEach convenience stub so the real facade method runs.
+      delete (venueApprovalModel as any).findLatestOne;
+      delete (draftApprovalModel as any).findLatestOne;
+
+      const query = { $or: [{ weekend: 'w-1' }] };
+      const vRes = await venueApprovalModel.findLatestOne(query);
+      const dRes = await draftApprovalModel.findLatestOne(query);
+
+      expect(vRes).toEqual({ batchId: 'b-latest' });
+      expect(dRes).toEqual({ batchId: 'b-latest' });
+      expect((venueApprovalModel.Schema as any).findOne).toHaveBeenCalledWith(query);
+      expect((draftApprovalModel.Schema as any).findOne).toHaveBeenCalledWith(query);
+      expect(vSort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
+      expect(dSort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
+    });
   });
 
   describe('Batch Dispatch Approval Guard (web-jam-back#1079, D-39, D-40, D-41, D-42, Step 6)', () => {
@@ -685,7 +722,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         expect(payload.sent).toBe(1);
       });
 
-      it('reuses verified rendered copy in performSend without duplicate resolvePitch calls (single-pass render)', async () => {
+      it('reuses verified rendered copy in performSend while still re-running the sendability guards', async () => {
         asApprover();
         const v1Id = oid();
         const v1 = validVenue({ _id: v1Id, name: 'Venue Alpha' });
@@ -722,8 +759,18 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
 
         expect(status).toBe(200);
         expect(sendMail).toHaveBeenCalledTimes(1);
-        // resolvePitch should be called only once during verification, NOT again in send loop
-        expect(resolvePitchSpy).toHaveBeenCalledTimes(1);
+        // web-jam-back#1082 review — this used to assert ONE resolvePitch call
+        // (verification only). That shape silently disabled the #844
+        // eligibility gate and the #923 dedup guard for every approved batch,
+        // because verification resolves with { skipDedup: true,
+        // requireEligible: false }. The correct contract is TWO resolves: the
+        // unguarded verification render, then a fully-guarded resolve in the
+        // send loop.
+        expect(resolvePitchSpy).toHaveBeenCalledTimes(2);
+        expect(resolvePitchSpy.mock.calls[0][1]).toEqual({ skipDedup: true, requireEligible: false });
+        // The send-loop resolve passes no opts, so production defaults apply
+        // (requireEligible: true, skipDedup: false).
+        expect(resolvePitchSpy.mock.calls[1][1]).toBeUndefined();
         // performSend was called with preRendered argument
         expect(performSendSpy).toHaveBeenCalledWith(
           expect.anything(),

@@ -158,8 +158,12 @@ export interface VerifiedPitchRender {
     attachments: { filename: string; path: string; cid: string }[];
   };
 }
+// Both approval facades define findLatestOne unconditionally — it is REQUIRED
+// here on purpose. An optional probe with an unsorted findOne fallback would
+// quietly return an arbitrary document in natural order the day the method
+// went missing, which is exactly the non-determinism this lookup exists to fix.
 type ApprovalModelWithLatest = {
-  findLatestOne?: (query: Record<string, unknown>, sort?: Record<string, 1 | -1>) => Promise<Record<string, unknown> | null>;
+  findLatestOne: (query: Record<string, unknown>, sort?: Record<string, 1 | -1>) => Promise<Record<string, unknown> | null>;
   findOne: (query: Record<string, unknown>) => Promise<Record<string, unknown> | null>;
 };
 interface FollowUp { sentAt?: Date; type?: string; messageId?: string; eventId?: string; step?: number }
@@ -1224,23 +1228,24 @@ class OutreachController extends Controller {
       }
     | { ok: false; venueName: string; reason: string }
   > {
-    const verified = verifiedMap?.get(venueId);
-    if (verified) {
-      return {
-        ok: true,
-        venue: verified.venue,
-        template: verified.template,
-        type: verified.type,
-        preRendered: verified.rendered,
-      };
-    }
+    // The Gate 2 verification pass (verifyVenueRenderedCopy) deliberately
+    // resolves with skipDedup/requireEligible OFF — it is a COPY-INTEGRITY
+    // check, not a sendability check, and must be able to render a venue in
+    // order to compare its fingerprint. So the sendability guards still have
+    // to run here, on every venue, verified or not: `requireEligible` is the
+    // core #844 vetting gate (a venue flipped not-interested between approval
+    // and dispatch must never be mailed) and the dedup guard is what stops a
+    // re-POSTed/retried batch mailing the same venue twice (#923).
     const ctx = await this.resolvePitch({ venueId, templateType: body.templateType, ...sendBody });
     if (ctx.error) {
       return { ok: false, venueName: ctx.error.venueName || UNKNOWN_VENUE_NAME, reason: ctx.error.message };
     }
     const { venue, template, type } = ctx as Required<PitchContext>;
+    // Verified bytes win: the copy Gate 2 approved is the copy that is mailed.
+    // Only the RENDERING is reused — the send/record state comes from this
+    // fresh, fully-guarded resolve.
     return {
-      ok: true, venue, template, type,
+      ok: true, venue, template, type, preRendered: verifiedMap?.get(venueId)?.rendered,
     };
   }
 
@@ -2163,10 +2168,7 @@ class OutreachController extends Controller {
     }
     const query = { $or: orClauses };
     const model = outreachVenueApprovalModel as unknown as ApprovalModelWithLatest;
-    if (typeof model.findLatestOne === 'function') {
-      return model.findLatestOne(query, { createdAt: -1, _id: -1 });
-    }
-    return outreachVenueApprovalModel.findOne(query);
+    return model.findLatestOne(query, { createdAt: -1, _id: -1 });
   }
 
   async getDraftFingerprintsApproval(batchId: string, weekend?: string): Promise<Record<string, unknown> | null> {
@@ -2179,10 +2181,7 @@ class OutreachController extends Controller {
     }
     const query = { $or: orClauses };
     const model = outreachDraftApprovalModel as unknown as ApprovalModelWithLatest;
-    if (typeof model.findLatestOne === 'function') {
-      return model.findLatestOne(query, { createdAt: -1, _id: -1 });
-    }
-    return outreachDraftApprovalModel.findOne(query);
+    return model.findLatestOne(query, { createdAt: -1, _id: -1 });
   }
 
   async verifyVenueRenderedCopy(

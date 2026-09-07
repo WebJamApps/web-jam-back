@@ -116,7 +116,13 @@ describe('Outreach Controller (#844 batch model)', () => {
     // exclusion + weekend surfacing); default to empty so unrelated tests
     // never hit the real DB. Tests exercising the linkage override this.
     (gigModel as any).find = vi.fn(() => Promise.resolve([]));
-    c.verifyBatchDispatch = vi.fn(() => Promise.resolve({ ok: true }));
+    // The real verifyBatchDispatch NEVER returns a bare { ok: true } — on
+    // success it always carries a verifiedRenderings Map (empty only when the
+    // batch had no venues). Stubbing the bare shape made every sendBatch test
+    // silently take a branch production does not take (web-jam-back#1082
+    // review). An EMPTY map is the honest default here: these tests assert the
+    // resolve-and-render path, and the verified-bytes path has its own tests.
+    c.verifyBatchDispatch = vi.fn(() => Promise.resolve({ ok: true, verifiedRenderings: new Map() }));
   });
 
   describe('authorize', () => {
@@ -632,6 +638,59 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(status).toBe(403);
       expect(payload.message).toContain('dispatch refused: Gate 1 venue-set approval is missing');
       expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    // web-jam-back#1082 review — the Gate 2 verified-render path (#1079) reuses
+    // the approved bytes but must NOT inherit verifyVenueRenderedCopy's
+    // { skipDedup: true, requireEligible: false } resolve. These three tests
+    // pin that: the guards still run, and the verified bytes still win.
+    describe('verified-render dispatch path (#1079)', () => {
+      const APPROVED_COPY = { subject: 'Approved Subject', html: '<p>approved copy</p>', attachments: [] };
+
+      const stubVerified = (venueIds: string[], rendered: any = APPROVED_COPY) => {
+        const verifiedRenderings = new Map(venueIds.map((id) => [id, {
+          venue: validVenue({ _id: id }), template: validTemplate(), type: 'Originals', rendered,
+        }]));
+        c.verifyBatchDispatch = vi.fn(() => Promise.resolve({ ok: true, verifiedRenderings }));
+      };
+
+      it('mails the verified bytes verbatim instead of re-rendering', async () => {
+        asApprover();
+        const vId = oid();
+        stubVerified([vId]);
+        await c.sendBatch({ user: 'josh', body: { venueIds: [vId], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(payload.sent).toBe(1);
+        expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({
+          subject: 'Approved Subject', html: '<p>approved copy</p>',
+        }));
+      });
+
+      it('still dedups an already-pitched venue on the verified path', async () => {
+        asApprover();
+        const vId = oid();
+        stubVerified([vId]);
+        c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'dupe', venueId: vId, status: 'sent' }));
+        await c.sendBatch({ user: 'josh', body: { venueIds: [vId], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(payload.sent).toBe(0);
+        expect(payload.skipped).toHaveLength(1);
+        expect(payload.skipped[0].reason).toContain('an active outreach already exists');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('still refuses an ineligible venue on the verified path', async () => {
+        asApprover();
+        const vId = oid();
+        stubVerified([vId]);
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(
+          validVenue({ _id: vId, name: 'The Revoked Room', outreachEligible: false }),
+        ));
+        await c.sendBatch({ user: 'josh', body: { venueIds: [vId], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+        expect(payload.sent).toBe(0);
+        expect(payload.skipped).toHaveLength(1);
+        expect(payload.skipped[0].reason).toContain('not outreach-eligible');
+        expect(payload.skipped[0].venueName).toBe('The Revoked Room');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
     });
   });
 
