@@ -684,6 +684,59 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         expect(sendMail).toHaveBeenCalledTimes(1);
         expect(payload.sent).toBe(1);
       });
+
+      it('reuses verified rendered copy in performSend without duplicate resolvePitch calls (single-pass render)', async () => {
+        asApprover();
+        const v1Id = oid();
+        const v1 = validVenue({ _id: v1Id, name: 'Venue Alpha' });
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(v1));
+
+        const fp1 = computeDraftFingerprint({
+          subject: 'Inquiry: Venue Alpha',
+          body: '<p>Hi Pat, booking for Oct 16-18.</p>',
+        });
+
+        (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          batchId: 'b-single-pass',
+          venueIds: [v1Id],
+        }));
+        (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          batchId: 'b-single-pass',
+          draftFingerprints: [{ venueId: v1Id, fingerprint: fp1 }],
+        }));
+
+        const resolvePitchSpy = vi.spyOn(c, 'resolvePitch');
+        const performSendSpy = vi.spyOn(c, 'performSend');
+
+        const req: any = {
+          user: oid(),
+          body: {
+            batchId: 'b-single-pass',
+            venueIds: [v1Id],
+            targetDates: 'Oct 16-18',
+            targetWeekend: VALID_WEEKEND,
+          },
+        };
+
+        await c.sendBatch(req, resStub);
+
+        expect(status).toBe(200);
+        expect(sendMail).toHaveBeenCalledTimes(1);
+        // resolvePitch should be called only once during verification, NOT again in send loop
+        expect(resolvePitchSpy).toHaveBeenCalledTimes(1);
+        // performSend was called with preRendered argument
+        expect(performSendSpy).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.anything(),
+          expect.anything(),
+          expect.anything(),
+          expect.anything(),
+          expect.objectContaining({
+            subject: 'Inquiry: Venue Alpha',
+            html: '<p>Hi Pat, booking for Oct 16-18.</p>',
+          }),
+        );
+      });
     });
 
     describe('Outcome 2: Either approval absent or non-matching (refused in full, no partial send)', () => {
@@ -861,6 +914,43 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         expect(sendMail).not.toHaveBeenCalled();
       });
 
+      it('refuses dispatch (403) when Gate 2 fingerprint matches body only but diverges on { subject, body }', async () => {
+        asApprover();
+        const v1Id = oid();
+        const v1 = validVenue({ _id: v1Id, name: 'Venue Alpha' });
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(v1));
+
+        // Stored Gate 2 fingerprint was created with body-only string hash:
+        const renderedHtml = '<p>Hi Pat, we are booking our October run and want Oct 16-18 at Venue Alpha.</p>';
+        const bodyOnlyFingerprint = computeDraftFingerprint(renderedHtml);
+
+        (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          batchId: 'b-body-only-hash',
+          venueIds: [v1Id],
+        }));
+        (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          batchId: 'b-body-only-hash',
+          draftFingerprints: [{ venueId: v1Id, fingerprint: bodyOnlyFingerprint }],
+        }));
+
+        const req: any = {
+          user: oid(),
+          body: {
+            batchId: 'b-body-only-hash',
+            venueIds: [v1Id],
+            targetDates: 'Oct 16-18',
+            targetWeekend: VALID_WEEKEND,
+            bookingPeriod: 'October',
+          },
+        };
+
+        await c.sendBatch(req, resStub);
+
+        expect(status).toBe(403);
+        expect(payload.message).toContain('Gate 2 draft fingerprint mismatch for venue');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
       it('refuses dispatch (403) when draft email cannot be rendered due to unresolvable venue/template', async () => {
         asApprover();
         const v1Id = oid();
@@ -977,6 +1067,58 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         expect(status).toBe(500);
         expect(payload.message).toContain('error during draft fingerprint verification');
         expect(sendMail).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('Deterministic Approval Lookups on Multi-Batch Weekends (web-jam-back#1082)', () => {
+      it('prefers exact batchId match first on multi-batch weekends for Gate 1', async () => {
+        const b2Doc = { batchId: 'batch-2', weekend: WEEKEND_STR, venueIds: [oid()] };
+        (venueApprovalModel as any).findOne = vi.fn((q: any) => {
+          if (q.batchId === 'batch-2') return Promise.resolve(b2Doc);
+          return Promise.resolve(null);
+        });
+
+        const res = await c.getVenueSetApproval('batch-2', WEEKEND_STR);
+        expect(res).toBe(b2Doc);
+        expect(venueApprovalModel.findOne).toHaveBeenCalledWith({ batchId: 'batch-2' });
+      });
+
+      it('prefers exact batchId match first on multi-batch weekends for Gate 2', async () => {
+        const b2Doc = { batchId: 'batch-2', weekend: WEEKEND_STR, draftFingerprints: [] };
+        (draftApprovalModel as any).findOne = vi.fn((q: any) => {
+          if (q.batchId === 'batch-2') return Promise.resolve(b2Doc);
+          return Promise.resolve(null);
+        });
+
+        const res = await c.getDraftFingerprintsApproval('batch-2', WEEKEND_STR);
+        expect(res).toBe(b2Doc);
+        expect(draftApprovalModel.findOne).toHaveBeenCalledWith({ batchId: 'batch-2' });
+      });
+
+      it('falls back to weekend clauses with deterministic sorting when batchId does not match directly', async () => {
+        const latestDoc = { batchId: 'batch-latest', weekend: WEEKEND_STR, venueIds: [oid()] };
+        (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve(null));
+        (venueApprovalModel as any).findLatestOne = vi.fn(() => Promise.resolve(latestDoc));
+
+        const res = await c.getVenueSetApproval('derived-batch-id', WEEKEND_STR);
+        expect(res).toBe(latestDoc);
+        expect(venueApprovalModel.findLatestOne).toHaveBeenCalledWith(
+          { $or: [{ weekend: 'derived-batch-id' }, { weekend: WEEKEND_STR }, { batchId: WEEKEND_STR }] },
+          { createdAt: -1, _id: -1 },
+        );
+      });
+
+      it('falls back to weekend clauses with deterministic sorting for Gate 2', async () => {
+        const latestDoc = { batchId: 'batch-latest', weekend: WEEKEND_STR, draftFingerprints: [] };
+        (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve(null));
+        (draftApprovalModel as any).findLatestOne = vi.fn(() => Promise.resolve(latestDoc));
+
+        const res = await c.getDraftFingerprintsApproval('derived-batch-id', WEEKEND_STR);
+        expect(res).toBe(latestDoc);
+        expect(draftApprovalModel.findLatestOne).toHaveBeenCalledWith(
+          { $or: [{ weekend: 'derived-batch-id' }, { weekend: WEEKEND_STR }, { batchId: WEEKEND_STR }] },
+          { createdAt: -1, _id: -1 },
+        );
       });
     });
   });

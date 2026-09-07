@@ -148,6 +148,20 @@ interface VenueDoc {
 // A template authored before the #903 migration simply has no introHtml (it
 // defaults to '' at render time) — its whole copy lives in bodyHtml, unchanged.
 interface TemplateDoc { type?: string; subject?: string; introHtml?: string; bodyHtml?: string; footerPhotoRef?: string }
+export interface VerifiedPitchRender {
+  venue: VenueDoc;
+  template: TemplateDoc;
+  type: string;
+  rendered: {
+    subject: string;
+    html: string;
+    attachments: { filename: string; path: string; cid: string }[];
+  };
+}
+type ApprovalModelWithLatest = {
+  findLatestOne?: (query: Record<string, unknown>, sort?: Record<string, 1 | -1>) => Promise<Record<string, unknown> | null>;
+  findOne: (query: Record<string, unknown>) => Promise<Record<string, unknown> | null>;
+};
 interface FollowUp { sentAt?: Date; type?: string; messageId?: string; eventId?: string; step?: number }
 interface OutreachDoc {
   _id?: unknown; venueId?: unknown; sentAt?: Date; step?: number; targetDates?: string; followUps?: FollowUp[];
@@ -1125,8 +1139,15 @@ class OutreachController extends Controller {
   // The single place an email actually leaves: render + send + write the outreach
   // record as `sent` with cadence touch 1. Returns a result envelope so both the
   // single-send and batch paths can relay/aggregate it.
-  async performSend(venue: VenueDoc, template: TemplateDoc, type: string, body: SendBody, actor: string): Promise<SendResult> {
-    const { subject, html, attachments } = buildPitchEmail(venue, template, body);
+  async performSend(
+    venue: VenueDoc,
+    template: TemplateDoc,
+    type: string,
+    body: SendBody,
+    actor: string,
+    preRendered?: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] },
+  ): Promise<SendResult> {
+    const { subject, html, attachments } = preRendered || buildPitchEmail(venue, template, body);
     let sent: { messageId: string };
     try {
       sent = await sendMail({
@@ -1188,6 +1209,41 @@ class OutreachController extends Controller {
     return res.status(201).json(result.record);
   }
 
+  private async resolveBatchPitchItem(
+    venueId: string,
+    body: BatchBody,
+    sendBody: SendBody,
+    verifiedMap?: Map<string, VerifiedPitchRender>,
+  ): Promise<
+    | {
+        ok: true;
+        venue: VenueDoc;
+        template: TemplateDoc;
+        type: string;
+        preRendered?: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] };
+      }
+    | { ok: false; venueName: string; reason: string }
+  > {
+    const verified = verifiedMap?.get(venueId);
+    if (verified) {
+      return {
+        ok: true,
+        venue: verified.venue,
+        template: verified.template,
+        type: verified.type,
+        preRendered: verified.rendered,
+      };
+    }
+    const ctx = await this.resolvePitch({ venueId, templateType: body.templateType, ...sendBody });
+    if (ctx.error) {
+      return { ok: false, venueName: ctx.error.venueName || UNKNOWN_VENUE_NAME, reason: ctx.error.message };
+    }
+    const { venue, template, type } = ctx as Required<PitchContext>;
+    return {
+      ok: true, venue, template, type,
+    };
+  }
+
   // POST /outreach/batch — send the approved target list (#844). Body:
   // { venueIds[], targetDates, bookingPeriod?, templateType? }. Same authz as
   // /send. Each venue is independently resolved (eligibility + dedup) and sent;
@@ -1222,6 +1278,7 @@ class OutreachController extends Controller {
     const result: { requested: number; sent: number; skipped: { venueId: string; venueName: string; reason: string }[]; records: unknown[] } = {
       requested: body.venueIds.length, sent: 0, skipped: [], records: [],
     };
+    const verifiedMap = (approvalCheck as { verifiedRenderings?: Map<string, VerifiedPitchRender> }).verifiedRenderings;
     for (const venueId of body.venueIds) {
       if (!mongoose.Types.ObjectId.isValid(venueId)) {
         result.skipped.push({ venueId, venueName: UNKNOWN_VENUE_NAME, reason: 'invalid id' }); continue;
@@ -1230,15 +1287,16 @@ class OutreachController extends Controller {
         targetDates: body.targetDates, targetWeekend: body.targetWeekend, bookingPeriod: body.bookingPeriod, cc: body.cc,
         customIntro: body.customIntro, customBody: body.customBody,
       };
+
       // eslint-disable-next-line no-await-in-loop
-      const ctx = await this.resolvePitch({ venueId, templateType: body.templateType, ...sendBody });
-      if (ctx.error) {
-        result.skipped.push({ venueId, venueName: ctx.error.venueName || UNKNOWN_VENUE_NAME, reason: ctx.error.message }); continue;
+      const item = await this.resolveBatchPitchItem(venueId, body, sendBody, verifiedMap);
+      if (!item.ok) {
+        result.skipped.push({ venueId, venueName: item.venueName, reason: item.reason }); continue;
       }
-      const { venue, template, type } = ctx as Required<PitchContext>;
+
       // eslint-disable-next-line no-await-in-loop
-      const r = await this.performSend(venue, template, type, sendBody, actor);
-      if (!r.ok) { result.skipped.push({ venueId, venueName: venue.name || UNKNOWN_VENUE_NAME, reason: r.message }); continue; }
+      const r = await this.performSend(item.venue, item.template, item.type, sendBody, actor, item.preRendered);
+      if (!r.ok) { result.skipped.push({ venueId, venueName: item.venue.name || UNKNOWN_VENUE_NAME, reason: r.message }); continue; }
       result.sent += 1; result.records.push(r.record);
     }
     return res.status(200).json(result);
@@ -2096,30 +2154,42 @@ class OutreachController extends Controller {
 
   // Model helper methods for internal server-side use (#1079 dispatch refusal):
   async getVenueSetApproval(batchId: string, weekend?: string): Promise<Record<string, unknown> | null> {
-    const orClauses: Record<string, unknown>[] = [{ batchId }, { weekend: batchId }];
+    const exact = await outreachVenueApprovalModel.findOne({ batchId });
+    if (exact) return exact;
+
+    const orClauses: Record<string, unknown>[] = [{ weekend: batchId }];
     if (weekend && weekend !== batchId) {
       orClauses.push({ weekend }, { batchId: weekend });
     }
-    return outreachVenueApprovalModel.findOne({
-      $or: orClauses,
-    });
+    const query = { $or: orClauses };
+    const model = outreachVenueApprovalModel as unknown as ApprovalModelWithLatest;
+    if (typeof model.findLatestOne === 'function') {
+      return model.findLatestOne(query, { createdAt: -1, _id: -1 });
+    }
+    return outreachVenueApprovalModel.findOne(query);
   }
 
   async getDraftFingerprintsApproval(batchId: string, weekend?: string): Promise<Record<string, unknown> | null> {
-    const orClauses: Record<string, unknown>[] = [{ batchId }, { weekend: batchId }];
+    const exact = await outreachDraftApprovalModel.findOne({ batchId });
+    if (exact) return exact;
+
+    const orClauses: Record<string, unknown>[] = [{ weekend: batchId }];
     if (weekend && weekend !== batchId) {
       orClauses.push({ weekend }, { batchId: weekend });
     }
-    return outreachDraftApprovalModel.findOne({
-      $or: orClauses,
-    });
+    const query = { $or: orClauses };
+    const model = outreachDraftApprovalModel as unknown as ApprovalModelWithLatest;
+    if (typeof model.findLatestOne === 'function') {
+      return model.findLatestOne(query, { createdAt: -1, _id: -1 });
+    }
+    return outreachDraftApprovalModel.findOne(query);
   }
 
   async verifyVenueRenderedCopy(
     venueId: string,
     expectedFingerprint: string,
     body: BatchBody,
-  ): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  ): Promise<{ ok: true; verified: VerifiedPitchRender } | { ok: false; status: number; message: string }> {
     const sendBody = {
       targetDates: body.targetDates,
       targetWeekend: body.targetWeekend,
@@ -2145,25 +2215,27 @@ class OutreachController extends Controller {
         message: `dispatch refused: cannot render draft for venue '${venueId}': ${ctx.error.message}`,
       };
     }
-    const { venue, template } = ctx as Required<PitchContext>;
-    const { subject, html } = buildPitchEmail(venue, template, sendBody as SendBody);
-    const renderedFingerprint = computeDraftFingerprint({ subject, body: html });
-    if (expectedFingerprint !== renderedFingerprint && expectedFingerprint !== computeDraftFingerprint(html)) {
+    const { venue, template, type } = ctx as Required<PitchContext>;
+    const rendered = buildPitchEmail(venue, template, sendBody as SendBody);
+    const renderedFingerprint = computeDraftFingerprint({ subject: rendered.subject, body: rendered.html });
+    if (expectedFingerprint !== renderedFingerprint) {
       return {
         ok: false,
         status: 403,
         message: `dispatch refused: Gate 2 draft fingerprint mismatch for venue '${venueId}' (${venue.name || UNKNOWN_VENUE_NAME})`,
       };
     }
-    return { ok: true };
+    return { ok: true, verified: { venue, template, type, rendered } };
   }
 
   // Gate 1 & Gate 2 batch dispatch refusal guard (web-jam-back#1079, D-39, D-40, D-41, D-42, Step 6).
   // Evaluates both Gate 1 (venue-set) and Gate 2 (draft fingerprints) approval records before any emails are sent.
-  // Returns { ok: true } when both approvals exist and match the batch (Outcome 1).
+  // Returns { ok: true, verifiedRenderings } when both approvals exist and match the batch (Outcome 1).
   // Returns { ok: false, status: 403, message } when either approval is absent or non-matching (Outcome 2, refused in full).
   // Returns { ok: false, status: 500, message } when check is indeterminate / errors occur (Outcome 3, fail closed).
-  async verifyBatchDispatch(body: BatchBody): Promise<{ ok: true } | { ok: false; status: number; message: string }> {
+  async verifyBatchDispatch(body: BatchBody): Promise<
+    { ok: true; verifiedRenderings: Map<string, VerifiedPitchRender> } | { ok: false; status: number; message: string }
+  > {
     const bResult = resolveBatchIdentification(body);
     if ('error' in bResult) {
       return { ok: false, status: 400, message: bResult.error };
@@ -2223,10 +2295,14 @@ class OutreachController extends Controller {
     }
 
     // Re-render draft emails and match fingerprints against Gate 2
+    const verifiedRenderings = new Map<string, VerifiedPitchRender>();
     try {
       for (const venueId of batchVenueIds) {
         const renderCheck = await this.verifyVenueRenderedCopy(venueId, approvedFps.get(venueId) || '', body);
         if (!renderCheck.ok) return renderCheck;
+        if (renderCheck.verified) {
+          verifiedRenderings.set(venueId, renderCheck.verified);
+        }
       }
     } catch (e) {
       // Outcome 3: Indeterminate check — comparison errors or unexpected exceptions (fails closed)
@@ -2238,7 +2314,7 @@ class OutreachController extends Controller {
     }
 
     // Outcome 1: Both approvals present and matching
-    return { ok: true };
+    return { ok: true, verifiedRenderings };
   }
 }
 
