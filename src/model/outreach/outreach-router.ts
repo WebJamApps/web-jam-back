@@ -49,17 +49,6 @@ router.route('/preview')
     void action();
   });
 
-// GET/PUT /outreach/config — read/toggle auto-approve (#844).
-router.route('/config')
-  .get((req, res) => {
-    const action = routeUtils.makeAction(req, res, 'getOutreachConfig', controller, authUtils);
-    void action();
-  })
-  .put((req, res) => {
-    const action = routeUtils.makeAction(req, res, 'setOutreachConfig', controller, authUtils);
-    void action();
-  });
-
 // POST /outreach/advance — cadence engine tick (#824). Driven by the Deno Cron (#100).
 router.route('/advance')
   .post((req, res) => {

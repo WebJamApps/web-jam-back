@@ -12,7 +12,6 @@ import { createCallTaskEvent } from '#src/lib/calendar.js';
 import { findReplies } from '#src/lib/imap-replies.js';
 import { classifyReply } from '#src/lib/classify-reply.js';
 import outreachModel from './outreach-facade.js';
-import outreachConfigModel from './outreach-config-facade.js';
 import outreachReportModel from './outreach-report-facade.js';
 import outreachVenueApprovalModel from './outreach-venue-approval-facade.js';
 import outreachDraftApprovalModel from './outreach-draft-approval-facade.js';
@@ -59,9 +58,12 @@ const ACTIVE_STATUSES = ['sent', 'replied'];
 const ALLOWED_ROLES = ['JaM-admin', 'Developer'];
 // Read/list endpoints: any outreach capability (incl. a pure approver) gets in.
 const OUTREACH_ANY_CAPS = ['outreach:create', 'outreach:edit', 'outreach:delete', 'outreach:approve'];
-// Door gate for the send paths: a creator OR an approver may attempt; canSend()
-// then decides whether it actually goes out (approver always; creator only when
-// auto-approve is on).
+// Door gate for the send paths: a creator OR an approver may attempt. For
+// sendPitch, canSend() then decides whether it actually goes out (approver
+// only — #1080 retired the standing autoApprove switch that used to let a
+// creator-only agent through here). sendBatch does not call canSend() at all:
+// dispatch there is gated by Gate 1 + Gate 2 (web-jam-back#1079), which admits
+// no caller — human or agent — exempt from either approval record (D-46).
 const OUTREACH_SEND_CAPS = ['outreach:create', 'outreach:approve'];
 
 interface AuthedUser { userType?: string; privileges?: string[] }
@@ -117,9 +119,11 @@ interface SendBody {
 }
 
 // #844 — batch target-list approval. The approval gate is the TARGET SELECTION
-// (which vetted venues are in the batch), NOT individual emails. A human holding
-// outreach:approve sends the approved list; an agent (outreach:create only) can
-// send a batch ONLY when auto-approve is configured ON.
+// (which vetted venues are in the batch), NOT individual emails. Dispatch is
+// gated by Gate 1 + Gate 2 (#1079), not by capability — a human holding
+// outreach:approve and an agent (outreach:create only) both dispatch through
+// the same verifyBatchDispatch check (#1080 retired the standing autoApprove
+// switch that used to gate the agent path here).
 interface BatchBody {
   batchId?: string;
   weekend?: string;
@@ -135,7 +139,6 @@ interface BatchBody {
   customBody?: string;
 }
 
-interface ConfigBody { autoApprove?: boolean; actor?: string }
 interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 
 interface VenueDoc {
@@ -761,25 +764,12 @@ class OutreachController extends Controller {
     return checkAccess(user, required);
   }
 
-  // Read the singleton auto-approve config (#844). Absent doc => auto-approve OFF
-  // (the safe default — every batch needs a human until Josh turns it on).
-  async getConfig(): Promise<{ autoApprove: boolean }> {
-    const cfg = await outreachConfigModel.findOne({ key: 'outreach' }) as { autoApprove?: boolean } | null;
-    return { autoApprove: !!(cfg && cfg.autoApprove) };
-  }
-
-  // Send authorization (#844): a human holding outreach:approve may always send;
-  // anyone else (an agent with only outreach:create, already checked by the
-  // caller) may send ONLY when auto-approve is configured ON. Returns null when
-  // sending is allowed, else the error to relay.
+  // Send authorization for the immediate single-pitch path (#844, retired
+  // autoApprove branch removed by #1080): only a human holding outreach:approve
+  // may send here. There is no gate flow for a single ad hoc pitch, so unlike
+  // sendBatch there is no gate-satisfied path for an agent to use instead.
   async canSend(req: AuthRequest): Promise<AuthzResult> {
-    const approveErr = await this.authorize(req, ['outreach:approve']);
-    if (!approveErr) return null;
-    if (approveErr.status !== 403) return approveErr;
-    let cfg: { autoApprove: boolean };
-    try { cfg = await this.getConfig(); } catch (e) { return { status: 500, message: (e as Error).message }; }
-    if (!cfg.autoApprove) return { status: 403, message: 'sending requires approval — auto-approve is off' };
-    return null;
+    return this.authorize(req, ['outreach:approve']);
   }
 
   static buildListFilter(query: Record<string, unknown>): Record<string, unknown> {
@@ -1250,9 +1240,13 @@ class OutreachController extends Controller {
   }
 
   // POST /outreach/batch — send the approved target list (#844). Body:
-  // { venueIds[], targetDates, bookingPeriod?, templateType? }. Same authz as
-  // /send. Each venue is independently resolved (eligibility + dedup) and sent;
-  // failures are collected in `skipped` rather than aborting the batch.
+  // { venueIds[], targetDates, bookingPeriod?, templateType? }. Authz is the
+  // door gate above (create or approve may attempt) PLUS the unconditional
+  // Gate 1 + Gate 2 dispatch check below — no caller, human or agent, is
+  // exempt from it (#1079, D-46). #1080 retired the autoApprove escape hatch
+  // that used to run here instead of the gates. Each venue is independently
+  // resolved (eligibility + dedup) and sent; failures are collected in
+  // `skipped` rather than aborting the batch.
   async sendBatch(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, OUTREACH_SEND_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
@@ -1267,8 +1261,6 @@ class OutreachController extends Controller {
     if (!parseTargetWeekend(body.targetWeekend)) {
       return res.status(400).json({ message: 'targetWeekend {start, end} is required' });
     }
-    const sendErr = await this.canSend(req);
-    if (sendErr) return res.status(sendErr.status).json({ message: sendErr.message });
 
     // Gate 1 & Gate 2 dispatch refusal guard (web-jam-back#1079, D-39, D-40, D-41, D-42, Step 6).
     const approvalCheck = await this.verifyBatchDispatch(body);
@@ -1595,32 +1587,6 @@ class OutreachController extends Controller {
       } as SendBody,
     );
     return res.status(200).json({ to: venue.email, cc: PITCH_CC, subject, html });
-  }
-
-  // GET /outreach/config — read the auto-approve setting (#844).
-  async getOutreachConfig(req: AuthRequest, res: Response): Promise<unknown> {
-    const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
-    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
-    let cfg: { autoApprove: boolean };
-    try { cfg = await this.getConfig(); } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
-    return res.status(200).json(cfg);
-  }
-
-  // PUT /outreach/config — toggle auto-approve (#844). Only the human approver
-  // (outreach:approve) may change the trust setting; an agent cannot self-grant.
-  async setOutreachConfig(req: AuthRequest, res: Response): Promise<unknown> {
-    const guardErr = await this.authorize(req, ['outreach:approve']);
-    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
-    const body = (req.body || {}) as ConfigBody;
-    if (typeof body.autoApprove !== 'boolean') return res.status(400).json({ message: 'autoApprove (boolean) is required' });
-    const actor = resolveActor(req, body);
-    const doc = { key: 'outreach', autoApprove: body.autoApprove, lastModifiedBy: actor };
-    let cfg: { autoApprove?: boolean } | null;
-    try {
-      cfg = await outreachConfigModel.findOneAndUpdate({ key: 'outreach' }, doc);
-      if (!cfg) cfg = await outreachConfigModel.create(doc) as { autoApprove?: boolean };
-    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
-    return res.status(200).json({ autoApprove: !!(cfg && cfg.autoApprove) });
   }
 
   // Append a completed touch and reschedule (or finish) the record. Returns
