@@ -101,7 +101,7 @@
     "globals": "^17.5.0",
     "jscpd": "^5.0.11",
     "typescript-eslint": "^8.59.1",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.11"
   },
   "snyk": true
 }
