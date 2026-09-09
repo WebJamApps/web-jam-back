@@ -28,6 +28,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
   };
 
   const origFindOneAndDelete = reportModel.findOneAndDelete;
+  const origListIndex = (reportModel as any).listIndex;
 
   beforeEach(() => {
     status = 0;
@@ -35,6 +36,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
     headers = {};
     rawBody = undefined;
     reportModel.findOneAndDelete = origFindOneAndDelete;
+    (reportModel as any).listIndex = origListIndex;
     vi.restoreAllMocks();
   });
 
@@ -46,6 +48,14 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
 
   const asNonOutreach = () => {
     (userModel as any).findById = vi.fn(() => Promise.resolve({ privileges: ['venue:view'] }));
+  };
+
+  // web-jam-back#1084 — the index's "administrator login" is a userType role
+  // check (mirrors venue/template/gig/promo's ALLOWED_ROLES), independent of
+  // the outreach:* privilege gate every other authenticated route in this
+  // file uses.
+  const asAdmin = (userType = 'JaM-admin') => {
+    (userModel as any).findById = vi.fn(() => Promise.resolve({ userType }));
   };
 
   describe('POST /outreach/report (saveReport)', () => {
@@ -233,6 +243,68 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
     });
   });
 
+  describe('GET /outreach/report (listReports, web-jam-back#1084)', () => {
+    it('rejects unauthenticated requests (401)', async () => {
+      (userModel as any).findById = vi.fn(() => Promise.resolve(null));
+      const req: any = { user: oid() };
+      await c.listReports(req, resStub);
+      expect(status).toBe(401);
+      expect(payload.message).toContain('user not found');
+    });
+
+    it('rejects a non-administrator holding outreach:* capabilities (403) — an agent capability is not an admin login', async () => {
+      asApprover();
+      const req: any = { user: oid() };
+      await c.listReports(req, resStub);
+      expect(status).toBe(403);
+      expect(payload.message).toContain('administrator login required');
+    });
+
+    it('rejects a plain user with no admin role (403)', async () => {
+      asNonOutreach();
+      const req: any = { user: oid() };
+      await c.listReports(req, resStub);
+      expect(status).toBe(403);
+      expect(payload.message).toContain('administrator login required');
+    });
+
+    it('allows a JaM-admin login and returns records without htmlContent, newest updated_at first', async () => {
+      asAdmin('JaM-admin');
+      const older = {
+        _id: oid(), weekend: '2026-10-16-to-2026-10-18', title: 'Older', candidatesCount: 15, dispatchedCount: 10, updated_at: new Date('2026-09-01'),
+      };
+      const newer = {
+        _id: oid(), weekend: '2026-12-11-to-2026-12-13', title: 'Newer', candidatesCount: 8, dispatchedCount: 8, updated_at: new Date('2026-09-05'),
+      };
+      // listIndex already sorts + projects — assert the controller relays the
+      // facade's own result untouched, newest-updated first.
+      (reportModel as any).listIndex = vi.fn(() => Promise.resolve([newer, older]));
+      const req: any = { user: oid() };
+      await c.listReports(req, resStub);
+      expect(status).toBe(200);
+      expect(payload).toEqual([newer, older]);
+      expect(payload.every((r: any) => !('htmlContent' in r))).toBe(true);
+    });
+
+    it('allows a Developer login', async () => {
+      asAdmin('Developer');
+      (reportModel as any).listIndex = vi.fn(() => Promise.resolve([]));
+      const req: any = { user: oid() };
+      await c.listReports(req, resStub);
+      expect(status).toBe(200);
+      expect(payload).toEqual([]);
+    });
+
+    it('returns 500 when the database throws', async () => {
+      asAdmin();
+      (reportModel as any).listIndex = vi.fn(() => Promise.reject(new Error('Mongo read error')));
+      const req: any = { user: oid() };
+      await c.listReports(req, resStub);
+      expect(status).toBe(500);
+      expect(payload.message).toBe('Mongo read error');
+    });
+  });
+
   describe('GET /outreach/table-sort.js (getTableSortScript)', () => {
     it('serves static table sorting JavaScript with application/javascript Content-Type and immutable cache', () => {
       const req: any = {};
@@ -368,6 +440,65 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
       await c.deleteReport(req, resStub);
       expect(status).toBe(500);
       expect(payload.message).toBe('Mongo delete error');
+    });
+
+    // web-jam-back#1084 acceptance criterion: "the index holds no record of
+    // its own" — deleteReport and listReports both delegate to the SAME
+    // underlying mongoose Schema (see outreach-report-facade.ts), so removing
+    // a document via findOneAndDelete removes it from listIndex's result in
+    // the same action, with no separate index record to reconcile. This test
+    // exercises that wiring at the Schema level rather than stubbing the
+    // facade methods independently, so a regression that breaks the shared
+    // collection would fail it.
+    it('removes the weekend from the index in the same action as the delete (index is a view, no record of its own)', async () => {
+      const docs: Array<Record<string, unknown>> = [
+        {
+          _id: oid(), weekend: '2026-10-16-to-2026-10-18', title: 'October run', htmlContent: '<p>A</p>', updated_at: new Date('2026-09-01'),
+        },
+        {
+          _id: oid(), weekend: '2026-12-11-to-2026-12-13', title: 'December run', htmlContent: '<p>B</p>', updated_at: new Date('2026-09-05'),
+        },
+      ];
+      const origSchemaFindOneAndDelete = reportModel.Schema.findOneAndDelete;
+      const origSchemaFind = reportModel.Schema.find;
+      const removeByWeekend = async (weekend: string) => {
+        const idx = docs.findIndex((d) => d.weekend === weekend);
+        if (idx === -1) return null;
+        const [removed] = docs.splice(idx, 1);
+        return removed;
+      };
+      const projectAndSortIndex = async () => docs
+        .map(({ htmlContent, ...rest }) => rest)
+        .sort((a: any, b: any) => b.updated_at.getTime() - a.updated_at.getTime());
+      (reportModel.Schema as any).findOneAndDelete = vi.fn((query: any) => (
+        { lean: () => ({ exec: () => removeByWeekend(query.weekend) }) }
+      ));
+      (reportModel.Schema as any).find = vi.fn(() => (
+        { sort: () => ({ lean: () => ({ exec: projectAndSortIndex }) }) }
+      ));
+
+      try {
+        asAdmin();
+        await c.listReports({ user: oid() }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toHaveLength(2);
+        expect(payload.map((r: any) => r.weekend).sort()).toEqual(
+          ['2026-10-16-to-2026-10-18', '2026-12-11-to-2026-12-13'].sort(),
+        );
+
+        asAgent();
+        await c.deleteReport({ user: oid(), params: { weekend: '2026-10-16-to-2026-10-18' } }, resStub);
+        expect(status).toBe(200);
+
+        asAdmin();
+        await c.listReports({ user: oid() }, resStub);
+        expect(status).toBe(200);
+        expect(payload).toHaveLength(1);
+        expect(payload[0].weekend).toBe('2026-12-11-to-2026-12-13');
+      } finally {
+        (reportModel.Schema as any).findOneAndDelete = origSchemaFindOneAndDelete;
+        (reportModel.Schema as any).find = origSchemaFind;
+      }
     });
   });
 
