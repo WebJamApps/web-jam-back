@@ -764,6 +764,25 @@ class OutreachController extends Controller {
     return checkAccess(user, required);
   }
 
+  // Administrator-only gate for the stored-report index (web-jam-back#1084,
+  // D-52). Deliberately NOT `authorize`/`checkAccess` above: those are
+  // privilege-first (an outreach:* capability — including the AI agent's own
+  // service identity — passes without ever consulting userType), which is
+  // exactly the "outreach:* capability" the design distinguishes from "an
+  // administrator login". This checks userType alone, against the same
+  // ALLOWED_ROLES admin fallback venue/template/gig/promo controllers use.
+  async authorizeAdmin(req: AuthRequest): Promise<AuthzResult> { // eslint-disable-line class-methods-use-this
+    let user: AuthedUser | null;
+    try { user = await userModel.findById(req.user || '') as unknown as AuthedUser | null; } catch (e) {
+      return { status: 500, message: (e as Error).message };
+    }
+    if (!user) return { status: 401, message: 'user not found' };
+    if (ALLOWED_ROLES.indexOf(user.userType || '') === -1) {
+      return { status: 403, message: 'administrator login required' };
+    }
+    return null;
+  }
+
   // Send authorization for the immediate single-pitch path (#844, retired
   // autoApprove branch removed by #1080): only a human holding outreach:approve
   // may send here. There is no gate flow for a single ad hoc pitch, so unlike
@@ -1952,6 +1971,22 @@ class OutreachController extends Controller {
         saved = await outreachReportModel.create(docData);
       }
       return res.status(existing ? 200 : 201).json(saved);
+    } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+  }
+
+  // GET /outreach/report — administrator-only index of the stored run
+  // reports (web-jam-back#1084, D-52/D-53). Every record without
+  // `htmlContent`, newest-updated first. The index is a view over the
+  // OutreachReport collection and holds no record of its own — see
+  // outreachReportModel.listIndex.
+  async listReports(req: AuthRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorizeAdmin(req);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    try {
+      const records = await outreachReportModel.listIndex();
+      return res.status(200).json(records);
     } catch (e) {
       return res.status(500).json({ message: (e as Error).message });
     }
