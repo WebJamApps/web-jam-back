@@ -1174,9 +1174,12 @@ class OutreachController extends Controller {
   }
 
   // POST /outreach/send — send ONE pitch immediately to a vetted venue (#844). No
-  // draft step: the venue being outreachEligible is the approval. Authz: a human
-  // (outreach:approve) always; an agent (outreach:create) only when auto-approve
-  // is ON. Use /outreach/batch for a whole approved target list.
+  // draft step: the venue being outreachEligible is the approval. Authz (#1080,
+  // D-46): reaching the handler needs OUTREACH_SEND_CAPS, but canSend() then
+  // requires outreach:approve outright, so only a human approver sends here — a
+  // creator-only agent gets a 403. A single ad hoc pitch has no gate flow to fall
+  // back on. Use /outreach/batch, which Gate 1 + Gate 2 govern, for a whole
+  // approved target list.
   async sendPitch(req: AuthRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, OUTREACH_SEND_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
