@@ -28,7 +28,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
   };
 
   const origFindOneAndDelete = reportModel.findOneAndDelete;
-  const origListIndex = (reportModel as any).listIndex;
+  const origListIndex = reportModel.listIndex;
 
   beforeEach(() => {
     status = 0;
@@ -36,7 +36,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
     headers = {};
     rawBody = undefined;
     reportModel.findOneAndDelete = origFindOneAndDelete;
-    (reportModel as any).listIndex = origListIndex;
+    reportModel.listIndex = origListIndex;
     vi.restoreAllMocks();
   });
 
@@ -278,7 +278,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
       };
       // listIndex already sorts + projects — assert the controller relays the
       // facade's own result untouched, newest-updated first.
-      (reportModel as any).listIndex = vi.fn(() => Promise.resolve([newer, older]));
+      reportModel.listIndex = vi.fn(() => Promise.resolve([newer, older]));
       const req: any = { user: oid() };
       await c.listReports(req, resStub);
       expect(status).toBe(200);
@@ -288,7 +288,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
 
     it('allows a Developer login', async () => {
       asAdmin('Developer');
-      (reportModel as any).listIndex = vi.fn(() => Promise.resolve([]));
+      reportModel.listIndex = vi.fn(() => Promise.resolve([]));
       const req: any = { user: oid() };
       await c.listReports(req, resStub);
       expect(status).toBe(200);
@@ -297,7 +297,7 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
 
     it('returns 500 when the database throws', async () => {
       asAdmin();
-      (reportModel as any).listIndex = vi.fn(() => Promise.reject(new Error('Mongo read error')));
+      reportModel.listIndex = vi.fn(() => Promise.reject(new Error('Mongo read error')));
       const req: any = { user: oid() };
       await c.listReports(req, resStub);
       expect(status).toBe(500);
@@ -511,6 +511,24 @@ describe('Outreach Report Endpoints (web-jam-back#1052)', () => {
       const res = await reportModel.findOneAndDelete({ weekend: '2026-10-16-to-2026-10-18' });
       expect(res).toEqual({ weekend: '2026-10-16-to-2026-10-18' });
       expect((reportModel.Schema as any).findOneAndDelete).toHaveBeenCalledWith({ weekend: '2026-10-16-to-2026-10-18' });
+    });
+
+    it('listIndex projects htmlContent away and sorts newest updated_at first (web-jam-back#1084)', async () => {
+      const records = [{ weekend: '2026-12-11-to-2026-12-13' }, { weekend: '2026-10-16-to-2026-10-18' }];
+      const mockExec = vi.fn(() => Promise.resolve(records));
+      const mockLean = vi.fn(() => ({ exec: mockExec }));
+      const mockSort = vi.fn(() => ({ lean: mockLean }));
+      const origSchemaFind = reportModel.Schema.find;
+      (reportModel.Schema as any).find = vi.fn(() => ({ sort: mockSort }));
+
+      try {
+        const res = await reportModel.listIndex();
+        expect(res).toBe(records);
+        expect((reportModel.Schema as any).find).toHaveBeenCalledWith({}, '-htmlContent');
+        expect(mockSort).toHaveBeenCalledWith({ updated_at: -1 });
+      } finally {
+        (reportModel.Schema as any).find = origSchemaFind;
+      }
     });
   });
 });
