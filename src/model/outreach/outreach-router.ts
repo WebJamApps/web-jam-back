@@ -96,8 +96,16 @@ router.route('/:id/outcome')
     void action();
   });
 
+// GET /outreach/report — administrator-only index of the stored run reports
+// (web-jam-back#1084, D-52/D-53). Declared on the SAME route as the POST
+// below, ahead of /:id, so this path resolves here rather than falling
+// through to GET /outreach/:id with `id` reading `report`.
 // POST /outreach/report — save or update an outreach HTML run report (web-jam-back#1052).
 router.route('/report')
+  .get((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'listReports', controller, authUtils);
+    void action();
+  })
   .post((req, res) => {
     const action = routeUtils.makeAction(req, res, 'saveReport', controller, authUtils);
     void action();
