@@ -33,7 +33,6 @@ const {
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
 const { default: templateModel } = await import('#src/model/template/template-facade.js');
-const { default: configModel } = await import('#src/model/outreach/outreach-config-facade.js');
 const { default: gigModel } = await import('#src/model/gig/gig-facade.js');
 
 const c = controller as any;
@@ -105,9 +104,6 @@ describe('Outreach Controller (#844 batch model)', () => {
     (venueModel as any).find = vi.fn(() => Promise.resolve([]));
     (venueModel as any).findByIdAndUpdate = vi.fn(() => Promise.resolve({}));
     (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate()));
-    (configModel as any).findOne = vi.fn(() => Promise.resolve(null)); // auto-approve OFF by default
-    (configModel as any).findOneAndUpdate = vi.fn((_q: any, u: any) => Promise.resolve({ ...u }));
-    (configModel as any).create = vi.fn((d: any) => Promise.resolve({ ...d }));
     c.model.findOne = vi.fn(() => Promise.resolve(null));
     c.model.find = vi.fn(() => Promise.resolve([]));
     c.model.create = vi.fn((doc: any) => Promise.resolve({ _id: 'o1', ...doc }));
@@ -270,10 +266,13 @@ describe('Outreach Controller (#844 batch model)', () => {
   describe('sendPitch — authorization to send (canSend)', () => {
     const body = () => ({ venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, bookingPeriod: 'August' });
 
-    it('403s an agent when auto-approve is OFF (no send)', async () => {
+    // #1080 — the autoApprove switch that used to let a creator-only agent
+    // through here is retired; sendPitch has no gate flow to fall back on
+    // (unlike sendBatch), so an agent is refused outright now.
+    it('403s a creator-only agent — no autoApprove escape hatch (#1080)', async () => {
       await c.sendPitch({ user: 'opus', body: body() }, resStub);
       expect(status).toBe(403);
-      expect(payload.message).toMatch(/auto-approve is off/);
+      expect(payload.message).toContain('outreach:approve');
       expect(sendMail).not.toHaveBeenCalled();
     });
 
@@ -332,20 +331,6 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(status).toBe(201);
       expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com');
       expect((sendMail as any).mock.calls[0][0].cc).toEqual(['someone-else@example.com', 'chelsea@slowplaybrewing.com']);
-    });
-
-    it('an agent sends when auto-approve is ON', async () => {
-      (configModel as any).findOne = vi.fn(() => Promise.resolve({ autoApprove: true }));
-      await c.sendPitch({ user: 'opus', body: body() }, resStub);
-      expect(status).toBe(201);
-      expect(sendMail).toHaveBeenCalledTimes(1);
-    });
-
-    it('500s when the auto-approve config read throws', async () => {
-      (configModel as any).findOne = vi.fn(() => Promise.reject(new Error('cfg down')));
-      await c.sendPitch({ user: 'opus', body: body() }, resStub);
-      expect(status).toBe(500);
-      expect(sendMail).not.toHaveBeenCalled();
     });
 
     it('dedup-guards an existing active pitch (409, no send)', async () => {
@@ -560,12 +545,6 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(sendMail).not.toHaveBeenCalled();
     });
 
-    it('403s an agent when auto-approve is OFF', async () => {
-      await c.sendBatch({ user: 'opus', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
-      expect(status).toBe(403);
-      expect(sendMail).not.toHaveBeenCalled();
-    });
-
     it('sends to every approved venue and reports the summary', async () => {
       asApprover();
       await c.sendBatch(
@@ -620,8 +599,11 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(payload.skipped[1]).toMatchObject({ venueName: UNKNOWN_VENUE_NAME, reason: 'venue not found' });
     });
 
-    it('lets an agent batch-send when auto-approve is ON', async () => {
-      (configModel as any).findOne = vi.fn(() => Promise.resolve({ autoApprove: true }));
+    // #1080 — the autoApprove switch that used to gate this is retired; a
+    // creator-only agent now dispatches on the same terms as an approver:
+    // the door gate (outreach:create) plus Gate 1 + Gate 2 (stubbed ok in
+    // beforeEach), with no capability-based branch in between.
+    it('lets a creator-only agent batch-send once Gate 1 + Gate 2 verify (#1080)', async () => {
       await c.sendBatch({ user: 'opus', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(status).toBe(200);
       expect(payload.sent).toBe(1);
@@ -1576,61 +1558,6 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('previewByVenue: both absent leaves preview unchanged', async () => {
       await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
       expect(payload.html.startsWith('<p>Hi Pat')).toBe(true);
-    });
-  });
-
-  describe('config — auto-approve (#844)', () => {
-    it('reads the default (OFF) when no doc exists', async () => {
-      await c.getOutreachConfig({ user: 'a', query: {} }, resStub);
-      expect(status).toBe(200);
-      expect(payload).toEqual({ autoApprove: false });
-    });
-
-    it('reads ON when the doc says so', async () => {
-      (configModel as any).findOne = vi.fn(() => Promise.resolve({ autoApprove: true }));
-      await c.getOutreachConfig({ user: 'a', query: {} }, resStub);
-      expect(payload).toEqual({ autoApprove: true });
-    });
-
-    it('500s when the config read throws', async () => {
-      (configModel as any).findOne = vi.fn(() => Promise.reject(new Error('db down')));
-      await c.getOutreachConfig({ user: 'a', query: {} }, resStub);
-      expect(status).toBe(500);
-    });
-
-    it('only an approver may set it (agent 403s)', async () => {
-      await c.setOutreachConfig({ user: 'opus', body: { autoApprove: true } }, resStub);
-      expect(status).toBe(403);
-    });
-
-    it('400s when autoApprove is not a boolean', async () => {
-      asApprover();
-      await c.setOutreachConfig({ user: 'josh', body: {} }, resStub);
-      expect(status).toBe(400);
-    });
-
-    it('sets the flag (upsert returns the doc)', async () => {
-      asApprover();
-      await c.setOutreachConfig({ user: 'josh', body: { autoApprove: true } }, resStub);
-      expect(status).toBe(200);
-      expect(payload).toEqual({ autoApprove: true });
-    });
-
-    it('creates the doc when none exists yet', async () => {
-      asApprover();
-      (configModel as any).findOneAndUpdate = vi.fn(() => Promise.resolve(null));
-      (configModel as any).create = vi.fn(() => Promise.resolve({ autoApprove: false }));
-      await c.setOutreachConfig({ user: 'josh', body: { autoApprove: false } }, resStub);
-      expect(status).toBe(200);
-      expect((configModel as any).create).toHaveBeenCalled();
-      expect(payload).toEqual({ autoApprove: false });
-    });
-
-    it('500s when the write throws', async () => {
-      asApprover();
-      (configModel as any).findOneAndUpdate = vi.fn(() => Promise.reject(new Error('db down')));
-      await c.setOutreachConfig({ user: 'josh', body: { autoApprove: true } }, resStub);
-      expect(status).toBe(500);
     });
   });
 
