@@ -54,6 +54,10 @@ export const UNKNOWN_VENUE_NAME = '(unknown venue)';
 // (no-response / interested / not-interested / booked / target-filled) is
 // terminal-for-this-window and doesn't block.
 const ACTIVE_STATUSES = ['sent', 'replied'];
+// D-56 (web-jam-tools#959) — outcomes that close a venue-weekend for good. Unlike
+// ACTIVE_STATUSES they block a re-pitch with no cooldown window; the admin
+// screen's Reopen action (applySuggestion with reopen: true) is the release.
+const FILLED_STATUSES = ['booked', 'target-filled'];
 
 const ALLOWED_ROLES = ['JaM-admin', 'Developer'];
 // Read/list endpoints: any outreach capability (incl. a pure approver) gets in.

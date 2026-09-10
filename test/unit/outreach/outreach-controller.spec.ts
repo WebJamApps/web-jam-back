@@ -339,7 +339,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       await c.sendPitch({ user: 'a', body: body() }, resStub);
       expect(status).toBe(409);
       expect(sendMail).not.toHaveBeenCalled();
-      expect((c.model.findOne as any).mock.calls[0][0].status).toEqual({ $in: ['sent', 'replied'] });
+      expect((c.model.findOne as any).mock.calls[0][0].status).toEqual({ $in: ['sent', 'replied', 'booked', 'target-filled'] });
     });
 
     // #923 — the guard is now keyed on an OVERLAPPING targetWeekend range, not

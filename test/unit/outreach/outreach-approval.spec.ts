@@ -589,6 +589,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
       sendMail.mockResolvedValue({ messageId: 'mid-123' });
       c.model.create = vi.fn((doc: any) => Promise.resolve({ _id: oid(), ...doc }));
       c.model.findOne = vi.fn(() => Promise.resolve(null)); // dedup guard
+      c.model.find = vi.fn(() => Promise.resolve([])); // venues already pitched for the weekend (D-60, D-61)
       (venueModel as any).findByIdAndUpdate = vi.fn(() => Promise.resolve({}));
       (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate()));
     });
