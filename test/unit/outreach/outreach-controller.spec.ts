@@ -2467,4 +2467,37 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(dupeErr?.message).toContain('active outreach already exists');
     });
   });
+
+  describe('dedupGuard permanent block for a filled weekend (D-56, web-jam-tools#959)', () => {
+    it('blocks a booked or target-filled record at any age, pointing at Reopen', async () => {
+      const oldFilled = { _id: oid(), status: 'target-filled', sentAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) };
+      c.model.findOne = vi.fn(() => Promise.resolve(oldFilled));
+
+      const dupeErr = await c.dedupGuard(oid(), VALID_WEEKEND);
+
+      expect(dupeErr?.status).toBe(409);
+      expect(dupeErr?.message).toContain('reopen');
+    });
+
+    it('adds a date-free filled branch to the query when a targetWeekend is given', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+
+      await c.dedupGuard(oid(), VALID_WEEKEND);
+
+      const query = (c.model.findOne as any).mock.calls[0][0];
+      expect(query.status).toEqual({ $in: ['sent', 'replied', 'booked', 'target-filled'] });
+      expect(query.$or).toContainEqual({ status: { $in: ['booked', 'target-filled'] } });
+    });
+
+    it('keeps only the 7-day active window when there is no targetWeekend', async () => {
+      c.model.findOne = vi.fn(() => Promise.resolve(null));
+
+      await c.dedupGuard(oid(), null);
+
+      const query = (c.model.findOne as any).mock.calls[0][0];
+      expect(query.status).toEqual({ $in: ['sent', 'replied'] });
+      expect(query.$or).toHaveLength(2);
+      expect(query['targetWeekend.start']).toBeUndefined();
+    });
+  });
 });

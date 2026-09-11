@@ -14,6 +14,7 @@ const {
   resolveBatchIdentification,
   normalizeDraftFingerprints,
   isExactVenueSetMatch,
+  unpitchedApprovedVenueIds,
   extractApprovedFingerprints,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
@@ -612,6 +613,15 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         expect(isExactVenueSetMatch([id1], [id1, id1])).toBe(false);
       });
 
+      it('unpitchedApprovedVenueIds drops pitched venues and keeps approval order (D-60, D-61)', () => {
+        const id1 = oid();
+        const id2 = oid();
+        const id3 = oid();
+        expect(unpitchedApprovedVenueIds([id1, ` ${id2} `, id3], new Set([id2]))).toEqual([id1, id3]);
+        expect(unpitchedApprovedVenueIds([id1, id2], new Set())).toEqual([id1, id2]);
+        expect(unpitchedApprovedVenueIds([id1], new Set([id1]))).toEqual([]);
+      });
+
       it('extractApprovedFingerprints extracts map from array and object formats', () => {
         const id1 = oid();
         const id2 = oid();
@@ -1115,6 +1125,102 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         expect(status).toBe(500);
         expect(payload.message).toContain('error during draft fingerprint verification');
         expect(sendMail).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('Widened Gate 1 set: dispatch matches only unpitched approved venues (D-54, D-60, D-61)', () => {
+      const approvals = (batchId: string, venueIds: string[], fps: { venueId: string; fingerprint: string }[]) => {
+        (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({ batchId, weekend: WEEKEND_STR, venueIds }));
+        (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({ batchId, weekend: WEEKEND_STR, draftFingerprints: fps }));
+      };
+      const batchReq = (batchId: string, venueIds: string[]): any => ({
+        user: oid(),
+        body: { batchId, venueIds, targetDates: 'Oct 16-18', targetWeekend: VALID_WEEKEND },
+      });
+
+      it('sends exactly the added venues after a widening (200)', async () => {
+        asApprover();
+        const v1Id = oid(); // pitched in the first send
+        const v2Id = oid(); // added by the widening
+        (venueModel as any).findById = vi.fn((id: string) => Promise.resolve(
+          id === v2Id ? validVenue({ _id: v2Id, name: 'Venue Beta' }) : null,
+        ));
+        const fp2 = computeDraftFingerprint({ subject: 'Inquiry: Venue Beta', body: '<p>Hi Pat, booking for Oct 16-18.</p>' });
+        approvals('b-widened', [v1Id, v2Id], [{ venueId: v2Id, fingerprint: fp2 }]);
+        c.model.find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'no-response' }]));
+
+        await c.sendBatch(batchReq('b-widened', [v2Id]), resStub);
+
+        expect(status).toBe(200);
+        expect(sendMail).toHaveBeenCalledTimes(1);
+        expect(payload.sent).toBe(1);
+      });
+
+      it('refuses in full (403) when the batch includes an already-pitched approved venue', async () => {
+        asApprover();
+        const v1Id = oid();
+        const v2Id = oid();
+        approvals('b-repitch', [v1Id, v2Id], [{ venueId: v1Id, fingerprint: 'fp1' }, { venueId: v2Id, fingerprint: 'fp2' }]);
+        c.model.find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'sent' }]));
+
+        await c.sendBatch(batchReq('b-repitch', [v1Id, v2Id]), resStub);
+
+        expect(status).toBe(403);
+        expect(payload.message).toContain('Gate 1 venue-set approval does not match batch venueIds');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('refuses in full (403) when the batch omits an unpitched approved venue', async () => {
+        asApprover();
+        const v1Id = oid();
+        const v2Id = oid();
+        const v3Id = oid();
+        approvals('b-omit', [v1Id, v2Id, v3Id], [{ venueId: v2Id, fingerprint: 'fp2' }]);
+        c.model.find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'sent' }]));
+
+        await c.sendBatch(batchReq('b-omit', [v2Id]), resStub);
+
+        expect(status).toBe(403);
+        expect(payload.message).toContain('Gate 1 venue-set approval does not match batch venueIds');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('looks up pitched venues by approved id and weekend overlap only, with no status or date filter', async () => {
+        asApprover();
+        const v1Id = oid();
+        const v2Id = oid();
+        approvals('b-query', [v1Id, v2Id], [{ venueId: v1Id, fingerprint: 'fp1' }]);
+
+        await c.sendBatch(batchReq('b-query', [v1Id]), resStub);
+
+        const query = (c.model.find as any).mock.calls[0][0];
+        expect(query.venueId).toEqual({ $in: [v1Id, v2Id] });
+        expect(query['targetWeekend.start']).toEqual({ $exists: true, $lte: new Date(VALID_WEEKEND.end) });
+        expect(query['targetWeekend.end']).toEqual({ $exists: true, $gte: new Date(VALID_WEEKEND.start) });
+        expect(Object.keys(query).sort()).toEqual(['targetWeekend.end', 'targetWeekend.start', 'venueId']);
+      });
+
+      it('refuses (500) when the pitched-venue lookup fails', async () => {
+        asApprover();
+        const v1Id = oid();
+        approvals('b-lookup-err', [v1Id], [{ venueId: v1Id, fingerprint: 'fp1' }]);
+        c.model.find = vi.fn(() => Promise.reject(new Error('Mongo connection drop')));
+
+        await c.sendBatch(batchReq('b-lookup-err', [v1Id]), resStub);
+
+        expect(status).toBe(500);
+        expect(payload.message).toContain('failed to read the venues already pitched');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('refuses (400) without a targetWeekend to key the pitched lookup on', async () => {
+        const v1Id = oid();
+        approvals('b-no-tw', [v1Id], [{ venueId: v1Id, fingerprint: 'fp1' }]);
+
+        const result = await c.verifyBatchDispatch({ batchId: 'b-no-tw', venueIds: [v1Id] });
+
+        expect(result).toEqual({ ok: false, status: 400, message: expect.stringContaining('targetWeekend') });
+        expect(c.model.find).not.toHaveBeenCalled();
       });
     });
 
