@@ -54,6 +54,10 @@ export const UNKNOWN_VENUE_NAME = '(unknown venue)';
 // (no-response / interested / not-interested / booked / target-filled) is
 // terminal-for-this-window and doesn't block.
 const ACTIVE_STATUSES = ['sent', 'replied'];
+// D-56 (web-jam-tools#959) — outcomes that close a venue-weekend for good. Unlike
+// ACTIVE_STATUSES they block a re-pitch with no cooldown window; the admin
+// screen's Reopen action (applySuggestion with reopen: true) is the release.
+const FILLED_STATUSES = ['booked', 'target-filled'];
 
 const ALLOWED_ROLES = ['JaM-admin', 'Developer'];
 // Read/list endpoints: any outreach capability (incl. a pure approver) gets in.
@@ -420,6 +424,14 @@ export function isExactVenueSetMatch(approvedRaw: unknown[], batchVenues: string
     batchVenues.every((id) => approvedSet.has(id)) &&
     approvedIds.every((id) => batchSet.has(id))
   );
+}
+
+// D-60 / D-61 (web-jam-tools#959) — what a batch must equal: the approved Gate 1
+// venues minus those already carrying any outreach record for the weekend. On a
+// weekend nothing has been pitched for yet this is the whole approved set; after
+// a D-54 widening it is exactly the added venues.
+export function unpitchedApprovedVenueIds(approvedRaw: unknown[], pitched: Set<string>): string[] {
+  return approvedRaw.map((id) => String(id).trim()).filter((id) => !pitched.has(id));
 }
 
 export function extractApprovedFingerprints(draftApproval: Record<string, unknown>): Map<string, string> {
@@ -1079,16 +1091,22 @@ class OutreachController extends Controller {
   //
   // #1050 / #1046: Only active records sent or created within OUTREACH_COOLDOWN_DAYS
   // (7 days) count as blocking; older campaigns allow re-pitching for the weekend.
+  //
+  // D-56 (web-jam-tools#959): a booked / target-filled record for an overlapping
+  // weekend blocks at any age — its $or branch carries no date bound. Only with a
+  // `tw`: without one a filled record would block the venue for every weekend.
   // Returns the error envelope to relay, or null.
   async dedupGuard(venueId: string | undefined, tw: TargetWeekend | null): Promise<AuthzError | null> {
     const cooldownThreshold = new Date(Date.now() - OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+    const blocking: Record<string, unknown>[] = [
+      { sentAt: { $gte: cooldownThreshold } },
+      { created_at: { $gte: cooldownThreshold } },
+    ];
+    if (tw) blocking.push({ status: { $in: FILLED_STATUSES } });
     const query: Record<string, unknown> = {
       venueId,
-      status: { $in: ACTIVE_STATUSES },
-      $or: [
-        { sentAt: { $gte: cooldownThreshold } },
-        { created_at: { $gte: cooldownThreshold } },
-      ],
+      status: { $in: tw ? [...ACTIVE_STATUSES, ...FILLED_STATUSES] : ACTIVE_STATUSES },
+      $or: blocking,
     };
     if (tw) Object.assign(query, targetWeekendOverlapClause(tw));
     let dupe;
@@ -1096,6 +1114,14 @@ class OutreachController extends Controller {
       dupe = await this.model.findOne(query);
     } catch (e) { return { status: 500, message: (e as Error).message }; }
     if (!dupe) return null;
+    if (FILLED_STATUSES.includes(String((dupe as { status?: unknown }).status))) {
+      return {
+        status: 409,
+        message: 'this venue is already booked or target-filled for an overlapping target weekend; '
+          + 'reopen that record on the admin outreach screen to pitch it again',
+        outreach: dupe,
+      };
+    }
     return { status: 409, message: 'an active outreach already exists for this venue and an overlapping target weekend', outreach: dupe };
   }
 
@@ -2231,6 +2257,15 @@ class OutreachController extends Controller {
     return { ok: true, verified: { venue, template, type, rendered } };
   }
 
+  // D-61 (web-jam-tools#959): "already pitched" is ANY outreach record for the venue
+  // and an overlapping weekend — no status, no cooldown window, unlike dedupGuard.
+  async pitchedVenueIdsForWeekend(venueIds: string[], tw: TargetWeekend): Promise<Set<string>> {
+    const records = await this.model.find({
+      venueId: { $in: venueIds }, ...targetWeekendOverlapClause(tw),
+    }) as unknown as { venueId?: unknown }[];
+    return new Set(records.map((r) => String(r.venueId)));
+  }
+
   // Gate 1 & Gate 2 batch dispatch refusal guard (web-jam-back#1079, D-39, D-40, D-41, D-42, Step 6).
   // Evaluates both Gate 1 (venue-set) and Gate 2 (draft fingerprints) approval records before any emails are sent.
   // Returns { ok: true, verifiedRenderings } when both approvals exist and match the batch (Outcome 1).
@@ -2276,13 +2311,32 @@ class OutreachController extends Controller {
       };
     }
 
+    // D-60 / D-61: the batch must be exactly the approved venues with no outreach
+    // record for this weekend, so the pitched lookup needs the weekend itself.
+    if (!bResult.tw) {
+      return { ok: false, status: 400, message: 'dispatch refused: targetWeekend {start, end} is required to find the venues already pitched' };
+    }
+    const approvedVenueIds = (venueApproval.venueIds as unknown[]) || [];
+    let pitched: Set<string>;
+    try {
+      pitched = await this.pitchedVenueIdsForWeekend(approvedVenueIds.map((id) => String(id).trim()), bResult.tw);
+    } catch (e) {
+      // Outcome 3: Indeterminate check — the pitched-venue lookup failed (fails closed)
+      return {
+        ok: false,
+        status: 500,
+        message: `dispatch refused: failed to read the venues already pitched for this weekend: ${(e as Error).message}`,
+      };
+    }
+
     // Outcome 2: Gate 1 venue set mismatch
     const batchVenueIds = (body.venueIds || []).map((id) => String(id).trim());
-    if (!isExactVenueSetMatch((venueApproval.venueIds as unknown[]) || [], batchVenueIds)) {
+    if (!isExactVenueSetMatch(unpitchedApprovedVenueIds(approvedVenueIds, pitched), batchVenueIds)) {
       return {
         ok: false,
         status: 403,
-        message: `dispatch refused: Gate 1 venue-set approval does not match batch venueIds for batch '${bResult.batchId}'`,
+        message: `dispatch refused: Gate 1 venue-set approval does not match batch venueIds for batch '${bResult.batchId}' `
+          + '(a batch must be exactly the approved venues not yet pitched for this weekend)',
       };
     }
 
