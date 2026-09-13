@@ -94,6 +94,44 @@ describe('senderForArtist', () => {
 });
 
 describe('InquiryController.handleInquiry', () => {
+  const origEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...origEnv };
+  });
+
+  it('passes artist-specific sender through to sendEmail when configured', () => {
+    process.env.TimGmailUser = 'tim@example.com';
+    process.env.TimGmailAppPassword = 'tim-password';
+
+    const controller = new InquiryController();
+    const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
+    const res = mockRes();
+    controller.handleInquiry({
+      body: {
+        artist: 'tim',
+        name: 'Jane Doe',
+        email: 'customer@example.com',
+      },
+    } as any, res);
+
+    expect(sendEmailSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.any(String),
+      res,
+      expect.anything(),
+      expect.any(String),
+      { user: 'tim@example.com', pass: 'tim-password', from: 'tim@example.com' },
+      'customer@example.com',
+    );
+    expect(sendEmailSpy.mock.calls[0][6]).toEqual({
+      user: 'tim@example.com',
+      pass: 'tim-password',
+      from: 'tim@example.com',
+    });
+  });
+
   it('formats a Tim Sherman booking submission into a descriptive subject', () => {
     const controller = new InquiryController();
     const res = mockRes();

@@ -2,7 +2,7 @@ import nodemailer, { Transporter } from 'nodemailer';
 import { Request, Response } from 'express';
 import Debug from 'debug';
 import { DEFAULT_ARTIST, normalizeArtist } from '#src/lib/artist.js';
-import { formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
+import { extractCustomerEmail, formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
 
 const debug = Debug('web-jam-back:InquiryController');
 
@@ -96,12 +96,7 @@ class InquiryController {
     const { to, cc } = recipientForArtist(artist);
     const sender = senderForArtist(artist);
     const body = (req.body || {}) as Record<string, unknown>;
-    let replyTo: string | undefined;
-    if (typeof body.email === 'string' && body.email.trim()) {
-      replyTo = body.email.trim();
-    } else if (typeof body.emailaddress === 'string' && body.emailaddress.trim()) {
-      replyTo = body.emailaddress.trim();
-    }
+    const replyTo = extractCustomerEmail(body) || undefined;
     const { subject, html, text } = formatInquiryEmail(body);
     return this.sendEmail(html, to, subject, res, cc, text, sender, replyTo);
   }
