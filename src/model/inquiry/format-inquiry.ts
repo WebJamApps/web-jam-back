@@ -40,12 +40,17 @@ function escapeHtml(text: string): string {
     .split("'").join('&#39;');
 }
 
+export function extractCustomerEmail(body?: InquiryBody | null): string {
+  if (!body) return '';
+  return str(body.email) || str(body.emailaddress);
+}
+
 // Order fields should appear in the email body.
 function buildFields(body: InquiryBody): Array<[string, string]> {
   const fields: Array<[string, string]> = [];
   const name = displayName(body);
   if (name) fields.push(['Name', name]);
-  const email = str(body.email) || str(body.emailaddress);
+  const email = extractCustomerEmail(body);
   if (email) fields.push(['Email', email]);
   const phone = str(body.phone) || str(body.phonenumber);
   if (phone) fields.push(['Phone', phone]);

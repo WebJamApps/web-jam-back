@@ -1,4 +1,4 @@
-import { formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
+import { extractCustomerEmail, formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
 
 describe('formatInquiryEmail', () => {
   it('formats a TimShermanMusic booking submission (name/email/phone/eventDate/message)', () => {
@@ -98,5 +98,26 @@ describe('formatInquiryEmail', () => {
   it('ignores non-string values for a field instead of rendering them', () => {
     const { text } = formatInquiryEmail({ name: 12345, email: null, phone: undefined });
     expect(text).toBe('No inquiry details were provided.');
+  });
+});
+
+describe('extractCustomerEmail', () => {
+  it('extracts email from email field', () => {
+    expect(extractCustomerEmail({ email: '  john@example.com  ' })).toBe('john@example.com');
+  });
+
+  it('extracts email from emailaddress field when email is absent', () => {
+    expect(extractCustomerEmail({ emailaddress: '  jane@example.com  ' })).toBe('jane@example.com');
+  });
+
+  it('prefers email over emailaddress when both are present', () => {
+    expect(extractCustomerEmail({ email: 'first@example.com', emailaddress: 'second@example.com' })).toBe('first@example.com');
+  });
+
+  it('returns empty string when neither field is present or fields are empty/whitespace', () => {
+    expect(extractCustomerEmail({})).toBe('');
+    expect(extractCustomerEmail({ email: '   ', emailaddress: '   ' })).toBe('');
+    expect(extractCustomerEmail(null)).toBe('');
+    expect(extractCustomerEmail(undefined)).toBe('');
   });
 });
