@@ -26,21 +26,35 @@ export function recipientForArtist(artist: unknown): { to: string; cc?: string }
   return typeof to === 'string' && to ? { to } : { to: RECIPIENT_EMAIL, cc: INQUIRY_CC };
 }
 
-class InquiryController {
-  private transporter: Transporter | null = null;
+export function senderForArtist(artist: unknown): { user: string; pass: string; from: string } {
+  const slug = normalizeArtist(artist);
+  if (slug === 'tim' && process.env.TimGmailUser && process.env.TimGmailAppPassword) {
+    return {
+      user: process.env.TimGmailUser,
+      pass: process.env.TimGmailAppPassword,
+      from: process.env.TimGmailUser,
+    };
+  }
+  return {
+    user: process.env.GMAIL_USER || '',
+    pass: process.env.GMAIL_APP_PASSWORD || '',
+    from: process.env.GMAIL_USER || '',
+  };
+}
 
-  private getTransporter(): Transporter {
-    /* istanbul ignore else */
-    if (this.transporter) return this.transporter;
-    this.transporter = nodemailer.createTransport({
+class InquiryController {
+  private transporters = new Map<string, Transporter>();
+
+  private getTransporter(user: string, pass: string): Transporter {
+    const existing = this.transporters.get(user);
+    if (existing) return existing;
+    const transporter = nodemailer.createTransport({
       service: 'gmail',
       secure: true,
-      auth: {
-        user: process.env.GMAIL_USER || /* istanbul ignore next */ '',
-        pass: process.env.GMAIL_APP_PASSWORD || /* istanbul ignore next */ '',
-      },
+      auth: { user, pass },
     });
-    return this.transporter;
+    this.transporters.set(user, transporter);
+    return transporter;
   }
 
   async sendEmail(
@@ -50,19 +64,23 @@ class InquiryController {
     res: Response,
     ccemail?: string,
     bodytext?: string,
+    sender?: { user: string; pass: string; from: string },
+    replyTo?: string,
   ) {
+    const activeSender = sender || senderForArtist(undefined);
     const msg: Record<string, string> = {
       to: toemail,
-      from: process.env.GMAIL_USER || /* istanbul ignore next */ '',
+      from: activeSender.from,
       subject: subjectline,
       text: bodytext || bodyhtml,
       html: bodyhtml,
     };
     if (ccemail) msg.cc = ccemail;
+    if (replyTo) msg.replyTo = replyTo;
     /* istanbul ignore if */
     if (process.env.NODE_ENV !== 'test') {
       try {
-        await this.getTransporter().sendMail(msg);
+        await this.getTransporter(activeSender.user, activeSender.pass).sendMail(msg);
       } catch (err) {
         const e = err as { code?: string; message?: string };
         debug('Email send failed: %o', e);
@@ -74,9 +92,18 @@ class InquiryController {
 
   handleInquiry(req: Request, res: Response) {
     debug(req.body);
-    const { to, cc } = recipientForArtist((req.body as { artist?: unknown })?.artist);
-    const { subject, html, text } = formatInquiryEmail(req.body as Record<string, unknown>);
-    return this.sendEmail(html, to, subject, res, cc, text);
+    const artist = (req.body as { artist?: unknown })?.artist;
+    const { to, cc } = recipientForArtist(artist);
+    const sender = senderForArtist(artist);
+    const body = (req.body || {}) as Record<string, unknown>;
+    let replyTo: string | undefined;
+    if (typeof body.email === 'string' && body.email.trim()) {
+      replyTo = body.email.trim();
+    } else if (typeof body.emailaddress === 'string' && body.emailaddress.trim()) {
+      replyTo = body.emailaddress.trim();
+    }
+    const { subject, html, text } = formatInquiryEmail(body);
+    return this.sendEmail(html, to, subject, res, cc, text, sender, replyTo);
   }
 }
 export default InquiryController;

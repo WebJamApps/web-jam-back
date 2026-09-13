@@ -191,6 +191,8 @@ Powers timshermanmusic.com login and booking integrations. All four must be set 
 | `InquiryRecipients` | JSON map of artist slug → booking email. Routes contact/booking inquiries for that artist; unmapped artists fall back to the default JaMmusic recipients. | `{"tim":"booking@example.com"}` |
 | `TimGoogleClientId` | Google OAuth client ID for timshermanmusic.com login (its own GCP project). | (obtain from GCP Console) |
 | `TimGoogleClientSecret` | Google OAuth client secret for timshermanmusic.com login. **Secret — server-side only.** | (obtain from GCP Console) |
+| `TimGmailUser` | Gmail address for sending booking inquiries for Tim (e.g. `timsherman75@gmail.com`). Falls back to `GMAIL_USER` if unset. | `tim@example.com` |
+| `TimGmailAppPassword` | Gmail App Password for `TimGmailUser`. Falls back to `GMAIL_APP_PASSWORD` if unset. | (obtain from Google Account App Passwords) |
 
 Set these the same way as the Facebook vars above (Heroku dashboard Config Vars or `heroku config:set ... -a webjamsalem`).
 
