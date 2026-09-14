@@ -167,16 +167,6 @@ export interface VerifiedPitchRender {
     attachments: { filename: string; path: string; cid: string }[];
   };
 }
-type BatchPreFlightItem =
-  | {
-      ok: true;
-      venue: VenueDoc;
-      template: TemplateDoc;
-      type: string;
-      preRendered?: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] };
-    }
-  | { ok: false; venueName: string; reason: string }
-  | null;
 // Both approval facades define findLatestOne unconditionally — it is REQUIRED
 // here on purpose. An optional probe with an unsorted findOne fallback would
 // quietly return an arbitrary document in natural order the day the method
@@ -525,7 +515,7 @@ export function resolveFooterAsset(ref: string): string | null {
       path.resolve(here, '../template/assets', `${ref}.jpg`),
       path.resolve(process.cwd(), 'src/model/template/assets', `${ref}.jpg`),
     ];
-    return candidates.find((p) => fs.existsSync(p)) || /* istanbul ignore next */ null;
+    return candidates.find((p) => fs.existsSync(p)) || null;
   } catch (e) {
     throw new Error(`failed to resolve footer asset '${ref}': ${(e as Error).message}`);
   }
@@ -1229,7 +1219,8 @@ class OutreachController extends Controller {
       try {
         rendered = buildPitchEmail(venue, template, body);
       } catch (e) {
-        return { ok: false, status: 400, message: (e as Error).message };
+        if (!(e instanceof MissingFooterError)) throw e;
+        return { ok: false, status: 400, message: e.message };
       }
     }
     const { subject, html, attachments } = rendered;
@@ -1333,54 +1324,58 @@ class OutreachController extends Controller {
     };
   }
 
-  private async preFlightBatchItems(
+  // All-or-nothing footer check (#1099, D-73) for every venue that has no
+  // Gate-2-verified rendering (a verified venue's footer was already checked by
+  // verifyBatchRenderings). RENDER-ONLY: it resolves with skipDedup and
+  // requireEligible OFF and hands nothing to the send loop, so the sendability
+  // guards still run per venue immediately before that venue's own send.
+  private async batchFooterErrors(
     venueIds: string[],
     body: BatchBody,
     sendBody: SendBody,
     verifiedMap?: Map<string, VerifiedPitchRender>,
-  ): Promise<{
-    footerErrors: string[];
-    preFlightItems: { venueId: string; item: BatchPreFlightItem }[];
-  }> {
-    const preFlightItems: { venueId: string; item: BatchPreFlightItem }[] = [];
+  ): Promise<string[]> {
     const footerErrors: string[] = [];
-
     for (const venueId of venueIds) {
-      if (!mongoose.Types.ObjectId.isValid(venueId)) {
-        preFlightItems.push({ venueId, item: null });
-        continue;
-      }
+      if (!mongoose.Types.ObjectId.isValid(venueId) || verifiedMap?.has(venueId)) continue;
       // eslint-disable-next-line no-await-in-loop
-      const item = await this.resolveBatchPitchItem(venueId, body, sendBody, verifiedMap);
-      preFlightItems.push({ venueId, item });
-      if (item.ok && !item.preRendered) {
-        try {
-          buildPitchEmail(item.venue, item.template, sendBody);
-        } catch (e) {
-          if (e instanceof MissingFooterError || (e as Error).name === 'MissingFooterError') {
-            footerErrors.push((e as Error).message);
-          }
-        }
+      const ctx = await this.resolvePitch(
+        { venueId, templateType: body.templateType, ...sendBody },
+        { skipDedup: true, requireEligible: false },
+      );
+      if (ctx.error) continue; // the send loop reports it as skipped
+      const { venue, template } = ctx as Required<PitchContext>;
+      try {
+        buildPitchEmail(venue, template, sendBody);
+      } catch (e) {
+        if (!(e instanceof MissingFooterError)) throw e;
+        footerErrors.push(e.message);
       }
     }
-    return { footerErrors, preFlightItems };
+    return footerErrors;
   }
 
+  // Resolve (eligibility + dedup) and send ONE venue at a time — never resolve
+  // the whole list up front. The dedup guard must see every record this batch
+  // has already written, or a venue id listed twice, or a batch re-POSTed while
+  // the first request is still sending, mails the same venue twice.
   private async dispatchBatchItems(
-    items: { venueId: string; item: BatchPreFlightItem }[],
+    venueIds: string[],
+    body: BatchBody,
     sendBody: SendBody,
     actor: string,
+    verifiedMap: Map<string, VerifiedPitchRender> | undefined,
     result: { requested: number; sent: number; skipped: { venueId: string; venueName: string; reason: string }[]; records: unknown[] },
   ): Promise<void> {
-    for (const { venueId, item } of items) {
+    for (const venueId of venueIds) {
       if (!mongoose.Types.ObjectId.isValid(venueId)) {
         result.skipped.push({ venueId, venueName: UNKNOWN_VENUE_NAME, reason: 'invalid id' });
         continue;
       }
-      if (!item || !item.ok) {
-        const venueName = item ? item.venueName : UNKNOWN_VENUE_NAME;
-        const reason = item ? item.reason : 'unresolvable';
-        result.skipped.push({ venueId, venueName, reason });
+      // eslint-disable-next-line no-await-in-loop
+      const item = await this.resolveBatchPitchItem(venueId, body, sendBody, verifiedMap);
+      if (!item.ok) {
+        result.skipped.push({ venueId, venueName: item.venueName, reason: item.reason });
         continue;
       }
 
@@ -1437,7 +1432,7 @@ class OutreachController extends Controller {
       customIntro: body.customIntro, customBody: body.customBody,
     };
 
-    const { footerErrors, preFlightItems } = await this.preFlightBatchItems(body.venueIds, body, sendBody, verifiedMap);
+    const footerErrors = await this.batchFooterErrors(body.venueIds, body, sendBody, verifiedMap);
     if (footerErrors.length > 0) {
       const uniqueErrors = Array.from(new Set(footerErrors));
       return res.status(403).json({
@@ -1445,7 +1440,7 @@ class OutreachController extends Controller {
       });
     }
 
-    await this.dispatchBatchItems(preFlightItems, sendBody, actor, result);
+    await this.dispatchBatchItems(body.venueIds, body, sendBody, actor, verifiedMap, result);
     return res.status(200).json(result);
   }
 
@@ -1708,7 +1703,8 @@ class OutreachController extends Controller {
         const { subject, html } = this.renderPreviewPitch(venue, template, q);
         results.push({ venueId, venueName: venue.name || '', subject, body: html });
       } catch (e) {
-        footerErrors.push((e as Error).message);
+        if (!(e instanceof MissingFooterError)) throw e;
+        footerErrors.push(e.message);
       }
     }
     return { results, footerErrors };
@@ -1757,7 +1753,8 @@ class OutreachController extends Controller {
       const { subject, html } = this.renderPreviewPitch(venue, template, q);
       return res.status(200).json({ to: venue.email, cc: PITCH_CC, subject, html });
     } catch (e) {
-      return res.status(400).json({ message: (e as Error).message });
+      if (!(e instanceof MissingFooterError)) throw e;
+      return res.status(400).json({ message: e.message });
     }
   }
 
@@ -1786,7 +1783,12 @@ class OutreachController extends Controller {
     let emailData: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] };
     try {
       emailData = buildFollowUpEmail(venue, o);
-    } catch { return 'skipped'; }
+    } catch (e) {
+      // Not recorded, so this touch retries on every cadence tick until the
+      // footer resolves — a missing bundled photo needs a redeploy (D-73).
+      console.error(`[outreach cadence] follow-up skipped for outreach ${String(o._id)}: ${(e as Error).message}`); // eslint-disable-line no-console
+      return 'skipped';
+    }
     const { subject, html, attachments } = emailData;
     let sent: { messageId: string };
     try {
@@ -2346,7 +2348,7 @@ class OutreachController extends Controller {
     venueId: string,
     expectedFingerprint: string,
     body: BatchBody,
-  ): Promise<{ ok: true; verified: VerifiedPitchRender } | { ok: false; status: number; message: string }> {
+  ): Promise<{ ok: true; verified: VerifiedPitchRender } | { ok: false; status: number; message: string; footerError?: string }> {
     const sendBody = {
       targetDates: body.targetDates,
       targetWeekend: body.targetWeekend,
@@ -2377,10 +2379,14 @@ class OutreachController extends Controller {
     try {
       rendered = buildPitchEmail(venue, template, sendBody as SendBody);
     } catch (e) {
+      // Only a missing footer is a refusal; any other render error propagates to
+      // verifyBatchRenderings' indeterminate (500, fails closed) branch.
+      if (!(e instanceof MissingFooterError)) throw e;
       return {
         ok: false,
         status: 403,
-        message: `dispatch refused: ${(e as Error).message}`,
+        message: `dispatch refused: ${e.message}`,
+        footerError: e.message,
       };
     }
     const renderedFingerprint = computeDraftFingerprint({ subject: rendered.subject, body: rendered.html });
@@ -2415,8 +2421,8 @@ class OutreachController extends Controller {
         // eslint-disable-next-line no-await-in-loop
         const renderCheck = await this.verifyVenueRenderedCopy(venueId, approvedFps.get(venueId) || '', body);
         if (!renderCheck.ok) {
-          if (renderCheck.status === 403 && renderCheck.message.includes('missing photo footer')) {
-            footerErrors.push(renderCheck.message.replace(/^dispatch refused: /, ''));
+          if (renderCheck.footerError) {
+            footerErrors.push(renderCheck.footerError);
             continue;
           }
           return renderCheck;

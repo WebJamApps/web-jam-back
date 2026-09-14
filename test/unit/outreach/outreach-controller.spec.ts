@@ -569,10 +569,14 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('skips an ineligible venue (collected, batch continues)', async () => {
       asApprover();
-      (venueModel as any).findById = vi.fn()
-        .mockResolvedValueOnce(validVenue())
-        .mockResolvedValueOnce(validVenue({ name: 'The Ineligible Room', outreachEligible: false }));
-      await c.sendBatch({ user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+      const eligibleId = oid();
+      const ineligibleId = oid();
+      (venueModel as any).findById = vi.fn((id: string) => Promise.resolve(id === ineligibleId
+        ? validVenue({ name: 'The Ineligible Room', outreachEligible: false })
+        : validVenue()));
+      await c.sendBatch({
+        user: 'josh', body: { venueIds: [eligibleId, ineligibleId], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND },
+      }, resStub);
       expect(payload.sent).toBe(1);
       expect(payload.skipped).toHaveLength(1);
       expect(payload.skipped[0].reason).toContain('not outreach-eligible');
@@ -1308,12 +1312,12 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('sendBatch: every sent email\'s subject names its own venue', async () => {
       asApprover();
-      (venueModel as any).findById = vi.fn()
-        .mockResolvedValueOnce(validVenue({ name: 'Venue One' }))
-        .mockResolvedValueOnce(validVenue({ name: 'Venue Two' }));
+      const idOne = oid();
+      const idTwo = oid();
+      (venueModel as any).findById = vi.fn((id: string) => Promise.resolve(validVenue({ name: id === idOne ? 'Venue One' : 'Venue Two' })));
       (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ subject: 'Performance Inquiry: Josh and Maria' })));
       await c.sendBatch(
-        { user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } },
+        { user: 'josh', body: { venueIds: [idOne, idTwo], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } },
         resStub,
       );
       expect(status).toBe(200);
@@ -2651,6 +2655,8 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
 
     describe('sendBatch all-or-nothing refusal', () => {
+      afterEach(() => { vi.restoreAllMocks(); });
+
       it('refuses the whole batch when one venue lacks a photo footer (zero emails sent)', async () => {
         asApprover();
         const id1 = oid();
@@ -2680,11 +2686,11 @@ describe('Outreach Controller (#844 batch model)', () => {
       it('refuses the whole batch through verifyBatchDispatch when re-rendered copy lacks photo footer', async () => {
         asApprover();
         const id1 = oid();
-        c.getVenueSetApproval = vi.fn(() => Promise.resolve({ venueIds: [id1] }));
-        c.getDraftFingerprintsApproval = vi.fn(() => Promise.resolve({
+        vi.spyOn(c, 'getVenueSetApproval').mockResolvedValue({ venueIds: [id1] });
+        vi.spyOn(c, 'getDraftFingerprintsApproval').mockResolvedValue({
           fingerprints: [{ venueId: id1, fingerprint: 'fp123' }],
-        }));
-        c.pitchedVenueIdsForWeekend = vi.fn(() => Promise.resolve(new Set()));
+        });
+        vi.spyOn(c, 'pitchedVenueIdsForWeekend').mockResolvedValue(new Set());
         (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ _id: id1 })));
         (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ footerPhotoRef: 'no-such-footer' })));
 
@@ -2707,6 +2713,90 @@ describe('Outreach Controller (#844 batch model)', () => {
       });
     });
 
+    describe('sendBatch keeps the dedup guard fresh per venue (#1100 review)', () => {
+      afterEach(() => { vi.restoreAllMocks(); });
+
+      it('mails a venue id listed twice in one batch only once', async () => {
+        asApprover();
+        const id = oid();
+        let created: any = null;
+        c.model.create = vi.fn((doc: any) => { created = { _id: 'o1', ...doc }; return Promise.resolve(created); });
+        c.model.findOne = vi.fn(() => Promise.resolve(created));
+
+        await c.sendBatch({
+          user: 'josh', body: { venueIds: [id, id], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND },
+        }, resStub);
+
+        expect(status).toBe(200);
+        expect(sendMail).toHaveBeenCalledTimes(1);
+        expect(payload.sent).toBe(1);
+        expect(payload.skipped).toHaveLength(1);
+        expect(payload.skipped[0].reason).toContain('active outreach already exists');
+      });
+
+      it('runs each venue\'s dedup check after the previous venue was sent', async () => {
+        asApprover();
+        const order: string[] = [];
+        vi.spyOn(c, 'dedupGuard').mockImplementation(() => { order.push('dedup'); return Promise.resolve(null); });
+        sendMail.mockImplementation(() => { order.push('send'); return Promise.resolve({ messageId: 'mid-123' }); });
+
+        await c.sendBatch({
+          user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND },
+        }, resStub);
+
+        expect(order).toEqual(['dedup', 'send', 'dedup', 'send']);
+      });
+    });
+
+    describe('non-footer render errors are not reported as a footer refusal (#1100 review)', () => {
+      afterEach(() => { vi.restoreAllMocks(); });
+
+      it('verifyBatchDispatch fails closed with 500 when rendering throws for another reason', async () => {
+        asApprover();
+        const id1 = oid();
+        vi.spyOn(c, 'getVenueSetApproval').mockResolvedValue({ venueIds: [id1] });
+        vi.spyOn(c, 'getDraftFingerprintsApproval').mockResolvedValue({ fingerprints: [{ venueId: id1, fingerprint: 'fp123' }] });
+        vi.spyOn(c, 'pitchedVenueIdsForWeekend').mockResolvedValue(new Set());
+        delete c.verifyBatchDispatch;
+
+        await c.sendBatch({
+          user: 'josh',
+          body: {
+            batchId: 'batch-1', venueIds: [id1], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, customBody: 42,
+          },
+        }, resStub);
+
+        expect(status).toBe(500);
+        expect(payload.message).toContain('error during draft fingerprint verification');
+        expect(payload.message).not.toContain('missing photo footer');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('sendBatch footer pre-check rethrows a non-footer render error', async () => {
+        asApprover();
+        await expect(c.sendBatch({
+          user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, customBody: 42 },
+        }, resStub)).rejects.toThrow(TypeError);
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('performSend refuses a missing footer with 400 and sends nothing', async () => {
+        const r = await c.performSend(validVenue(), validTemplate({ footerPhotoRef: '' }), 'Originals', { targetDates: 'Aug 14-16' }, 'josh');
+        expect(r).toEqual({ ok: false, status: 400, message: "missing photo footer for template 'Originals' (stage: cold)" });
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('performSend rethrows a non-footer render error', async () => {
+        await expect(c.performSend(validVenue(), validTemplate(), 'Originals', { targetDates: 'Aug 14-16', customBody: 42 }, 'josh'))
+          .rejects.toThrow(TypeError);
+      });
+
+      it('GET /outreach/preview rethrows a non-footer render error (single and batch)', async () => {
+        await expect(c.previewByVenue({ user: 'a', query: { venueId: oid(), customBody: 42 } }, resStub)).rejects.toThrow(TypeError);
+        await expect(c.previewByVenue({ user: 'a', query: { venueIds: oid(), customBody: 42 } }, resStub)).rejects.toThrow(TypeError);
+      });
+    });
+
     describe('advanceCadence follow-up skipping on missing footer', () => {
       it('skips email touch and does not send when follow-up footer cannot be resolved', async () => {
         const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
@@ -2718,9 +2808,12 @@ describe('Outreach Controller (#844 batch model)', () => {
           step: 1,
           targetDates: 'Aug 14-16',
         };
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         const result = await c.doEmailTouch(touchOutreach, touchVenue, 2);
         expect(result).toBe('skipped');
         expect(sendMail).not.toHaveBeenCalled();
+        expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('missing photo footer'));
+        errSpy.mockRestore();
         existsSpy.mockRestore();
       });
     });
