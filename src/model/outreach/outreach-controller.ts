@@ -628,6 +628,45 @@ function appendFooterPhoto(
   };
 }
 
+export const DARK_WRAPPER_BG = '#121212';
+export const DARK_WRAPPER_TEXT = '#f0f0f0';
+export const DARK_WRAPPER_LINK = '#4fc3f7';
+
+export const DARK_WRAPPER_START = '<meta name="color-scheme" content="dark">\n'
+  + '<meta name="supported-color-schemes" content="dark">\n'
+  + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="${DARK_WRAPPER_BG}" `
+  + `style="background-color:${DARK_WRAPPER_BG};color:${DARK_WRAPPER_TEXT};">\n`
+  + `<tr><td style="color:${DARK_WRAPPER_TEXT};">\n`;
+
+export const DARK_WRAPPER_END = '\n</td></tr></table>';
+
+// Apply inline light link color to ensure contrast >= 4.5:1 against dark background (D-72, #1094).
+function applyInlineLinkColor(html: string): string {
+  return html.replace(/<a\b([^>]*)>/gi, (match, attrs) => {
+    if (!attrs) return `<a style="color:${DARK_WRAPPER_LINK};">`;
+    const styleMatch = attrs.match(/\bstyle="([^"]*)"/i);
+    if (styleMatch) {
+      if (/color\s*:/i.test(styleMatch[1])) return match;
+      const newStyle = `style="color:${DARK_WRAPPER_LINK};${styleMatch[1]}"`;
+      return `<a${attrs.replace(styleMatch[0], () => newStyle)}>`;
+    }
+    const singleStyleMatch = attrs.match(/\bstyle='([^']*)'/i);
+    if (singleStyleMatch) {
+      if (/color\s*:/i.test(singleStyleMatch[1])) return match;
+      const newStyle = `style='color:${DARK_WRAPPER_LINK};${singleStyleMatch[1]}'`;
+      return `<a${attrs.replace(singleStyleMatch[0], () => newStyle)}>`;
+    }
+    return `<a style="color:${DARK_WRAPPER_LINK};"${attrs}>`;
+  });
+}
+
+// Wrap finished email HTML in a presentation table with dark background and light text
+// (D-72, web-jam-back#1094). Uses only inline styles and HTML attributes; no <style> block
+// and no CSS variables. Declares dark intent with <meta> tags.
+export function wrapDarkEmail(html: string): string {
+  return `${DARK_WRAPPER_START}${applyInlineLinkColor(html)}${DARK_WRAPPER_END}`;
+}
+
 // Render a template into a ready-to-send email: token-filled subject + intro +
 // body, with the footer photo appended as an inline-CID attachment when the
 // template names one (and the asset is on disk).
@@ -650,7 +689,7 @@ export function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: Se
   const templateType = sanitizedTemplate.type || 'unknown';
   const templateStage = sanitizedTemplate.stage || 'cold';
   const footer = appendFooterPhoto(introHtml + bodyHtml, templateType, templateStage, sanitizedTemplate.footerPhotoRef);
-  return { subject, html: footer.html, attachments: footer.attachments };
+  return { subject, html: wrapDarkEmail(footer.html), attachments: footer.attachments };
 }
 
 // #974 (reshaped 2026-07-18 per Josh — secondary goes in Cc, not To): every
@@ -696,7 +735,7 @@ export function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
   ].join('\n');
   const templateType = outreach?.templateUsed || 'follow-up';
   const footer = appendFooterPhoto(html, templateType, 'follow-up', 'footer-josh-maria');
-  return { subject, html: footer.html, attachments: footer.attachments };
+  return { subject, html: wrapDarkEmail(footer.html), attachments: footer.attachments };
 }
 
 // Title + phone-script body for a CALL touch (#825), used as the Google Calendar

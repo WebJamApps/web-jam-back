@@ -16,6 +16,7 @@ const {
   isExactVenueSetMatch,
   unpitchedApprovedVenueIds,
   extractApprovedFingerprints,
+  wrapDarkEmail,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -666,11 +667,11 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
 
         const fp1 = computeDraftFingerprint({
           subject: 'Inquiry: Venue Alpha',
-          body: `<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`,
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
         });
         const fp2 = computeDraftFingerprint({
           subject: 'Inquiry: Venue Beta',
-          body: `<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`,
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
         });
 
         const gate1Doc = { batchId: 'batch-1', weekend: WEEKEND_STR, venueIds: [v1Id, v2Id], approver: 'Josh' };
@@ -714,7 +715,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
 
         const fp1 = computeDraftFingerprint({
           subject: 'Inquiry: Single Venue',
-          body: `<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`,
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
         });
 
         (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
@@ -747,7 +748,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
 
         const fp1 = computeDraftFingerprint({
           subject: 'Inquiry: Venue Alpha',
-          body: `<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`,
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
         });
 
         (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
@@ -797,7 +798,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
           expect.anything(),
           expect.objectContaining({
             subject: 'Inquiry: Venue Alpha',
-            html: `<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`,
+            html: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
           }),
         );
       });
@@ -965,6 +966,44 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
           user: oid(),
           body: {
             batchId: 'b-copy-mismatch',
+            venueIds: [v1Id],
+            targetDates: 'Oct 16-18',
+            targetWeekend: VALID_WEEKEND,
+          },
+        };
+
+        await c.sendBatch(req, resStub);
+
+        expect(status).toBe(403);
+        expect(payload.message).toContain('Gate 2 draft fingerprint mismatch for venue');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('refuses dispatch (403) when Gate 2 fingerprint was recorded pre-change (unwrapped body, D-72)', async () => {
+        asApprover();
+        const v1Id = oid();
+        const v1 = validVenue({ _id: v1Id, name: 'Venue Alpha' });
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(v1));
+
+        // Pre-change fingerprint without wrapDarkEmail
+        const preChangeFp = computeDraftFingerprint({
+          subject: 'Inquiry: Venue Alpha',
+          body: `<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`,
+        });
+
+        (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          batchId: 'b-prechange-mismatch',
+          venueIds: [v1Id],
+        }));
+        (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          batchId: 'b-prechange-mismatch',
+          draftFingerprints: [{ venueId: v1Id, fingerprint: preChangeFp }],
+        }));
+
+        const req: any = {
+          user: oid(),
+          body: {
+            batchId: 'b-prechange-mismatch',
             venueIds: [v1Id],
             targetDates: 'Oct 16-18',
             targetWeekend: VALID_WEEKEND,
@@ -1151,7 +1190,10 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         (venueModel as any).findById = vi.fn((id: string) => Promise.resolve(
           id === v2Id ? validVenue({ _id: v2Id, name: 'Venue Beta' }) : null,
         ));
-        const fp2 = computeDraftFingerprint({ subject: 'Inquiry: Venue Beta', body: `<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}` });
+        const fp2 = computeDraftFingerprint({
+          subject: 'Inquiry: Venue Beta',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+        });
         approvals('b-widened', [v1Id, v2Id], [{ venueId: v2Id, fingerprint: fp2 }]);
         c.model.find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'no-response' }]));
 
