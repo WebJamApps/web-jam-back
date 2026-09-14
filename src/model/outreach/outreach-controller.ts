@@ -487,11 +487,22 @@ function checkAccess(user: AuthedUser, required: string[]): AuthzResult {
   return null;
 }
 
+// Extract the first word of a contact name for greetings (D-69, web-jam-back#1098).
+// Degrading to empty string allows the caller to fall back to 'there'.
+export function contactFirstName(name?: string): string {
+  if (!name) return '';
+  const trimmed = name.trim();
+  if (!trimmed) return '';
+  return trimmed.split(/\s+/)[0];
+}
+
 // Fill the pitch tokens. Missing contact name degrades to "there" so a pitch
-// never goes out addressed to "[Contact Name]".
+// never goes out addressed to "[Contact Name]". Per D-69 (web-jam-back#1098),
+// greet only the first word of the contact name.
 function personalize(text: string, venue: VenueDoc, body: SendBody): string {
+  const contact = contactFirstName(venue.contactName) || 'there';
   return (text || '')
-    .split('[Contact Name]').join(venue.contactName || 'there')
+    .split('[Contact Name]').join(contact)
     .split('[Venue Name]').join(venue.name || 'your venue')
     .split('[Booking Period]').join(body.bookingPeriod || 'upcoming')
     .split('[Target Dates]').join(body.targetDates || 'flexible dates');
@@ -667,7 +678,7 @@ function fmtDate(d: Date): string { return `${MONTHS[d.getUTCMonth()]} ${d.getUT
 export function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
   subject: string; html: string; attachments: { filename: string; path: string; cid: string }[];
 } {
-  const contact = venue.contactName || 'there';
+  const contact = contactFirstName(venue.contactName) || 'there';
   const venueName = venue.name || 'your venue';
   const dates = outreach.targetDates || 'an upcoming date';
   const orig = outreach.sentAt ? fmtDate(new Date(outreach.sentAt)) : 'earlier this season';
