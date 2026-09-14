@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import fs from 'node:fs';
 import mongoose from 'mongoose';
 import { EMAIL_RE } from '#src/lib/email.js';
 
@@ -29,6 +30,7 @@ vi.mock('#src/lib/classify-reply.js', () => ({
 const {
   default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
   OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
+  buildPitchEmail, buildFollowUpEmail, MissingFooterError, resolveFooterAsset,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -2419,6 +2421,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         subject: 'Reaching out to {{venueName}}',
         introHtml: 'We are reaching out to connect.',
         bodyHtml: 'Our acoustic set is a perfect fit for {{venueName}}.',
+        footerPhotoRef: 'footer-josh-maria',
       }));
 
       await c.sendPitch({
@@ -2498,6 +2501,228 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(query.status).toEqual({ $in: ['sent', 'replied'] });
       expect(query.$or).toHaveLength(2);
       expect(query['targetWeekend.start']).toBeUndefined();
+    });
+  });
+
+  describe('refuse to preview or send pitches or follow-ups lacking photo footer (#1099, D-73)', () => {
+    const venue = validVenue();
+    const sendBody = { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND };
+    const outreachDoc = {
+      _id: oid(),
+      venueId: venue._id,
+      sentAt: new Date('2026-08-01'),
+      step: 1,
+      targetDates: 'Aug 14-16',
+      templateUsed: 'Originals',
+    };
+
+    describe('buildPitchEmail', () => {
+      it('Outcome 1: proceeds normally and includes footer attachment when footer resolves', () => {
+        const template = validTemplate({ footerPhotoRef: 'footer-josh-maria' });
+        const email = buildPitchEmail(venue, template, sendBody);
+        expect(email.subject).toContain('The Spot on Kirk');
+        expect(email.html).toContain('cid:footerphoto');
+        expect(email.html).toContain('alt="Josh and Maria performing"');
+        expect(email.attachments).toEqual([
+          expect.objectContaining({
+            filename: 'josh-maria.jpg',
+            cid: 'footerphoto',
+            path: expect.stringContaining('footer-josh-maria.jpg'),
+          }),
+        ]);
+      });
+
+      it('Outcome 1: byte-identical to pre-#1099 rendering for valid inputs with working footer', () => {
+        const template = validTemplate({ footerPhotoRef: 'footer-josh-maria' });
+        const email = buildPitchEmail(venue, template, sendBody);
+        const expectedFooter = '\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin-top:16px;">'
+          + '<tr><td style="text-align:center;">'
+          + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
+          + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>';
+        expect(email.html.endsWith(expectedFooter)).toBe(true);
+        expect(email.attachments).toHaveLength(1);
+        expect(email.attachments[0].filename).toBe('josh-maria.jpg');
+        expect(email.attachments[0].cid).toBe('footerphoto');
+      });
+
+      it('Outcome 2: refuses and throws naming template when footerPhotoRef is missing or empty', () => {
+        const templateNoRef = validTemplate({ footerPhotoRef: '' });
+        expect(() => buildPitchEmail(venue, templateNoRef, sendBody)).toThrow(MissingFooterError);
+        expect(() => buildPitchEmail(venue, templateNoRef, sendBody)).toThrow(
+          "missing photo footer for template 'Originals' (stage: cold)",
+        );
+
+        const templateUndefRef = validTemplate({ footerPhotoRef: undefined, type: 'PubFestivalBrewery', stage: 'returning' });
+        expect(() => buildPitchEmail(venue, templateUndefRef, sendBody)).toThrow(
+          "missing photo footer for template 'PubFestivalBrewery' (stage: returning)",
+        );
+      });
+
+      it('Outcome 2: refuses and throws naming template when footer photo file cannot be found', () => {
+        const templateMissingFile = validTemplate({ footerPhotoRef: 'non-existent-photo-ref' });
+        expect(() => buildPitchEmail(venue, templateMissingFile, sendBody)).toThrow(MissingFooterError);
+        expect(() => buildPitchEmail(venue, templateMissingFile, sendBody)).toThrow(
+          "missing photo footer for template 'Originals' (stage: cold)",
+        );
+      });
+
+      it('Outcome 3: refuses and throws on file-system error during footer resolution', () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockImplementation(() => {
+          throw new Error('EACCES: permission denied');
+        });
+        const template = validTemplate({ footerPhotoRef: 'footer-josh-maria' });
+        expect(() => buildPitchEmail(venue, template, sendBody)).toThrow(MissingFooterError);
+        expect(() => buildPitchEmail(venue, template, sendBody)).toThrow(
+          "missing photo footer for template 'Originals' (stage: cold): failed to resolve footer asset 'footer-josh-maria': EACCES: permission denied",
+        );
+        existsSpy.mockRestore();
+      });
+    });
+
+    describe('buildFollowUpEmail', () => {
+      it('Outcome 1: proceeds normally and includes footer attachment when footer resolves', () => {
+        const email = buildFollowUpEmail(venue, outreachDoc);
+        expect(email.subject).toContain('Following up');
+        expect(email.html).toContain('cid:footerphoto');
+        expect(email.html).toContain('alt="Josh and Maria performing"');
+        expect(email.attachments).toEqual([
+          expect.objectContaining({
+            filename: 'josh-maria.jpg',
+            cid: 'footerphoto',
+            path: expect.stringContaining('footer-josh-maria.jpg'),
+          }),
+        ]);
+      });
+
+      it('Outcome 2: refuses and throws naming template when footer photo file cannot be found', () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(MissingFooterError);
+        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(
+          "missing photo footer for template 'Originals' (stage: follow-up)",
+        );
+        existsSpy.mockRestore();
+      });
+
+      it('Outcome 2: names fallback follow-up when templateUsed is missing', () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+        const bareOutreach = { ...outreachDoc, templateUsed: undefined };
+        expect(() => buildFollowUpEmail(venue, bareOutreach)).toThrow(
+          "missing photo footer for template 'follow-up' (stage: follow-up)",
+        );
+        existsSpy.mockRestore();
+      });
+
+      it('Outcome 3: refuses and throws on file-system error during footer resolution', () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockImplementation(() => {
+          throw new Error('EACCES: permission denied');
+        });
+        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(MissingFooterError);
+        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(
+          "missing photo footer for template 'Originals' (stage: follow-up): failed to resolve footer asset 'footer-josh-maria': EACCES: permission denied",
+        );
+        existsSpy.mockRestore();
+      });
+    });
+
+    describe('GET /outreach/preview', () => {
+      it('returns 400 client-readable error naming template when single preview lacks photo footer', async () => {
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue()));
+        (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ footerPhotoRef: '' })));
+        await c.previewByVenue({ user: 'a', query: { venueId: oid() } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toBe("missing photo footer for template 'Originals' (stage: cold)");
+      });
+
+      it('returns 400 client-readable error naming affected template(s) in batch preview', async () => {
+        const id1 = oid();
+        const id2 = oid();
+        (venueModel as any).findById = vi.fn()
+          .mockResolvedValueOnce(validVenue({ _id: id1, venueType: 'Originals' }))
+          .mockResolvedValueOnce(validVenue({ _id: id2, venueType: 'PubFestivalBrewery' }));
+        (templateModel as any).findOne = vi.fn()
+          .mockResolvedValueOnce(validTemplate({ type: 'Originals', footerPhotoRef: '' }))
+          .mockResolvedValueOnce(validTemplate({ type: 'PubFestivalBrewery', footerPhotoRef: 'missing-asset' }));
+
+        await c.previewByVenue({ user: 'a', query: { venueIds: `${id1},${id2}`, targetDates: 'Aug 14-16' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain("missing photo footer for template 'Originals' (stage: cold)");
+        expect(payload.message).toContain("missing photo footer for template 'PubFestivalBrewery' (stage: cold)");
+      });
+    });
+
+    describe('sendBatch all-or-nothing refusal', () => {
+      it('refuses the whole batch when one venue lacks a photo footer (zero emails sent)', async () => {
+        asApprover();
+        const id1 = oid();
+        const id2 = oid();
+        (venueModel as any).findById = vi.fn()
+          .mockResolvedValueOnce(validVenue({ _id: id1, name: 'Venue With Footer' }))
+          .mockResolvedValueOnce(validVenue({ _id: id2, name: 'Venue Missing Footer' }));
+        (templateModel as any).findOne = vi.fn()
+          .mockResolvedValueOnce(validTemplate({ footerPhotoRef: 'footer-josh-maria' }))
+          .mockResolvedValueOnce(validTemplate({ type: 'Originals', stage: 'cold', footerPhotoRef: '' }));
+
+        await c.sendBatch({
+          user: 'josh',
+          body: {
+            venueIds: [id1, id2],
+            targetDates: 'Aug 14-16',
+            targetWeekend: VALID_WEEKEND,
+          },
+        }, resStub);
+
+        expect(status).toBe(403);
+        expect(payload.message).toContain('dispatch refused:');
+        expect(payload.message).toContain("missing photo footer for template 'Originals' (stage: cold)");
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('refuses the whole batch through verifyBatchDispatch when re-rendered copy lacks photo footer', async () => {
+        asApprover();
+        const id1 = oid();
+        c.getVenueSetApproval = vi.fn(() => Promise.resolve({ venueIds: [id1] }));
+        c.getDraftFingerprintsApproval = vi.fn(() => Promise.resolve({
+          fingerprints: [{ venueId: id1, fingerprint: 'fp123' }],
+        }));
+        c.pitchedVenueIdsForWeekend = vi.fn(() => Promise.resolve(new Set()));
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ _id: id1 })));
+        (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ footerPhotoRef: 'no-such-footer' })));
+
+        // Unstub verifyBatchDispatch to test the real Gate 1 + Gate 2 verification path
+        delete c.verifyBatchDispatch;
+        await c.sendBatch({
+          user: 'josh',
+          body: {
+            batchId: 'batch-1',
+            venueIds: [id1],
+            targetDates: 'Aug 14-16',
+            targetWeekend: VALID_WEEKEND,
+          },
+        }, resStub);
+
+        expect(status).toBe(403);
+        expect(payload.message).toContain('dispatch refused:');
+        expect(payload.message).toContain("missing photo footer for template 'Originals' (stage: cold)");
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('advanceCadence follow-up skipping on missing footer', () => {
+      it('skips email touch and does not send when follow-up footer cannot be resolved', async () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+        const touchVenue = validVenue({ _id: oid() });
+        const touchOutreach = {
+          _id: oid(),
+          venueId: touchVenue._id,
+          sentAt: new Date(Date.now() - 4 * 86400000),
+          step: 1,
+          targetDates: 'Aug 14-16',
+        };
+        const result = await c.doEmailTouch(touchOutreach, touchVenue, 2);
+        expect(result).toBe('skipped');
+        expect(sendMail).not.toHaveBeenCalled();
+        existsSpy.mockRestore();
+      });
     });
   });
 });
