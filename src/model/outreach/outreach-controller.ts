@@ -154,7 +154,9 @@ interface VenueDoc {
 // line), split out from bodyHtml so customIntro can replace it independently.
 // A template authored before the #903 migration simply has no introHtml (it
 // defaults to '' at render time) — its whole copy lives in bodyHtml, unchanged.
-interface TemplateDoc { type?: string; subject?: string; introHtml?: string; bodyHtml?: string; footerPhotoRef?: string }
+interface TemplateDoc {
+  type?: string; stage?: string; subject?: string; introHtml?: string; bodyHtml?: string; footerPhotoRef?: string;
+}
 export interface VerifiedPitchRender {
   venue: VenueDoc;
   template: TemplateDoc;
@@ -165,6 +167,16 @@ export interface VerifiedPitchRender {
     attachments: { filename: string; path: string; cid: string }[];
   };
 }
+type BatchPreFlightItem =
+  | {
+      ok: true;
+      venue: VenueDoc;
+      template: TemplateDoc;
+      type: string;
+      preRendered?: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] };
+    }
+  | { ok: false; venueName: string; reason: string }
+  | null;
 // Both approval facades define findLatestOne unconditionally — it is REQUIRED
 // here on purpose. An optional probe with an unsorted findOne fallback would
 // quietly return an arbitrary document in natural order the day the method
@@ -495,17 +507,28 @@ function personalize(text: string, venue: VenueDoc, body: SendBody): string {
     .split('[Target Dates]').join(body.targetDates || 'flexible dates');
 }
 
+export class MissingFooterError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MissingFooterError';
+  }
+}
+
 // Resolve a template's footerPhotoRef key to the bundled asset on disk. The
 // compiled controller runs from build/, where copy:assets places the jpg; fall
 // back to the source tree so an un-copied dev build (or a forgotten copy step)
 // still finds it.
-function resolveFooterAsset(ref: string): string | null {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    path.resolve(here, '../template/assets', `${ref}.jpg`),
-    path.resolve(process.cwd(), 'src/model/template/assets', `${ref}.jpg`),
-  ];
-  return candidates.find((p) => fs.existsSync(p)) || /* istanbul ignore next */ null;
+export function resolveFooterAsset(ref: string): string | null {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      path.resolve(here, '../template/assets', `${ref}.jpg`),
+      path.resolve(process.cwd(), 'src/model/template/assets', `${ref}.jpg`),
+    ];
+    return candidates.find((p) => fs.existsSync(p)) || /* istanbul ignore next */ null;
+  } catch (e) {
+    throw new Error(`failed to resolve footer asset '${ref}': ${(e as Error).message}`);
+  }
 }
 
 // The inline-CID footer photo block appended after the pitch body (the seed
@@ -579,6 +602,31 @@ function ensureVenueInSubject(subject: string, venueName: string): string {
   return `${venueName} — ${subject}`;
 }
 
+function appendFooterPhoto(
+  baseHtml: string,
+  templateType: string,
+  templateStage: string,
+  photoRef?: string,
+): { html: string; attachments: { filename: string; path: string; cid: string }[] } {
+  let assetPath: string | null = null;
+  try {
+    assetPath = photoRef ? resolveFooterAsset(photoRef) : null;
+  } catch (e) {
+    throw new MissingFooterError(
+      `missing photo footer for template '${templateType}' (stage: ${templateStage}): ${(e as Error).message}`,
+    );
+  }
+  if (!assetPath) {
+    throw new MissingFooterError(
+      `missing photo footer for template '${templateType}' (stage: ${templateStage})`,
+    );
+  }
+  return {
+    html: baseHtml + footerHtml(),
+    attachments: [{ filename: 'josh-maria.jpg', path: assetPath, cid: 'footerphoto' }],
+  };
+}
+
 // Render a template into a ready-to-send email: token-filled subject + intro +
 // body, with the footer photo appended as an inline-CID attachment when the
 // template names one (and the asset is on disk).
@@ -586,7 +634,7 @@ function ensureVenueInSubject(subject: string, venueName: string): string {
 // #903 — customIntro/customBody are two independent optional slots (see the
 // resolveIntroHtml / fillCustomBodyMarker docs above); when both are absent,
 // this renders byte-for-byte identically to the pre-#903 template render.
-function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody): {
+export function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody): {
   subject: string; html: string; attachments: { filename: string; path: string; cid: string }[];
 } {
   const sanitizedTemplate = formatTemplate(template as unknown as Record<string, unknown>) as unknown as TemplateDoc;
@@ -598,15 +646,10 @@ function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: SendBody)
   const introHtml = sanitizeTemplateText(resolveIntroHtml(sanitizedTemplate, venue, body));
   const rawBodyHtml = fillCustomBodyMarker(personalize(sanitizedTemplate.bodyHtml || '', venue, body), body.customBody);
   const bodyHtml = sanitizeTemplateText(rawBodyHtml);
-  let html = introHtml + bodyHtml;
-  const attachments = [];
-  const assetPath = sanitizedTemplate.footerPhotoRef ? resolveFooterAsset(sanitizedTemplate.footerPhotoRef) : null;
-  /* istanbul ignore else */
-  if (assetPath) {
-    html += footerHtml();
-    attachments.push({ filename: 'josh-maria.jpg', path: assetPath, cid: 'footerphoto' });
-  }
-  return { subject, html, attachments };
+  const templateType = sanitizedTemplate.type || 'unknown';
+  const templateStage = sanitizedTemplate.stage || 'cold';
+  const footer = appendFooterPhoto(introHtml + bodyHtml, templateType, templateStage, sanitizedTemplate.footerPhotoRef);
+  return { subject, html: footer.html, attachments: footer.attachments };
 }
 
 // #974 (reshaped 2026-07-18 per Josh — secondary goes in Cc, not To): every
@@ -631,7 +674,7 @@ function fmtDate(d: Date): string { return `${MONTHS[d.getUTCMonth()]} ${d.getUT
 // Build a cadence follow-up email (#824) for an outreach record: a short,
 // personalized nudge referencing the original pitch date + target window, with
 // the same inline-CID footer photo as the pitch.
-function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
+export function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
   subject: string; html: string; attachments: { filename: string; path: string; cid: string }[];
 } {
   const contact = venue.contactName || 'there';
@@ -642,7 +685,7 @@ function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
   // literal already names the venue, so it's a no-op here, but keeping both
   // paths on one guarantee means a future subject rewrite can't drop it.
   const subject = ensureVenueInSubject(`Following up — Josh & Maria at ${venueName}`, venueName);
-  let html = [
+  const html = [
     `<p>Hi ${contact},</p>`,
     `<p>Just following up on my note from ${orig} about Josh &amp; Maria — my wife and I are a husband-wife `
       + `acoustic duo here in Salem, VA. We'd still love to be considered for a slot at ${venueName} around ${dates}.</p>`,
@@ -650,14 +693,9 @@ function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
       + 'Happy to send more live samples or work around your schedule.</p>',
     '<p>Best,<br>Josh &amp; Maria<br>540-494-8035<br><a href="https://www.joshandmariamusic.com">joshandmariamusic.com</a></p>',
   ].join('\n');
-  const attachments = [];
-  const assetPath = resolveFooterAsset('footer-josh-maria');
-  /* istanbul ignore else */
-  if (assetPath) {
-    html += footerHtml();
-    attachments.push({ filename: 'josh-maria.jpg', path: assetPath, cid: 'footerphoto' });
-  }
-  return { subject, html, attachments };
+  const templateType = outreach?.templateUsed || 'follow-up';
+  const footer = appendFooterPhoto(html, templateType, 'follow-up', 'footer-josh-maria');
+  return { subject, html: footer.html, attachments: footer.attachments };
 }
 
 // Title + phone-script body for a CALL touch (#825), used as the Google Calendar
@@ -1186,7 +1224,15 @@ class OutreachController extends Controller {
     actor: string,
     preRendered?: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] },
   ): Promise<SendResult> {
-    const { subject, html, attachments } = preRendered || buildPitchEmail(venue, template, body);
+    let rendered = preRendered;
+    if (!rendered) {
+      try {
+        rendered = buildPitchEmail(venue, template, body);
+      } catch (e) {
+        return { ok: false, status: 400, message: (e as Error).message };
+      }
+    }
+    const { subject, html, attachments } = rendered;
     let sent: { messageId: string };
     try {
       sent = await sendMail({
@@ -1287,6 +1333,68 @@ class OutreachController extends Controller {
     };
   }
 
+  private async preFlightBatchItems(
+    venueIds: string[],
+    body: BatchBody,
+    sendBody: SendBody,
+    verifiedMap?: Map<string, VerifiedPitchRender>,
+  ): Promise<{
+    footerErrors: string[];
+    preFlightItems: { venueId: string; item: BatchPreFlightItem }[];
+  }> {
+    const preFlightItems: { venueId: string; item: BatchPreFlightItem }[] = [];
+    const footerErrors: string[] = [];
+
+    for (const venueId of venueIds) {
+      if (!mongoose.Types.ObjectId.isValid(venueId)) {
+        preFlightItems.push({ venueId, item: null });
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const item = await this.resolveBatchPitchItem(venueId, body, sendBody, verifiedMap);
+      preFlightItems.push({ venueId, item });
+      if (item.ok && !item.preRendered) {
+        try {
+          buildPitchEmail(item.venue, item.template, sendBody);
+        } catch (e) {
+          if (e instanceof MissingFooterError || (e as Error).name === 'MissingFooterError') {
+            footerErrors.push((e as Error).message);
+          }
+        }
+      }
+    }
+    return { footerErrors, preFlightItems };
+  }
+
+  private async dispatchBatchItems(
+    items: { venueId: string; item: BatchPreFlightItem }[],
+    sendBody: SendBody,
+    actor: string,
+    result: { requested: number; sent: number; skipped: { venueId: string; venueName: string; reason: string }[]; records: unknown[] },
+  ): Promise<void> {
+    for (const { venueId, item } of items) {
+      if (!mongoose.Types.ObjectId.isValid(venueId)) {
+        result.skipped.push({ venueId, venueName: UNKNOWN_VENUE_NAME, reason: 'invalid id' });
+        continue;
+      }
+      if (!item || !item.ok) {
+        const venueName = item ? item.venueName : UNKNOWN_VENUE_NAME;
+        const reason = item ? item.reason : 'unresolvable';
+        result.skipped.push({ venueId, venueName, reason });
+        continue;
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const r = await this.performSend(item.venue, item.template, item.type, sendBody, actor, item.preRendered);
+      if (!r.ok) {
+        result.skipped.push({ venueId, venueName: item.venue.name || UNKNOWN_VENUE_NAME, reason: r.message });
+        continue;
+      }
+      result.sent += 1;
+      result.records.push(r.record);
+    }
+  }
+
   // POST /outreach/batch — send the approved target list (#844). Body:
   // { venueIds[], targetDates, bookingPeriod?, templateType? }. Authz is the
   // door gate above (create or approve may attempt) PLUS the unconditional
@@ -1324,26 +1432,20 @@ class OutreachController extends Controller {
       requested: body.venueIds.length, sent: 0, skipped: [], records: [],
     };
     const verifiedMap = (approvalCheck as { verifiedRenderings?: Map<string, VerifiedPitchRender> }).verifiedRenderings;
-    for (const venueId of body.venueIds) {
-      if (!mongoose.Types.ObjectId.isValid(venueId)) {
-        result.skipped.push({ venueId, venueName: UNKNOWN_VENUE_NAME, reason: 'invalid id' }); continue;
-      }
-      const sendBody = {
-        targetDates: body.targetDates, targetWeekend: body.targetWeekend, bookingPeriod: body.bookingPeriod, cc: body.cc,
-        customIntro: body.customIntro, customBody: body.customBody,
-      };
+    const sendBody = {
+      targetDates: body.targetDates, targetWeekend: body.targetWeekend, bookingPeriod: body.bookingPeriod, cc: body.cc,
+      customIntro: body.customIntro, customBody: body.customBody,
+    };
 
-      // eslint-disable-next-line no-await-in-loop
-      const item = await this.resolveBatchPitchItem(venueId, body, sendBody, verifiedMap);
-      if (!item.ok) {
-        result.skipped.push({ venueId, venueName: item.venueName, reason: item.reason }); continue;
-      }
-
-      // eslint-disable-next-line no-await-in-loop
-      const r = await this.performSend(item.venue, item.template, item.type, sendBody, actor, item.preRendered);
-      if (!r.ok) { result.skipped.push({ venueId, venueName: item.venue.name || UNKNOWN_VENUE_NAME, reason: r.message }); continue; }
-      result.sent += 1; result.records.push(r.record);
+    const { footerErrors, preFlightItems } = await this.preFlightBatchItems(body.venueIds, body, sendBody, verifiedMap);
+    if (footerErrors.length > 0) {
+      const uniqueErrors = Array.from(new Set(footerErrors));
+      return res.status(403).json({
+        message: `dispatch refused: ${uniqueErrors.join('; ')}`,
+      });
     }
+
+    await this.dispatchBatchItems(preFlightItems, sendBody, actor, result);
     return res.status(200).json(result);
   }
 
@@ -1577,6 +1679,41 @@ class OutreachController extends Controller {
     return res.status(200).json({ candidates: withReason, weekendGigs });
   }
 
+  private renderPreviewPitch(
+    venue: VenueDoc,
+    template: TemplateDoc,
+    q: { targetDates?: string; bookingPeriod?: string; customIntro?: string; customBody?: string },
+  ): { subject: string; html: string } {
+    return buildPitchEmail(venue, template, {
+      targetDates: q.targetDates, bookingPeriod: q.bookingPeriod, customIntro: q.customIntro, customBody: q.customBody,
+    } as SendBody);
+  }
+
+  private async previewBatchVenues(
+    ids: string[],
+    q: { templateType?: string; targetDates?: string; bookingPeriod?: string; customIntro?: string; customBody?: string },
+  ): Promise<{ results: { venueId: string; venueName: string; subject: string; body: string }[]; footerErrors: string[] }> {
+    const results: { venueId: string; venueName: string; subject: string; body: string }[] = [];
+    const footerErrors: string[] = [];
+    for (const venueId of ids) {
+      if (!mongoose.Types.ObjectId.isValid(venueId)) continue; // skip invalid ids
+      // eslint-disable-next-line no-await-in-loop
+      const ctx = await this.resolvePitch(
+        { venueId, templateType: q.templateType, targetDates: q.targetDates, bookingPeriod: q.bookingPeriod },
+        { skipDedup: true, requireEligible: false },
+      );
+      if (ctx.error) continue; // skip unresolvable venues
+      const { venue, template } = ctx as Required<PitchContext>;
+      try {
+        const { subject, html } = this.renderPreviewPitch(venue, template, q);
+        results.push({ venueId, venueName: venue.name || '', subject, body: html });
+      } catch (e) {
+        footerErrors.push((e as Error).message);
+      }
+    }
+    return { results, footerErrors };
+  }
+
   // GET /outreach/preview — render the exact email a venue would get, WITHOUT
   // sending and WITHOUT requiring eligibility, so the approval UI can show Josh
   // the real copy while he curates the list.
@@ -1600,22 +1737,10 @@ class OutreachController extends Controller {
     // BATCH form: venueIds (plural, comma-separated) → array of preview objects.
     if (q.venueIds) {
       const ids = q.venueIds.split(',').map((s) => s.trim()).filter(Boolean);
-      const results: { venueId: string; venueName: string; subject: string; body: string }[] = [];
-      for (const venueId of ids) {
-        if (!mongoose.Types.ObjectId.isValid(venueId)) continue; // skip invalid ids
-        const ctx = await this.resolvePitch( // eslint-disable-line no-await-in-loop
-          { venueId, templateType: q.templateType, targetDates: q.targetDates, bookingPeriod: q.bookingPeriod },
-          { skipDedup: true, requireEligible: false },
-        );
-        if (ctx.error) continue; // skip unresolvable venues
-        const { venue, template } = ctx as Required<PitchContext>;
-        const { subject, html } = buildPitchEmail(
-          venue, template,
-          {
-            targetDates: q.targetDates, bookingPeriod: q.bookingPeriod, customIntro: q.customIntro, customBody: q.customBody,
-          } as SendBody,
-        );
-        results.push({ venueId, venueName: venue.name || '', subject, body: html });
+      const { results, footerErrors } = await this.previewBatchVenues(ids, q);
+      if (footerErrors.length > 0) {
+        const uniqueErrors = Array.from(new Set(footerErrors));
+        return res.status(400).json({ message: uniqueErrors.join('; ') });
       }
       return res.status(200).json(results);
     }
@@ -1628,13 +1753,12 @@ class OutreachController extends Controller {
     );
     if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message });
     const { venue, template } = ctx as Required<PitchContext>;
-    const { subject, html } = buildPitchEmail(
-      venue, template,
-      {
-        targetDates: q.targetDates, bookingPeriod: q.bookingPeriod, customIntro: q.customIntro, customBody: q.customBody,
-      } as SendBody,
-    );
-    return res.status(200).json({ to: venue.email, cc: PITCH_CC, subject, html });
+    try {
+      const { subject, html } = this.renderPreviewPitch(venue, template, q);
+      return res.status(200).json({ to: venue.email, cc: PITCH_CC, subject, html });
+    } catch (e) {
+      return res.status(400).json({ message: (e as Error).message });
+    }
   }
 
   // Append a completed touch and reschedule (or finish) the record. Returns
@@ -1659,7 +1783,11 @@ class OutreachController extends Controller {
   // resolveCc — reshaped 2026-07-18: secondary rides in Cc, never To).
   async doEmailTouch(o: OutreachDoc, venue: VenueDoc, touchNum: number): Promise<'sent' | 'skipped'> {
     if (!isValidEmail(venue.email)) return 'skipped';
-    const { subject, html, attachments } = buildFollowUpEmail(venue, o);
+    let emailData: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] };
+    try {
+      emailData = buildFollowUpEmail(venue, o);
+    } catch { return 'skipped'; }
+    const { subject, html, attachments } = emailData;
     let sent: { messageId: string };
     try {
       sent = await sendMail({
@@ -2245,7 +2373,16 @@ class OutreachController extends Controller {
       };
     }
     const { venue, template, type } = ctx as Required<PitchContext>;
-    const rendered = buildPitchEmail(venue, template, sendBody as SendBody);
+    let rendered: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] };
+    try {
+      rendered = buildPitchEmail(venue, template, sendBody as SendBody);
+    } catch (e) {
+      return {
+        ok: false,
+        status: 403,
+        message: `dispatch refused: ${(e as Error).message}`,
+      };
+    }
     const renderedFingerprint = computeDraftFingerprint({ subject: rendered.subject, body: rendered.html });
     if (expectedFingerprint !== renderedFingerprint) {
       return {
@@ -2264,6 +2401,47 @@ class OutreachController extends Controller {
       venueId: { $in: venueIds }, ...targetWeekendOverlapClause(tw),
     }) as unknown as { venueId?: unknown }[];
     return new Set(records.map((r) => String(r.venueId)));
+  }
+
+  private async verifyBatchRenderings(
+    batchVenueIds: string[],
+    approvedFps: Map<string, string>,
+    body: BatchBody,
+  ): Promise<{ ok: true; verifiedRenderings: Map<string, VerifiedPitchRender> } | { ok: false; status: number; message: string }> {
+    const verifiedRenderings = new Map<string, VerifiedPitchRender>();
+    const footerErrors: string[] = [];
+    try {
+      for (const venueId of batchVenueIds) {
+        // eslint-disable-next-line no-await-in-loop
+        const renderCheck = await this.verifyVenueRenderedCopy(venueId, approvedFps.get(venueId) || '', body);
+        if (!renderCheck.ok) {
+          if (renderCheck.status === 403 && renderCheck.message.includes('missing photo footer')) {
+            footerErrors.push(renderCheck.message.replace(/^dispatch refused: /, ''));
+            continue;
+          }
+          return renderCheck;
+        }
+        if (renderCheck.verified) {
+          verifiedRenderings.set(venueId, renderCheck.verified);
+        }
+      }
+      if (footerErrors.length > 0) {
+        const uniqueErrors = Array.from(new Set(footerErrors));
+        return {
+          ok: false,
+          status: 403,
+          message: `dispatch refused: ${uniqueErrors.join('; ')}`,
+        };
+      }
+    } catch (e) {
+      // Outcome 3: Indeterminate check — comparison errors or unexpected exceptions (fails closed)
+      return {
+        ok: false,
+        status: 500,
+        message: `dispatch refused: error during draft fingerprint verification: ${(e as Error).message}`,
+      };
+    }
+    return { ok: true, verifiedRenderings };
   }
 
   // Gate 1 & Gate 2 batch dispatch refusal guard (web-jam-back#1079, D-39, D-40, D-41, D-42, Step 6).
@@ -2352,26 +2530,7 @@ class OutreachController extends Controller {
     }
 
     // Re-render draft emails and match fingerprints against Gate 2
-    const verifiedRenderings = new Map<string, VerifiedPitchRender>();
-    try {
-      for (const venueId of batchVenueIds) {
-        const renderCheck = await this.verifyVenueRenderedCopy(venueId, approvedFps.get(venueId) || '', body);
-        if (!renderCheck.ok) return renderCheck;
-        if (renderCheck.verified) {
-          verifiedRenderings.set(venueId, renderCheck.verified);
-        }
-      }
-    } catch (e) {
-      // Outcome 3: Indeterminate check — comparison errors or unexpected exceptions (fails closed)
-      return {
-        ok: false,
-        status: 500,
-        message: `dispatch refused: error during draft fingerprint verification: ${(e as Error).message}`,
-      };
-    }
-
-    // Outcome 1: Both approvals present and matching
-    return { ok: true, verifiedRenderings };
+    return this.verifyBatchRenderings(batchVenueIds, approvedFps, body);
   }
 }
 
