@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import fs from 'node:fs';
 import mongoose from 'mongoose';
+import type { OutreachDoc } from '#src/model/outreach/outreach-controller.js';
 import { EMAIL_RE } from '#src/lib/email.js';
 
 const sendMail = vi.fn(() => Promise.resolve({ messageId: 'mid-123' }));
@@ -29,6 +31,9 @@ vi.mock('#src/lib/classify-reply.js', () => ({
 const {
   default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
   OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
+  buildPitchEmail, buildFollowUpEmail, MissingFooterError, resolveFooterAsset,
+  contactFirstName,
+  wrapDarkEmail, DARK_WRAPPER_BG, DARK_WRAPPER_TEXT, DARK_WRAPPER_LINK, DARK_WRAPPER_START, DARK_WRAPPER_END,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -567,10 +572,14 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('skips an ineligible venue (collected, batch continues)', async () => {
       asApprover();
-      (venueModel as any).findById = vi.fn()
-        .mockResolvedValueOnce(validVenue())
-        .mockResolvedValueOnce(validVenue({ name: 'The Ineligible Room', outreachEligible: false }));
-      await c.sendBatch({ user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
+      const eligibleId = oid();
+      const ineligibleId = oid();
+      (venueModel as any).findById = vi.fn((id: string) => Promise.resolve(id === ineligibleId
+        ? validVenue({ name: 'The Ineligible Room', outreachEligible: false })
+        : validVenue()));
+      await c.sendBatch({
+        user: 'josh', body: { venueIds: [eligibleId, ineligibleId], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND },
+      }, resStub);
       expect(payload.sent).toBe(1);
       expect(payload.skipped).toHaveLength(1);
       expect(payload.skipped[0].reason).toContain('not outreach-eligible');
@@ -1306,12 +1315,12 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('sendBatch: every sent email\'s subject names its own venue', async () => {
       asApprover();
-      (venueModel as any).findById = vi.fn()
-        .mockResolvedValueOnce(validVenue({ name: 'Venue One' }))
-        .mockResolvedValueOnce(validVenue({ name: 'Venue Two' }));
+      const idOne = oid();
+      const idTwo = oid();
+      (venueModel as any).findById = vi.fn((id: string) => Promise.resolve(validVenue({ name: id === idOne ? 'Venue One' : 'Venue Two' })));
       (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ subject: 'Performance Inquiry: Josh and Maria' })));
       await c.sendBatch(
-        { user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } },
+        { user: 'josh', body: { venueIds: [idOne, idTwo], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } },
         resStub,
       );
       expect(status).toBe(200);
@@ -1362,11 +1371,13 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(status).toBe(201);
       const html = (sendMail as any).mock.calls[0][0].html;
       expect(html).toBe(
-        '<p>Hi Pat, we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>'
-          + '\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin-top:16px;">'
-          + '<tr><td style="text-align:center;">'
-          + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
-          + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>',
+        wrapDarkEmail(
+          '<p>Hi Pat, we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>'
+            + '\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin-top:16px;">'
+            + '<tr><td style="text-align:center;">'
+            + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
+            + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>',
+        ),
       );
     });
 
@@ -1378,7 +1389,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       const html = (sendMail as any).mock.calls[0][0].html;
       // introHtml ("Hi Pat,") + bodyHtml with the marker stripped to '' reproduces
       // exactly the same copy the pre-#903 single-bodyHtml template would render.
-      expect(html.startsWith('<p>Hi Pat,</p><p>we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>')).toBe(true);
+      expect(html).toContain('<p>Hi Pat,</p><p>we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>');
       expect(html).not.toContain('[Custom Body]');
     });
 
@@ -1391,7 +1402,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(201);
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.indexOf('<p>We stopped in Wednesday and left a card.</p>')).toBe(0);
+      expect(html).toContain('<p>We stopped in Wednesday and left a card.</p>');
       expect(html).not.toContain('Hi Pat,'); // default intro NOT emitted alongside customIntro
       expect(html).toContain('we are booking our August run');
     });
@@ -1405,7 +1416,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(201);
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.startsWith('<p>Hi Pat,</p><p>Loved your open mic last week!</p><p>we are booking our August run')).toBe(true);
+      expect(html).toContain('<p>Hi Pat,</p><p>Loved your open mic last week!</p><p>we are booking our August run');
     });
 
     it('sendPitch: customIntro and customBody together — replace + insert, no double-greeting', async () => {
@@ -1419,7 +1430,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         resStub,
       );
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.indexOf('<p>Hey Pat, following up!</p>')).toBe(0);
+      expect(html).toContain('<p>Hey Pat, following up!</p>');
       expect(html).not.toContain('Hi Pat,');
       expect(html).toContain('<p>We met at the farmers market.</p><p>we are booking our August run');
       // cc / tracking / cadence stay intact regardless of the custom slots.
@@ -1445,7 +1456,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
       await c.sendPitch({ user: 'josh', body: { ...body(), customIntro: '   ', customBody: '  ' } }, resStub);
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.startsWith('<p>Hi Pat,</p><p>we are booking our August run')).toBe(true);
+      expect(html).toContain('<p>Hi Pat,</p><p>we are booking our August run');
     });
 
     it('sendPitch: customIntro is HTML-escaped', async () => {
@@ -1491,7 +1502,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         resStub,
       );
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.indexOf('<p>Line one<br>Line two</p>\n<p>Second paragraph</p>')).toBe(0);
+      expect(html).toContain('<p>Line one<br>Line two</p>\n<p>Second paragraph</p>');
     });
 
     it('sendBatch: threads customIntro + customBody to every venue in the batch', async () => {
@@ -1509,7 +1520,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(200);
       expect(payload.sent).toBe(2);
-      expect((sendMail as any).mock.calls[0][0].html.indexOf('<p>Hey again!</p>')).toBe(0);
+      expect((sendMail as any).mock.calls[0][0].html).toContain('<p>Hey again!</p>');
       expect((sendMail as any).mock.calls[0][0].html).toContain('<p>Loved your open mic last week!</p>');
       expect((sendMail as any).mock.calls[1][0].html).toContain('<p>Loved your open mic last week!</p>');
     });
@@ -1517,7 +1528,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('sendBatch: both absent leaves batch sends unchanged', async () => {
       asApprover();
       await c.sendBatch({ user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
-      expect((sendMail as any).mock.calls[0][0].html.startsWith('<p>Hi Pat')).toBe(true);
+      expect((sendMail as any).mock.calls[0][0].html).toContain('<p>Hi Pat');
     });
 
     it('previewByVenue (single form): reflects customIntro + customBody without sending', async () => {
@@ -1533,7 +1544,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(200);
       expect(sendMail).not.toHaveBeenCalled();
-      expect(payload.html.indexOf('<p>Hi there again,</p>')).toBe(0);
+      expect(payload.html).toContain('<p>Hi there again,</p>');
       expect(payload.html).toContain('<p>We met at the farmers market.</p>');
       expect(payload.html).not.toContain('Hi Pat,');
     });
@@ -1551,13 +1562,13 @@ describe('Outreach Controller (#844 batch model)', () => {
         resStub,
       );
       expect(status).toBe(200);
-      expect(payload[0].body.indexOf('<p>Following up,</p>')).toBe(0);
+      expect(payload[0].body).toContain('<p>Following up,</p>');
       expect(payload[0].body).toContain('<p>Card left at the bar.</p>');
     });
 
     it('previewByVenue: both absent leaves preview unchanged', async () => {
       await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
-      expect(payload.html.startsWith('<p>Hi Pat')).toBe(true);
+      expect(payload.html).toContain('<p>Hi Pat');
     });
   });
 
@@ -2419,6 +2430,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         subject: 'Reaching out to {{venueName}}',
         introHtml: 'We are reaching out to connect.',
         bodyHtml: 'Our acoustic set is a perfect fit for {{venueName}}.',
+        footerPhotoRef: 'footer-josh-maria',
       }));
 
       await c.sendPitch({
@@ -2500,4 +2512,528 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(query['targetWeekend.start']).toBeUndefined();
     });
   });
+
+  describe('refuse to preview or send pitches or follow-ups lacking photo footer (#1099, D-73)', () => {
+    const venue = validVenue();
+    const sendBody = { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND };
+    const outreachDoc = {
+      _id: oid(),
+      venueId: venue._id,
+      sentAt: new Date('2026-08-01'),
+      step: 1,
+      targetDates: 'Aug 14-16',
+      templateUsed: 'Originals',
+    };
+
+    describe('buildPitchEmail', () => {
+      it('Outcome 1: proceeds normally and includes footer attachment when footer resolves', () => {
+        const template = validTemplate({ footerPhotoRef: 'footer-josh-maria' });
+        const email = buildPitchEmail(venue, template, sendBody);
+        expect(email.subject).toContain('The Spot on Kirk');
+        expect(email.html).toContain('cid:footerphoto');
+        expect(email.html).toContain('alt="Josh and Maria performing"');
+        expect(email.attachments).toEqual([
+          expect.objectContaining({
+            filename: 'josh-maria.jpg',
+            cid: 'footerphoto',
+            path: expect.stringContaining('footer-josh-maria.jpg'),
+          }),
+        ]);
+      });
+
+      it('Outcome 1: byte-identical to pre-#1099 rendering for valid inputs with working footer', () => {
+        const template = validTemplate({ footerPhotoRef: 'footer-josh-maria' });
+        const email = buildPitchEmail(venue, template, sendBody);
+        const expectedFooter = '\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin-top:16px;">'
+          + '<tr><td style="text-align:center;">'
+          + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
+          + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>';
+        expect(email.html.endsWith(DARK_WRAPPER_END)).toBe(true);
+        expect(email.html).toContain(expectedFooter);
+        expect(email.attachments).toHaveLength(1);
+        expect(email.attachments[0].filename).toBe('josh-maria.jpg');
+        expect(email.attachments[0].cid).toBe('footerphoto');
+      });
+
+      it('Outcome 2: refuses and throws naming template when footerPhotoRef is missing or empty', () => {
+        const templateNoRef = validTemplate({ footerPhotoRef: '' });
+        expect(() => buildPitchEmail(venue, templateNoRef, sendBody)).toThrow(MissingFooterError);
+        expect(() => buildPitchEmail(venue, templateNoRef, sendBody)).toThrow(
+          "missing photo footer for template 'Originals' (stage: cold)",
+        );
+
+        const templateUndefRef = validTemplate({ footerPhotoRef: undefined, type: 'PubFestivalBrewery', stage: 'returning' });
+        expect(() => buildPitchEmail(venue, templateUndefRef, sendBody)).toThrow(
+          "missing photo footer for template 'PubFestivalBrewery' (stage: returning)",
+        );
+      });
+
+      it('Outcome 2: refuses and throws naming template when footer photo file cannot be found', () => {
+        const templateMissingFile = validTemplate({ footerPhotoRef: 'non-existent-photo-ref' });
+        expect(() => buildPitchEmail(venue, templateMissingFile, sendBody)).toThrow(MissingFooterError);
+        expect(() => buildPitchEmail(venue, templateMissingFile, sendBody)).toThrow(
+          "missing photo footer for template 'Originals' (stage: cold)",
+        );
+      });
+
+      it('Outcome 3: refuses and throws on file-system error during footer resolution', () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockImplementation(() => {
+          throw new Error('EACCES: permission denied');
+        });
+        const template = validTemplate({ footerPhotoRef: 'footer-josh-maria' });
+        expect(() => buildPitchEmail(venue, template, sendBody)).toThrow(MissingFooterError);
+        expect(() => buildPitchEmail(venue, template, sendBody)).toThrow(
+          "missing photo footer for template 'Originals' (stage: cold): failed to resolve footer asset 'footer-josh-maria': EACCES: permission denied",
+        );
+        existsSpy.mockRestore();
+      });
+    });
+
+    describe('buildFollowUpEmail', () => {
+      it('Outcome 1: proceeds normally and includes footer attachment when footer resolves', () => {
+        const email = buildFollowUpEmail(venue, outreachDoc);
+        expect(email.subject).toContain('Following up');
+        expect(email.html).toContain('cid:footerphoto');
+        expect(email.html).toContain('alt="Josh and Maria performing"');
+        expect(email.attachments).toEqual([
+          expect.objectContaining({
+            filename: 'josh-maria.jpg',
+            cid: 'footerphoto',
+            path: expect.stringContaining('footer-josh-maria.jpg'),
+          }),
+        ]);
+      });
+
+      it('Outcome 2: refuses and throws naming template when footer photo file cannot be found', () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(MissingFooterError);
+        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(
+          "missing photo footer for template 'Originals' (stage: follow-up)",
+        );
+        existsSpy.mockRestore();
+      });
+
+      it('Outcome 2: names fallback follow-up when templateUsed is missing', () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+        const bareOutreach = { ...outreachDoc, templateUsed: undefined };
+        expect(() => buildFollowUpEmail(venue, bareOutreach)).toThrow(
+          "missing photo footer for template 'follow-up' (stage: follow-up)",
+        );
+        existsSpy.mockRestore();
+      });
+
+      it('Outcome 3: refuses and throws on file-system error during footer resolution', () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockImplementation(() => {
+          throw new Error('EACCES: permission denied');
+        });
+        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(MissingFooterError);
+        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(
+          "missing photo footer for template 'Originals' (stage: follow-up): failed to resolve footer asset 'footer-josh-maria': EACCES: permission denied",
+        );
+        existsSpy.mockRestore();
+      });
+    });
+
+    describe('GET /outreach/preview', () => {
+      it('returns 400 client-readable error naming template when single preview lacks photo footer', async () => {
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue()));
+        (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ footerPhotoRef: '' })));
+        await c.previewByVenue({ user: 'a', query: { venueId: oid() } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toBe("missing photo footer for template 'Originals' (stage: cold)");
+      });
+
+      it('returns 400 client-readable error naming affected template(s) in batch preview', async () => {
+        const id1 = oid();
+        const id2 = oid();
+        (venueModel as any).findById = vi.fn()
+          .mockResolvedValueOnce(validVenue({ _id: id1, venueType: 'Originals' }))
+          .mockResolvedValueOnce(validVenue({ _id: id2, venueType: 'PubFestivalBrewery' }));
+        (templateModel as any).findOne = vi.fn()
+          .mockResolvedValueOnce(validTemplate({ type: 'Originals', footerPhotoRef: '' }))
+          .mockResolvedValueOnce(validTemplate({ type: 'PubFestivalBrewery', footerPhotoRef: 'missing-asset' }));
+
+        await c.previewByVenue({ user: 'a', query: { venueIds: `${id1},${id2}`, targetDates: 'Aug 14-16' } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain("missing photo footer for template 'Originals' (stage: cold)");
+        expect(payload.message).toContain("missing photo footer for template 'PubFestivalBrewery' (stage: cold)");
+      });
+    });
+
+    describe('sendBatch all-or-nothing refusal', () => {
+      afterEach(() => { vi.restoreAllMocks(); });
+
+      it('refuses the whole batch when one venue lacks a photo footer (zero emails sent)', async () => {
+        asApprover();
+        const id1 = oid();
+        const id2 = oid();
+        (venueModel as any).findById = vi.fn()
+          .mockResolvedValueOnce(validVenue({ _id: id1, name: 'Venue With Footer' }))
+          .mockResolvedValueOnce(validVenue({ _id: id2, name: 'Venue Missing Footer' }));
+        (templateModel as any).findOne = vi.fn()
+          .mockResolvedValueOnce(validTemplate({ footerPhotoRef: 'footer-josh-maria' }))
+          .mockResolvedValueOnce(validTemplate({ type: 'Originals', stage: 'cold', footerPhotoRef: '' }));
+
+        await c.sendBatch({
+          user: 'josh',
+          body: {
+            venueIds: [id1, id2],
+            targetDates: 'Aug 14-16',
+            targetWeekend: VALID_WEEKEND,
+          },
+        }, resStub);
+
+        expect(status).toBe(403);
+        expect(payload.message).toContain('dispatch refused:');
+        expect(payload.message).toContain("missing photo footer for template 'Originals' (stage: cold)");
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('refuses the whole batch through verifyBatchDispatch when re-rendered copy lacks photo footer', async () => {
+        asApprover();
+        const id1 = oid();
+        vi.spyOn(c, 'getVenueSetApproval').mockResolvedValue({ venueIds: [id1] });
+        vi.spyOn(c, 'getDraftFingerprintsApproval').mockResolvedValue({
+          fingerprints: [{ venueId: id1, fingerprint: 'fp123' }],
+        });
+        vi.spyOn(c, 'pitchedVenueIdsForWeekend').mockResolvedValue(new Set());
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ _id: id1 })));
+        (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ footerPhotoRef: 'no-such-footer' })));
+
+        // Unstub verifyBatchDispatch to test the real Gate 1 + Gate 2 verification path
+        delete c.verifyBatchDispatch;
+        await c.sendBatch({
+          user: 'josh',
+          body: {
+            batchId: 'batch-1',
+            venueIds: [id1],
+            targetDates: 'Aug 14-16',
+            targetWeekend: VALID_WEEKEND,
+          },
+        }, resStub);
+
+        expect(status).toBe(403);
+        expect(payload.message).toContain('dispatch refused:');
+        expect(payload.message).toContain("missing photo footer for template 'Originals' (stage: cold)");
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('sendBatch keeps the dedup guard fresh per venue (#1100 review)', () => {
+      afterEach(() => { vi.restoreAllMocks(); });
+
+      it('mails a venue id listed twice in one batch only once', async () => {
+        asApprover();
+        const id = oid();
+        let created: any = null;
+        c.model.create = vi.fn((doc: any) => { created = { _id: 'o1', ...doc }; return Promise.resolve(created); });
+        c.model.findOne = vi.fn(() => Promise.resolve(created));
+
+        await c.sendBatch({
+          user: 'josh', body: { venueIds: [id, id], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND },
+        }, resStub);
+
+        expect(status).toBe(200);
+        expect(sendMail).toHaveBeenCalledTimes(1);
+        expect(payload.sent).toBe(1);
+        expect(payload.skipped).toHaveLength(1);
+        expect(payload.skipped[0].reason).toContain('active outreach already exists');
+      });
+
+      it('runs each venue\'s dedup check after the previous venue was sent', async () => {
+        asApprover();
+        const order: string[] = [];
+        vi.spyOn(c, 'dedupGuard').mockImplementation(() => { order.push('dedup'); return Promise.resolve(null); });
+        sendMail.mockImplementation(() => { order.push('send'); return Promise.resolve({ messageId: 'mid-123' }); });
+
+        await c.sendBatch({
+          user: 'josh', body: { venueIds: [oid(), oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND },
+        }, resStub);
+
+        expect(order).toEqual(['dedup', 'send', 'dedup', 'send']);
+      });
+    });
+
+    describe('non-footer render errors are not reported as a footer refusal (#1100 review)', () => {
+      afterEach(() => { vi.restoreAllMocks(); });
+
+      it('verifyBatchDispatch fails closed with 500 when rendering throws for another reason', async () => {
+        asApprover();
+        const id1 = oid();
+        vi.spyOn(c, 'getVenueSetApproval').mockResolvedValue({ venueIds: [id1] });
+        vi.spyOn(c, 'getDraftFingerprintsApproval').mockResolvedValue({ fingerprints: [{ venueId: id1, fingerprint: 'fp123' }] });
+        vi.spyOn(c, 'pitchedVenueIdsForWeekend').mockResolvedValue(new Set());
+        delete c.verifyBatchDispatch;
+
+        await c.sendBatch({
+          user: 'josh',
+          body: {
+            batchId: 'batch-1', venueIds: [id1], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, customBody: 42,
+          },
+        }, resStub);
+
+        expect(status).toBe(500);
+        expect(payload.message).toContain('error during draft fingerprint verification');
+        expect(payload.message).not.toContain('missing photo footer');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('sendBatch footer pre-check rethrows a non-footer render error', async () => {
+        asApprover();
+        await expect(c.sendBatch({
+          user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND, customBody: 42 },
+        }, resStub)).rejects.toThrow(TypeError);
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('performSend refuses a missing footer with 400 and sends nothing', async () => {
+        const r = await c.performSend(validVenue(), validTemplate({ footerPhotoRef: '' }), 'Originals', { targetDates: 'Aug 14-16' }, 'josh');
+        expect(r).toEqual({ ok: false, status: 400, message: "missing photo footer for template 'Originals' (stage: cold)" });
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('performSend rethrows a non-footer render error', async () => {
+        await expect(c.performSend(validVenue(), validTemplate(), 'Originals', { targetDates: 'Aug 14-16', customBody: 42 }, 'josh'))
+          .rejects.toThrow(TypeError);
+      });
+
+      it('GET /outreach/preview rethrows a non-footer render error (single and batch)', async () => {
+        await expect(c.previewByVenue({ user: 'a', query: { venueId: oid(), customBody: 42 } }, resStub)).rejects.toThrow(TypeError);
+        await expect(c.previewByVenue({ user: 'a', query: { venueIds: oid(), customBody: 42 } }, resStub)).rejects.toThrow(TypeError);
+      });
+    });
+
+    describe('advanceCadence follow-up skipping on missing footer', () => {
+      it('skips email touch and does not send when follow-up footer cannot be resolved', async () => {
+        const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+        const touchVenue = validVenue({ _id: oid() });
+        const touchOutreach = {
+          _id: oid(),
+          venueId: touchVenue._id,
+          sentAt: new Date(Date.now() - 4 * 86400000),
+          step: 1,
+          targetDates: 'Aug 14-16',
+        };
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const result = await c.doEmailTouch(touchOutreach, touchVenue, 2);
+        expect(result).toBe('skipped');
+        expect(sendMail).not.toHaveBeenCalled();
+        expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('missing photo footer'));
+        errSpy.mockRestore();
+        existsSpy.mockRestore();
+      });
+    });
+
+    describe('greet first word of venue contact name (#1098, D-69)', () => {
+      describe('contactFirstName', () => {
+        it('extracts first word from multi-word name', () => {
+          expect(contactFirstName('Liza Crowder')).toBe('Liza');
+          expect(contactFirstName('Mary Jane Michael')).toBe('Mary');
+          expect(contactFirstName('Tanya Hall, Chief Ranger')).toBe('Tanya');
+        });
+
+        it('returns whole name for single-word name', () => {
+          expect(contactFirstName('Tanya')).toBe('Tanya');
+          expect(contactFirstName('Pat')).toBe('Pat');
+        });
+
+        it('handles leading and multiple whitespace', () => {
+          expect(contactFirstName('   Liza   Crowder   ')).toBe('Liza');
+        });
+
+        it('returns empty string for empty, whitespace, or undefined input', () => {
+          expect(contactFirstName('')).toBe('');
+          expect(contactFirstName('   ')).toBe('');
+          expect(contactFirstName(undefined)).toBe('');
+        });
+      });
+
+      describe('buildPitchEmail greeting', () => {
+        const sendBody = { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND };
+
+        it('greets "Hi Liza," for a multi-word contact name ("Liza Crowder")', () => {
+          const venue = validVenue({ contactName: 'Liza Crowder' });
+          const template = templateWithSlots();
+          const email = buildPitchEmail(venue, template, sendBody);
+          expect(email.html).toContain('<p>Hi Liza,</p>');
+        });
+
+        it('greets "Hi Tanya," for a single-word contact name ("Tanya")', () => {
+          const venue = validVenue({ contactName: 'Tanya' });
+          const template = templateWithSlots();
+          const email = buildPitchEmail(venue, template, sendBody);
+          expect(email.html).toContain('<p>Hi Tanya,</p>');
+        });
+
+        it('greets "Hi there," when contactName is empty or undefined', () => {
+          const venueEmpty = validVenue({ contactName: '' });
+          const template = templateWithSlots();
+          const emailEmpty = buildPitchEmail(venueEmpty, template, sendBody);
+          expect(emailEmpty.html).toContain('<p>Hi there,</p>');
+
+          const venueUndef = validVenue({ contactName: undefined });
+          const emailUndef = buildPitchEmail(venueUndef, template, sendBody);
+          expect(emailUndef.html).toContain('<p>Hi there,</p>');
+        });
+
+        it('greets first word in legacy template where greeting is in bodyHtml', () => {
+          const venue = validVenue({ contactName: 'Liza Crowder' });
+          const template = validTemplate();
+          const email = buildPitchEmail(venue, template, sendBody);
+          expect(email.html).toContain('<p>Hi Liza, we are booking our upcoming run');
+        });
+      });
+
+      describe('buildFollowUpEmail greeting', () => {
+        const outreachDoc: OutreachDoc = {
+          _id: oid(),
+          venueId: oid(),
+          sentAt: new Date('2026-08-01'),
+          step: 1,
+          targetDates: 'Aug 14-16',
+          templateUsed: 'Originals',
+        };
+
+        it('greets "Hi Liza," for a multi-word contact name ("Liza Crowder")', () => {
+          const venue = validVenue({ contactName: 'Liza Crowder' });
+          const email = buildFollowUpEmail(venue, outreachDoc);
+          expect(email.html).toContain('<p>Hi Liza,</p>');
+        });
+
+        it('greets "Hi Tanya," for a single-word contact name ("Tanya")', () => {
+          const venue = validVenue({ contactName: 'Tanya' });
+          const email = buildFollowUpEmail(venue, outreachDoc);
+          expect(email.html).toContain('<p>Hi Tanya,</p>');
+        });
+
+        it('greets "Hi there," when contactName is empty or undefined', () => {
+          const venueEmpty = validVenue({ contactName: '' });
+          const emailEmpty = buildFollowUpEmail(venueEmpty, outreachDoc);
+          expect(emailEmpty.html).toContain('<p>Hi there,</p>');
+
+          const venueUndef = validVenue({ contactName: undefined });
+          const emailUndef = buildFollowUpEmail(venueUndef, outreachDoc);
+          expect(emailUndef.html).toContain('<p>Hi there,</p>');
+        });
+      });
+    });
+  });
+
+  describe('dark email wrapper (web-jam-back#1094, D-72)', () => {
+    const venue = validVenue();
+    const sendBody = { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND };
+    const outreachDoc = {
+      _id: oid(),
+      venueId: venue._id,
+      sentAt: new Date('2026-08-01'),
+      step: 1,
+      targetDates: 'Aug 14-16',
+      templateUsed: 'Originals',
+    };
+
+    const relativeLuminance = (hex: string): number => {
+      const channels = [1, 3, 5].map((idx) => parseInt(hex.slice(idx, idx + 2), 16) / 255);
+      const [r, g, b] = channels.map((ch) => (ch <= 0.03928 ? ch / 12.92 : ((ch + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+
+    const contrastRatio = (hex1: string, hex2: string): number => {
+      const l1 = relativeLuminance(hex1);
+      const l2 = relativeLuminance(hex2);
+      const lighter = Math.max(l1, l2);
+      const darker = Math.min(l1, l2);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+
+    it('uses palette satisfying WCAG AA contrast >= 4.5:1 against #121212', () => {
+      expect(DARK_WRAPPER_BG).toBe('#121212');
+      expect(DARK_WRAPPER_TEXT).toBe('#f0f0f0');
+      expect(DARK_WRAPPER_LINK).toBe('#4fc3f7');
+
+      const textContrast = contrastRatio(DARK_WRAPPER_TEXT, DARK_WRAPPER_BG);
+      const linkContrast = contrastRatio(DARK_WRAPPER_LINK, DARK_WRAPPER_BG);
+
+      expect(textContrast).toBeGreaterThanOrEqual(4.5);
+      expect(linkContrast).toBeGreaterThanOrEqual(4.5);
+    });
+
+    describe('wrapDarkEmail helper', () => {
+      it('wraps HTML in full-width presentation table with bgcolor and inline styling', () => {
+        const input = '<p>Hello world</p>';
+        const wrapped = wrapDarkEmail(input);
+
+        expect(wrapped.startsWith(DARK_WRAPPER_START)).toBe(true);
+        expect(wrapped).toContain('<meta name="color-scheme" content="dark">');
+        expect(wrapped).toContain('<meta name="supported-color-schemes" content="dark">');
+        expect(wrapped).toContain('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#121212"');
+        expect(wrapped).toContain('style="background-color:#121212;color:#f0f0f0;"');
+        expect(wrapped).toContain('<p>Hello world</p>');
+        expect(wrapped.endsWith(DARK_WRAPPER_END)).toBe(true);
+      });
+
+      it('does not contain any <style> tags or CSS variables', () => {
+        const wrapped = wrapDarkEmail('<p>No styles <a href="https://example.com">link</a></p>');
+        expect(wrapped).not.toContain('<style');
+        expect(wrapped).not.toContain('</style>');
+        expect(wrapped).not.toContain('var(--');
+      });
+
+      it('inlines light link color #4fc3f7 onto <a> tags without existing style', () => {
+        const input = '<p>Visit <a href="https://example.com">our website</a> today.</p>';
+        const wrapped = wrapDarkEmail(input);
+        expect(wrapped).toContain('<a style="color:#4fc3f7;" href="https://example.com">our website</a>');
+      });
+
+      it('preserves existing styles on <a> tags and prepends link color', () => {
+        const withStyle = '<p><a href="https://example.com" style="text-decoration:none;font-weight:bold;">Link</a></p>';
+        const wrappedWithStyle = wrapDarkEmail(withStyle);
+        expect(wrappedWithStyle).toContain('style="color:#4fc3f7;text-decoration:none;font-weight:bold;"');
+      });
+
+      it('applies link color when style has background-color or border-color but no text color (Must Fix #1)', () => {
+        const withBorder = '<p><a href="https://example.com" style="background-color:#222;border-bottom-color:#ccc;">Link</a></p>';
+        const wrapped = wrapDarkEmail(withBorder);
+        expect(wrapped).toContain('style="color:#4fc3f7;background-color:#222;border-bottom-color:#ccc;"');
+      });
+
+      it('preserves existing link color if explicitly specified in style (Suggestion #1)', () => {
+        const withColor = '<p><a href="https://example.com" style="color:#ffcc00;font-weight:bold;">Custom Link</a></p>';
+        const wrapped = wrapDarkEmail(withColor);
+        expect(wrapped).toContain('style="color:#ffcc00;font-weight:bold;"');
+      });
+    });
+
+    describe('buildPitchEmail dark wrapping', () => {
+      it('wraps pitch email body and photo footer inside dark presentation table', () => {
+        const template = validTemplate({
+          footerPhotoRef: 'footer-josh-maria',
+          bodyHtml: '<p>Hi [Contact Name], visit <a href="https://joshandmariamusic.com">our music</a>.</p>',
+        });
+        const pitch = buildPitchEmail(venue, template, sendBody);
+
+        expect(pitch.html.startsWith(DARK_WRAPPER_START)).toBe(true);
+        expect(pitch.html.endsWith(DARK_WRAPPER_END)).toBe(true);
+        expect(pitch.html).toContain('Hi Pat, visit');
+        expect(pitch.html).toContain('<a style="color:#4fc3f7;" href="https://joshandmariamusic.com">our music</a>');
+        expect(pitch.html).toContain('cid:footerphoto');
+        expect(pitch.attachments).toHaveLength(1);
+        expect(pitch.attachments[0].cid).toBe('footerphoto');
+      });
+    });
+
+    describe('buildFollowUpEmail dark wrapping', () => {
+      it('wraps follow-up email body and photo footer inside dark presentation table', () => {
+        const email = buildFollowUpEmail(venue, outreachDoc);
+
+        expect(email.html.startsWith(DARK_WRAPPER_START)).toBe(true);
+        expect(email.html.endsWith(DARK_WRAPPER_END)).toBe(true);
+        expect(email.html).toContain('following up on');
+        expect(email.html).toContain('<a style="color:#4fc3f7;" href="https://www.joshandmariamusic.com">');
+        expect(email.html).toContain('cid:footerphoto');
+        expect(email.attachments).toHaveLength(1);
+        expect(email.attachments[0].cid).toBe('footerphoto');
+      });
+    });
+  });
 });
+

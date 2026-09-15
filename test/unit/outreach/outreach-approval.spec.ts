@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
+import type { Request } from 'express';
 
 const sendMail = vi.fn(() => Promise.resolve({ messageId: 'mid-123' }));
 vi.mock('#src/lib/mailer.js', () => ({
@@ -16,6 +17,7 @@ const {
   isExactVenueSetMatch,
   unpitchedApprovedVenueIds,
   extractApprovedFingerprints,
+  wrapDarkEmail,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -578,10 +580,16 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
       ...over,
     });
 
+    const FOOTER_HTML = '\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin-top:16px;">'
+      + '<tr><td style="text-align:center;">'
+      + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
+      + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>';
+
     const validTemplate = (over = {}) => ({
       type: 'Originals',
       subject: 'Inquiry: [Venue Name]',
       bodyHtml: '<p>Hi [Contact Name], booking for [Target Dates].</p>',
+      footerPhotoRef: 'footer-josh-maria',
       ...over,
     });
 
@@ -660,11 +668,11 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
 
         const fp1 = computeDraftFingerprint({
           subject: 'Inquiry: Venue Alpha',
-          body: '<p>Hi Pat, booking for Oct 16-18.</p>',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
         });
         const fp2 = computeDraftFingerprint({
           subject: 'Inquiry: Venue Beta',
-          body: '<p>Hi Pat, booking for Oct 16-18.</p>',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
         });
 
         const gate1Doc = { batchId: 'batch-1', weekend: WEEKEND_STR, venueIds: [v1Id, v2Id], approver: 'Josh' };
@@ -708,7 +716,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
 
         const fp1 = computeDraftFingerprint({
           subject: 'Inquiry: Single Venue',
-          body: '<p>Hi Pat, booking for Oct 16-18.</p>',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
         });
 
         (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
@@ -741,7 +749,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
 
         const fp1 = computeDraftFingerprint({
           subject: 'Inquiry: Venue Alpha',
-          body: '<p>Hi Pat, booking for Oct 16-18.</p>',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
         });
 
         (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
@@ -791,7 +799,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
           expect.anything(),
           expect.objectContaining({
             subject: 'Inquiry: Venue Alpha',
-            html: '<p>Hi Pat, booking for Oct 16-18.</p>',
+            html: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
           }),
         );
       });
@@ -964,6 +972,44 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
             targetWeekend: VALID_WEEKEND,
           },
         };
+
+        await c.sendBatch(req, resStub);
+
+        expect(status).toBe(403);
+        expect(payload.message).toContain('Gate 2 draft fingerprint mismatch for venue');
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('refuses dispatch (403) when Gate 2 fingerprint was recorded pre-change (unwrapped body, D-72)', async () => {
+        asApprover();
+        const v1Id = oid();
+        const v1 = validVenue({ _id: v1Id, name: 'Venue Alpha' });
+        (venueModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn(() => Promise.resolve(v1));
+
+        // Pre-change fingerprint without wrapDarkEmail
+        const preChangeFp = computeDraftFingerprint({
+          subject: 'Inquiry: Venue Alpha',
+          body: `<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`,
+        });
+
+        (venueApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({
+          batchId: 'b-prechange-mismatch',
+          venueIds: [v1Id],
+        }));
+        (draftApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({
+          batchId: 'b-prechange-mismatch',
+          draftFingerprints: [{ venueId: v1Id, fingerprint: preChangeFp }],
+        }));
+
+        const req = {
+          user: oid(),
+          body: {
+            batchId: 'b-prechange-mismatch',
+            venueIds: [v1Id],
+            targetDates: 'Oct 16-18',
+            targetWeekend: VALID_WEEKEND,
+          },
+        } as unknown as Request;
 
         await c.sendBatch(req, resStub);
 
@@ -1145,7 +1191,10 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         (venueModel as any).findById = vi.fn((id: string) => Promise.resolve(
           id === v2Id ? validVenue({ _id: v2Id, name: 'Venue Beta' }) : null,
         ));
-        const fp2 = computeDraftFingerprint({ subject: 'Inquiry: Venue Beta', body: '<p>Hi Pat, booking for Oct 16-18.</p>' });
+        const fp2 = computeDraftFingerprint({
+          subject: 'Inquiry: Venue Beta',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+        });
         approvals('b-widened', [v1Id, v2Id], [{ venueId: v2Id, fingerprint: fp2 }]);
         c.model.find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'no-response' }]));
 
