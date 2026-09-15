@@ -2989,6 +2989,18 @@ describe('Outreach Controller (#844 batch model)', () => {
         const wrappedWithStyle = wrapDarkEmail(withStyle);
         expect(wrappedWithStyle).toContain('style="color:#4fc3f7;text-decoration:none;font-weight:bold;"');
       });
+
+      it('applies link color when style has background-color or border-color but no text color (Must Fix #1)', () => {
+        const withBorder = '<p><a href="https://example.com" style="background-color:#222;border-bottom-color:#ccc;">Link</a></p>';
+        const wrapped = wrapDarkEmail(withBorder);
+        expect(wrapped).toContain('style="color:#4fc3f7;background-color:#222;border-bottom-color:#ccc;"');
+      });
+
+      it('preserves existing link color if explicitly specified in style (Suggestion #1)', () => {
+        const withColor = '<p><a href="https://example.com" style="color:#ffcc00;font-weight:bold;">Custom Link</a></p>';
+        const wrapped = wrapDarkEmail(withColor);
+        expect(wrapped).toContain('style="color:#ffcc00;font-weight:bold;"');
+      });
     });
 
     describe('buildPitchEmail dark wrapping', () => {

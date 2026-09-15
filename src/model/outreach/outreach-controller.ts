@@ -646,13 +646,13 @@ function applyInlineLinkColor(html: string): string {
     if (!attrs) return `<a style="color:${DARK_WRAPPER_LINK};">`;
     const styleMatch = attrs.match(/\bstyle="([^"]*)"/i);
     if (styleMatch) {
-      if (/color\s*:/i.test(styleMatch[1])) return match;
+      if (/(?:^|;)\s*color\s*:/i.test(styleMatch[1])) return match;
       const newStyle = `style="color:${DARK_WRAPPER_LINK};${styleMatch[1]}"`;
       return `<a${attrs.replace(styleMatch[0], () => newStyle)}>`;
     }
     const singleStyleMatch = attrs.match(/\bstyle='([^']*)'/i);
     if (singleStyleMatch) {
-      if (/color\s*:/i.test(singleStyleMatch[1])) return match;
+      if (/(?:^|;)\s*color\s*:/i.test(singleStyleMatch[1])) return match;
       const newStyle = `style='color:${DARK_WRAPPER_LINK};${singleStyleMatch[1]}'`;
       return `<a${attrs.replace(singleStyleMatch[0], () => newStyle)}>`;
     }

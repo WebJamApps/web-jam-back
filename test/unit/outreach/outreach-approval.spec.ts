@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import mongoose from 'mongoose';
+import type { Request } from 'express';
 
 const sendMail = vi.fn(() => Promise.resolve({ messageId: 'mid-123' }));
 vi.mock('#src/lib/mailer.js', () => ({
@@ -983,7 +984,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         asApprover();
         const v1Id = oid();
         const v1 = validVenue({ _id: v1Id, name: 'Venue Alpha' });
-        (venueModel as any).findById = vi.fn(() => Promise.resolve(v1));
+        (venueModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn(() => Promise.resolve(v1));
 
         // Pre-change fingerprint without wrapDarkEmail
         const preChangeFp = computeDraftFingerprint({
@@ -991,16 +992,16 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
           body: `<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`,
         });
 
-        (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+        (venueApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({
           batchId: 'b-prechange-mismatch',
           venueIds: [v1Id],
         }));
-        (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+        (draftApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({
           batchId: 'b-prechange-mismatch',
           draftFingerprints: [{ venueId: v1Id, fingerprint: preChangeFp }],
         }));
 
-        const req: any = {
+        const req = {
           user: oid(),
           body: {
             batchId: 'b-prechange-mismatch',
@@ -1008,7 +1009,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
             targetDates: 'Oct 16-18',
             targetWeekend: VALID_WEEKEND,
           },
-        };
+        } as unknown as Request;
 
         await c.sendBatch(req, resStub);
 
