@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import fs from 'node:fs';
 import mongoose from 'mongoose';
+import type { OutreachDoc } from '#src/model/outreach/outreach-controller.js';
 import { EMAIL_RE } from '#src/lib/email.js';
 
 const sendMail = vi.fn(() => Promise.resolve({ messageId: 'mid-123' }));
@@ -31,6 +32,7 @@ const {
   default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
   OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
   buildPitchEmail, buildFollowUpEmail, MissingFooterError, resolveFooterAsset,
+  contactFirstName,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -2815,6 +2817,100 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('missing photo footer'));
         errSpy.mockRestore();
         existsSpy.mockRestore();
+      });
+    });
+
+    describe('greet first word of venue contact name (#1098, D-69)', () => {
+      describe('contactFirstName', () => {
+        it('extracts first word from multi-word name', () => {
+          expect(contactFirstName('Liza Crowder')).toBe('Liza');
+          expect(contactFirstName('Mary Jane Michael')).toBe('Mary');
+          expect(contactFirstName('Tanya Hall, Chief Ranger')).toBe('Tanya');
+        });
+
+        it('returns whole name for single-word name', () => {
+          expect(contactFirstName('Tanya')).toBe('Tanya');
+          expect(contactFirstName('Pat')).toBe('Pat');
+        });
+
+        it('handles leading and multiple whitespace', () => {
+          expect(contactFirstName('   Liza   Crowder   ')).toBe('Liza');
+        });
+
+        it('returns empty string for empty, whitespace, or undefined input', () => {
+          expect(contactFirstName('')).toBe('');
+          expect(contactFirstName('   ')).toBe('');
+          expect(contactFirstName(undefined)).toBe('');
+        });
+      });
+
+      describe('buildPitchEmail greeting', () => {
+        const sendBody = { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND };
+
+        it('greets "Hi Liza," for a multi-word contact name ("Liza Crowder")', () => {
+          const venue = validVenue({ contactName: 'Liza Crowder' });
+          const template = templateWithSlots();
+          const email = buildPitchEmail(venue, template, sendBody);
+          expect(email.html).toContain('<p>Hi Liza,</p>');
+        });
+
+        it('greets "Hi Tanya," for a single-word contact name ("Tanya")', () => {
+          const venue = validVenue({ contactName: 'Tanya' });
+          const template = templateWithSlots();
+          const email = buildPitchEmail(venue, template, sendBody);
+          expect(email.html).toContain('<p>Hi Tanya,</p>');
+        });
+
+        it('greets "Hi there," when contactName is empty or undefined', () => {
+          const venueEmpty = validVenue({ contactName: '' });
+          const template = templateWithSlots();
+          const emailEmpty = buildPitchEmail(venueEmpty, template, sendBody);
+          expect(emailEmpty.html).toContain('<p>Hi there,</p>');
+
+          const venueUndef = validVenue({ contactName: undefined });
+          const emailUndef = buildPitchEmail(venueUndef, template, sendBody);
+          expect(emailUndef.html).toContain('<p>Hi there,</p>');
+        });
+
+        it('greets first word in legacy template where greeting is in bodyHtml', () => {
+          const venue = validVenue({ contactName: 'Liza Crowder' });
+          const template = validTemplate();
+          const email = buildPitchEmail(venue, template, sendBody);
+          expect(email.html).toContain('<p>Hi Liza, we are booking our upcoming run');
+        });
+      });
+
+      describe('buildFollowUpEmail greeting', () => {
+        const outreachDoc: OutreachDoc = {
+          _id: oid(),
+          venueId: oid(),
+          sentAt: new Date('2026-08-01'),
+          step: 1,
+          targetDates: 'Aug 14-16',
+          templateUsed: 'Originals',
+        };
+
+        it('greets "Hi Liza," for a multi-word contact name ("Liza Crowder")', () => {
+          const venue = validVenue({ contactName: 'Liza Crowder' });
+          const email = buildFollowUpEmail(venue, outreachDoc);
+          expect(email.html).toContain('<p>Hi Liza,</p>');
+        });
+
+        it('greets "Hi Tanya," for a single-word contact name ("Tanya")', () => {
+          const venue = validVenue({ contactName: 'Tanya' });
+          const email = buildFollowUpEmail(venue, outreachDoc);
+          expect(email.html).toContain('<p>Hi Tanya,</p>');
+        });
+
+        it('greets "Hi there," when contactName is empty or undefined', () => {
+          const venueEmpty = validVenue({ contactName: '' });
+          const emailEmpty = buildFollowUpEmail(venueEmpty, outreachDoc);
+          expect(emailEmpty.html).toContain('<p>Hi there,</p>');
+
+          const venueUndef = validVenue({ contactName: undefined });
+          const emailUndef = buildFollowUpEmail(venueUndef, outreachDoc);
+          expect(emailUndef.html).toContain('<p>Hi there,</p>');
+        });
       });
     });
   });
