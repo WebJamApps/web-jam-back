@@ -33,6 +33,7 @@ const {
   OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
   buildPitchEmail, buildFollowUpEmail, MissingFooterError, resolveFooterAsset,
   contactFirstName,
+  wrapDarkEmail, DARK_WRAPPER_BG, DARK_WRAPPER_TEXT, DARK_WRAPPER_LINK, DARK_WRAPPER_START, DARK_WRAPPER_END,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -1370,11 +1371,13 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(status).toBe(201);
       const html = (sendMail as any).mock.calls[0][0].html;
       expect(html).toBe(
-        '<p>Hi Pat, we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>'
-          + '\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin-top:16px;">'
-          + '<tr><td style="text-align:center;">'
-          + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
-          + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>',
+        wrapDarkEmail(
+          '<p>Hi Pat, we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>'
+            + '\n<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin-top:16px;">'
+            + '<tr><td style="text-align:center;">'
+            + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
+            + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>',
+        ),
       );
     });
 
@@ -1386,7 +1389,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       const html = (sendMail as any).mock.calls[0][0].html;
       // introHtml ("Hi Pat,") + bodyHtml with the marker stripped to '' reproduces
       // exactly the same copy the pre-#903 single-bodyHtml template would render.
-      expect(html.startsWith('<p>Hi Pat,</p><p>we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>')).toBe(true);
+      expect(html).toContain('<p>Hi Pat,</p><p>we are booking our August run and want Aug 14-16 at The Spot on Kirk.</p>');
       expect(html).not.toContain('[Custom Body]');
     });
 
@@ -1399,7 +1402,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(201);
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.indexOf('<p>We stopped in Wednesday and left a card.</p>')).toBe(0);
+      expect(html).toContain('<p>We stopped in Wednesday and left a card.</p>');
       expect(html).not.toContain('Hi Pat,'); // default intro NOT emitted alongside customIntro
       expect(html).toContain('we are booking our August run');
     });
@@ -1413,7 +1416,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(201);
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.startsWith('<p>Hi Pat,</p><p>Loved your open mic last week!</p><p>we are booking our August run')).toBe(true);
+      expect(html).toContain('<p>Hi Pat,</p><p>Loved your open mic last week!</p><p>we are booking our August run');
     });
 
     it('sendPitch: customIntro and customBody together — replace + insert, no double-greeting', async () => {
@@ -1427,7 +1430,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         resStub,
       );
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.indexOf('<p>Hey Pat, following up!</p>')).toBe(0);
+      expect(html).toContain('<p>Hey Pat, following up!</p>');
       expect(html).not.toContain('Hi Pat,');
       expect(html).toContain('<p>We met at the farmers market.</p><p>we are booking our August run');
       // cc / tracking / cadence stay intact regardless of the custom slots.
@@ -1453,7 +1456,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       (templateModel as any).findOne = vi.fn(() => Promise.resolve(templateWithSlots()));
       await c.sendPitch({ user: 'josh', body: { ...body(), customIntro: '   ', customBody: '  ' } }, resStub);
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.startsWith('<p>Hi Pat,</p><p>we are booking our August run')).toBe(true);
+      expect(html).toContain('<p>Hi Pat,</p><p>we are booking our August run');
     });
 
     it('sendPitch: customIntro is HTML-escaped', async () => {
@@ -1499,7 +1502,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         resStub,
       );
       const html = (sendMail as any).mock.calls[0][0].html;
-      expect(html.indexOf('<p>Line one<br>Line two</p>\n<p>Second paragraph</p>')).toBe(0);
+      expect(html).toContain('<p>Line one<br>Line two</p>\n<p>Second paragraph</p>');
     });
 
     it('sendBatch: threads customIntro + customBody to every venue in the batch', async () => {
@@ -1517,7 +1520,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(200);
       expect(payload.sent).toBe(2);
-      expect((sendMail as any).mock.calls[0][0].html.indexOf('<p>Hey again!</p>')).toBe(0);
+      expect((sendMail as any).mock.calls[0][0].html).toContain('<p>Hey again!</p>');
       expect((sendMail as any).mock.calls[0][0].html).toContain('<p>Loved your open mic last week!</p>');
       expect((sendMail as any).mock.calls[1][0].html).toContain('<p>Loved your open mic last week!</p>');
     });
@@ -1525,7 +1528,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('sendBatch: both absent leaves batch sends unchanged', async () => {
       asApprover();
       await c.sendBatch({ user: 'josh', body: { venueIds: [oid()], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
-      expect((sendMail as any).mock.calls[0][0].html.startsWith('<p>Hi Pat')).toBe(true);
+      expect((sendMail as any).mock.calls[0][0].html).toContain('<p>Hi Pat');
     });
 
     it('previewByVenue (single form): reflects customIntro + customBody without sending', async () => {
@@ -1541,7 +1544,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       );
       expect(status).toBe(200);
       expect(sendMail).not.toHaveBeenCalled();
-      expect(payload.html.indexOf('<p>Hi there again,</p>')).toBe(0);
+      expect(payload.html).toContain('<p>Hi there again,</p>');
       expect(payload.html).toContain('<p>We met at the farmers market.</p>');
       expect(payload.html).not.toContain('Hi Pat,');
     });
@@ -1559,13 +1562,13 @@ describe('Outreach Controller (#844 batch model)', () => {
         resStub,
       );
       expect(status).toBe(200);
-      expect(payload[0].body.indexOf('<p>Following up,</p>')).toBe(0);
+      expect(payload[0].body).toContain('<p>Following up,</p>');
       expect(payload[0].body).toContain('<p>Card left at the bar.</p>');
     });
 
     it('previewByVenue: both absent leaves preview unchanged', async () => {
       await c.previewByVenue({ user: 'a', query: { venueId: oid(), targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
-      expect(payload.html.startsWith('<p>Hi Pat')).toBe(true);
+      expect(payload.html).toContain('<p>Hi Pat');
     });
   });
 
@@ -2545,7 +2548,8 @@ describe('Outreach Controller (#844 batch model)', () => {
           + '<tr><td style="text-align:center;">'
           + '<img src="cid:footerphoto" width="320" alt="Josh and Maria performing" '
           + 'style="width:320px;max-width:100%;height:auto;border-radius:8px;display:block;margin:0 auto;"></td></tr></table>';
-        expect(email.html.endsWith(expectedFooter)).toBe(true);
+        expect(email.html.endsWith(DARK_WRAPPER_END)).toBe(true);
+        expect(email.html).toContain(expectedFooter);
         expect(email.attachments).toHaveLength(1);
         expect(email.attachments[0].filename).toBe('josh-maria.jpg');
         expect(email.attachments[0].cid).toBe('footerphoto');
@@ -2914,4 +2918,122 @@ describe('Outreach Controller (#844 batch model)', () => {
       });
     });
   });
+
+  describe('dark email wrapper (web-jam-back#1094, D-72)', () => {
+    const venue = validVenue();
+    const sendBody = { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND };
+    const outreachDoc = {
+      _id: oid(),
+      venueId: venue._id,
+      sentAt: new Date('2026-08-01'),
+      step: 1,
+      targetDates: 'Aug 14-16',
+      templateUsed: 'Originals',
+    };
+
+    const relativeLuminance = (hex: string): number => {
+      const channels = [1, 3, 5].map((idx) => parseInt(hex.slice(idx, idx + 2), 16) / 255);
+      const [r, g, b] = channels.map((ch) => (ch <= 0.03928 ? ch / 12.92 : ((ch + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+
+    const contrastRatio = (hex1: string, hex2: string): number => {
+      const l1 = relativeLuminance(hex1);
+      const l2 = relativeLuminance(hex2);
+      const lighter = Math.max(l1, l2);
+      const darker = Math.min(l1, l2);
+      return (lighter + 0.05) / (darker + 0.05);
+    };
+
+    it('uses palette satisfying WCAG AA contrast >= 4.5:1 against #121212', () => {
+      expect(DARK_WRAPPER_BG).toBe('#121212');
+      expect(DARK_WRAPPER_TEXT).toBe('#f0f0f0');
+      expect(DARK_WRAPPER_LINK).toBe('#4fc3f7');
+
+      const textContrast = contrastRatio(DARK_WRAPPER_TEXT, DARK_WRAPPER_BG);
+      const linkContrast = contrastRatio(DARK_WRAPPER_LINK, DARK_WRAPPER_BG);
+
+      expect(textContrast).toBeGreaterThanOrEqual(4.5);
+      expect(linkContrast).toBeGreaterThanOrEqual(4.5);
+    });
+
+    describe('wrapDarkEmail helper', () => {
+      it('wraps HTML in full-width presentation table with bgcolor and inline styling', () => {
+        const input = '<p>Hello world</p>';
+        const wrapped = wrapDarkEmail(input);
+
+        expect(wrapped.startsWith(DARK_WRAPPER_START)).toBe(true);
+        expect(wrapped).toContain('<meta name="color-scheme" content="dark">');
+        expect(wrapped).toContain('<meta name="supported-color-schemes" content="dark">');
+        expect(wrapped).toContain('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#121212"');
+        expect(wrapped).toContain('style="background-color:#121212;color:#f0f0f0;"');
+        expect(wrapped).toContain('<p>Hello world</p>');
+        expect(wrapped.endsWith(DARK_WRAPPER_END)).toBe(true);
+      });
+
+      it('does not contain any <style> tags or CSS variables', () => {
+        const wrapped = wrapDarkEmail('<p>No styles <a href="https://example.com">link</a></p>');
+        expect(wrapped).not.toContain('<style');
+        expect(wrapped).not.toContain('</style>');
+        expect(wrapped).not.toContain('var(--');
+      });
+
+      it('inlines light link color #4fc3f7 onto <a> tags without existing style', () => {
+        const input = '<p>Visit <a href="https://example.com">our website</a> today.</p>';
+        const wrapped = wrapDarkEmail(input);
+        expect(wrapped).toContain('<a style="color:#4fc3f7;" href="https://example.com">our website</a>');
+      });
+
+      it('preserves existing styles on <a> tags and prepends link color', () => {
+        const withStyle = '<p><a href="https://example.com" style="text-decoration:none;font-weight:bold;">Link</a></p>';
+        const wrappedWithStyle = wrapDarkEmail(withStyle);
+        expect(wrappedWithStyle).toContain('style="color:#4fc3f7;text-decoration:none;font-weight:bold;"');
+      });
+
+      it('applies link color when style has background-color or border-color but no text color (Must Fix #1)', () => {
+        const withBorder = '<p><a href="https://example.com" style="background-color:#222;border-bottom-color:#ccc;">Link</a></p>';
+        const wrapped = wrapDarkEmail(withBorder);
+        expect(wrapped).toContain('style="color:#4fc3f7;background-color:#222;border-bottom-color:#ccc;"');
+      });
+
+      it('preserves existing link color if explicitly specified in style (Suggestion #1)', () => {
+        const withColor = '<p><a href="https://example.com" style="color:#ffcc00;font-weight:bold;">Custom Link</a></p>';
+        const wrapped = wrapDarkEmail(withColor);
+        expect(wrapped).toContain('style="color:#ffcc00;font-weight:bold;"');
+      });
+    });
+
+    describe('buildPitchEmail dark wrapping', () => {
+      it('wraps pitch email body and photo footer inside dark presentation table', () => {
+        const template = validTemplate({
+          footerPhotoRef: 'footer-josh-maria',
+          bodyHtml: '<p>Hi [Contact Name], visit <a href="https://joshandmariamusic.com">our music</a>.</p>',
+        });
+        const pitch = buildPitchEmail(venue, template, sendBody);
+
+        expect(pitch.html.startsWith(DARK_WRAPPER_START)).toBe(true);
+        expect(pitch.html.endsWith(DARK_WRAPPER_END)).toBe(true);
+        expect(pitch.html).toContain('Hi Pat, visit');
+        expect(pitch.html).toContain('<a style="color:#4fc3f7;" href="https://joshandmariamusic.com">our music</a>');
+        expect(pitch.html).toContain('cid:footerphoto');
+        expect(pitch.attachments).toHaveLength(1);
+        expect(pitch.attachments[0].cid).toBe('footerphoto');
+      });
+    });
+
+    describe('buildFollowUpEmail dark wrapping', () => {
+      it('wraps follow-up email body and photo footer inside dark presentation table', () => {
+        const email = buildFollowUpEmail(venue, outreachDoc);
+
+        expect(email.html.startsWith(DARK_WRAPPER_START)).toBe(true);
+        expect(email.html.endsWith(DARK_WRAPPER_END)).toBe(true);
+        expect(email.html).toContain('following up on');
+        expect(email.html).toContain('<a style="color:#4fc3f7;" href="https://www.joshandmariamusic.com">');
+        expect(email.html).toContain('cid:footerphoto');
+        expect(email.attachments).toHaveLength(1);
+        expect(email.attachments[0].cid).toBe('footerphoto');
+      });
+    });
+  });
 });
+
