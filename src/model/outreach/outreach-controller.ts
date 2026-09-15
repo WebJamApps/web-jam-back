@@ -176,7 +176,7 @@ type ApprovalModelWithLatest = {
   findOne: (query: Record<string, unknown>) => Promise<Record<string, unknown> | null>;
 };
 interface FollowUp { sentAt?: Date; type?: string; messageId?: string; eventId?: string; step?: number }
-interface OutreachDoc {
+export interface OutreachDoc {
   _id?: unknown; venueId?: unknown; sentAt?: Date; step?: number; targetDates?: string; followUps?: FollowUp[];
   status?: string; templateUsed?: string; bookingPeriod?: string;
 }

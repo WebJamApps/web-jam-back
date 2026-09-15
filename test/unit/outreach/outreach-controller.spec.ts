@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import fs from 'node:fs';
 import mongoose from 'mongoose';
+import type { OutreachDoc } from '#src/model/outreach/outreach-controller.js';
 import { EMAIL_RE } from '#src/lib/email.js';
 
 const sendMail = vi.fn(() => Promise.resolve({ messageId: 'mid-123' }));
@@ -2880,7 +2881,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       });
 
       describe('buildFollowUpEmail greeting', () => {
-        const outreachDoc = {
+        const outreachDoc: OutreachDoc = {
           _id: oid(),
           venueId: oid(),
           sentAt: new Date('2026-08-01'),
@@ -2891,23 +2892,23 @@ describe('Outreach Controller (#844 batch model)', () => {
 
         it('greets "Hi Liza," for a multi-word contact name ("Liza Crowder")', () => {
           const venue = validVenue({ contactName: 'Liza Crowder' });
-          const email = buildFollowUpEmail(venue, outreachDoc as any);
+          const email = buildFollowUpEmail(venue, outreachDoc);
           expect(email.html).toContain('<p>Hi Liza,</p>');
         });
 
         it('greets "Hi Tanya," for a single-word contact name ("Tanya")', () => {
           const venue = validVenue({ contactName: 'Tanya' });
-          const email = buildFollowUpEmail(venue, outreachDoc as any);
+          const email = buildFollowUpEmail(venue, outreachDoc);
           expect(email.html).toContain('<p>Hi Tanya,</p>');
         });
 
         it('greets "Hi there," when contactName is empty or undefined', () => {
           const venueEmpty = validVenue({ contactName: '' });
-          const emailEmpty = buildFollowUpEmail(venueEmpty, outreachDoc as any);
+          const emailEmpty = buildFollowUpEmail(venueEmpty, outreachDoc);
           expect(emailEmpty.html).toContain('<p>Hi there,</p>');
 
           const venueUndef = validVenue({ contactName: undefined });
-          const emailUndef = buildFollowUpEmail(venueUndef, outreachDoc as any);
+          const emailUndef = buildFollowUpEmail(venueUndef, outreachDoc);
           expect(emailUndef.html).toContain('<p>Hi there,</p>');
         });
       });
