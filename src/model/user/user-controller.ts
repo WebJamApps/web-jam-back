@@ -23,6 +23,18 @@ function grantFor(email: string): { userType: string; artist: string } | Record<
   return artistGrantForEmail(email) || {};
 }
 
+// ensureAuthenticated sets req.user (the caller's id) and req.userType (their role).
+type CallerRequest = Request & { user?: string; userType?: string };
+
+// Roles that may read any user record or look one up by email (web-jam-back#1110).
+// Everyone else may only read their own record; all edits and deletes go through
+// /admin/user, which enforces the role-grant rules.
+const USER_ADMIN_ROLES = ['JaM-admin', 'Developer'];
+
+function isUserAdmin(req: CallerRequest): boolean {
+  return USER_ADMIN_ROLES.indexOf(req.userType || '') !== -1;
+}
+
 class UserController extends Controller {
   constructor(uModel: typeof userModel) {
     super(uModel);
@@ -32,7 +44,35 @@ class UserController extends Controller {
     return res.status(500).json({ message: e.message });
   }
 
+  // GET /user/:id — the caller's own record, or any record for a user admin.
+  // An unknown caller (no id) never matches its own record, so it is refused.
+  async findById(req: Request<{ id: string }>, res: Response): Promise<unknown> {
+    const caller = req as unknown as CallerRequest;
+    const isOwnRecord = !!caller.user && caller.user === req.params.id;
+    if (!isOwnRecord && !isUserAdmin(caller)) {
+      return res.status(403).json({ message: 'not authorized to read this user' });
+    }
+    return super.findById(req, res);
+  }
+
+  // PUT /user/:id — refused for every caller; edits go through /admin/user.
+  // eslint-disable-next-line class-methods-use-this, @typescript-eslint/require-await
+  async findByIdAndUpdate(req: Request<{ id: string }>, res: Response): Promise<unknown> {
+    return res.status(403).json({ message: 'use /admin/user' });
+  }
+
+  // DELETE /user/:id — refused for every caller; deletes go through /admin/user.
+  // eslint-disable-next-line class-methods-use-this, @typescript-eslint/require-await
+  async findByIdAndDelete(req: Request<{ id: string }>, res: Response): Promise<unknown> {
+    return res.status(403).json({ message: 'use /admin/user' });
+  }
+
+  // POST /user — look a user up by email; user admins only.
   async findByEmail(req: Request, res: Response) {
+    if (!isUserAdmin(req as CallerRequest)) {
+      res.status(403).json({ message: 'not authorized to look up users' });
+      return;
+    }
     try {
       const user = await this.model.findOne({ email: req.body?.email });
       if (!user || !user._id) res.status(400).json({ message: 'wrong email' });
