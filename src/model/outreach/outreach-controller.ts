@@ -11,6 +11,7 @@ import { EMAIL_RE, isValidEmail } from '#src/lib/email.js';
 import { createCallTaskEvent } from '#src/lib/calendar.js';
 import { findReplies } from '#src/lib/imap-replies.js';
 import { classifyReply } from '#src/lib/classify-reply.js';
+import { isAiAgentAccount } from '#src/auth/capabilities.js';
 import outreachModel from './outreach-facade.js';
 import outreachReportModel from './outreach-report-facade.js';
 import outreachVenueApprovalModel from './outreach-venue-approval-facade.js';
@@ -70,7 +71,7 @@ const OUTREACH_ANY_CAPS = ['outreach:create', 'outreach:edit', 'outreach:delete'
 // no caller — human or agent — exempt from either approval record (D-46).
 const OUTREACH_SEND_CAPS = ['outreach:create', 'outreach:approve'];
 
-interface AuthedUser { userType?: string; privileges?: string[] }
+interface AuthedUser { userType?: string; userStatus?: string; privileges?: string[] }
 type AuthRequest = Request & { user?: string };
 type AuthIdRequest = Request<{ id: string }> & { user?: string };
 // venueName (JaMmusic#1250) — carried alongside every resolvePitch error so
@@ -845,12 +846,15 @@ if (document.readyState === 'loading') {
 class OutreachController extends Controller {
   static readonly DEFAULT_GIG_SPACING_MONTHS = DEFAULT_GIG_SPACING_MONTHS;
 
-  async authorize(req: AuthRequest, required: string[]): Promise<AuthzResult> { // eslint-disable-line class-methods-use-this
+  // refuseAgents: also refuse an AI-agent account whatever its privileges say
+  // (web-jam-back#1109) — used by the send gate, never by read/draft paths.
+  async authorize(req: AuthRequest, required: string[], refuseAgents = false): Promise<AuthzResult> { // eslint-disable-line class-methods-use-this
     let user: AuthedUser | null;
     try { user = await userModel.findById(req.user || '') as unknown as AuthedUser | null; } catch (e) {
       return { status: 500, message: (e as Error).message };
     }
     if (!user) return { status: 401, message: 'user not found' };
+    if (refuseAgents && isAiAgentAccount(user)) return { status: 403, message: 'AI agents may draft but never send' };
     return checkAccess(user, required);
   }
 
@@ -876,9 +880,11 @@ class OutreachController extends Controller {
   // Send authorization for the immediate single-pitch path (#844, retired
   // autoApprove branch removed by #1080): only a human holding outreach:approve
   // may send here. There is no gate flow for a single ad hoc pitch, so unlike
-  // sendBatch there is no gate-satisfied path for an agent to use instead.
+  // sendBatch there is no gate-satisfied path for an agent to use instead. An
+  // AI-agent account is refused even if outreach:approve was somehow stored on
+  // it (web-jam-back#1109).
   async canSend(req: AuthRequest): Promise<AuthzResult> {
-    return this.authorize(req, ['outreach:approve']);
+    return this.authorize(req, ['outreach:approve'], true);
   }
 
   static buildListFilter(query: Record<string, unknown>): Record<string, unknown> {
