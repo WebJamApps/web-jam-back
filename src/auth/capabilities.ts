@@ -45,6 +45,13 @@ export const CAPABILITIES = [
   // deliberately NOT granted to the web-jam-llm AI agent — agents may DRAFT but
   // never send; only a human admin approves. Post-incident: no unapproved sends.
   'outreach:approve',
+  // Venue-mining metro sweep history (web-jam-back#1106). Granted to the
+  // shared web-jam-llm AI-agent identity so agents can record completed
+  // sweeps and read history; humans pass via the admin role fallback. No
+  // `venue-mining:read` — per this repo's convention there are no `:read`
+  // capabilities; sweep reads are gated by holding `venue-mining:create`
+  // (or the admin role).
+  'venue-mining:create',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];

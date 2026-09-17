@@ -30,6 +30,10 @@ describe('capabilities registry', () => {
     }
   });
 
+  it('includes the venue-mining:create cap (web-jam-back#1106)', () => {
+    expect(isValidCapability('venue-mining:create')).toBe(true);
+  });
+
   // Guard against the #823 miss: a controller gating on a capability that was
   // never registered grants nothing and silently vanishes from the Admin UI.
   // Every capability literal referenced by a controller must be in the registry.

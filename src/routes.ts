@@ -15,6 +15,7 @@ import template from './model/template/template-router.js';
 import outreach from './model/outreach/outreach-router.js';
 import facebook from './model/facebook/index.js';
 import backup from './model/backup/backup-router.js';
+import venueMiningSweep from './model/venue-mining-sweep/venue-mining-sweep-router.js';
 
 const router = express.Router();
 
@@ -36,4 +37,5 @@ export default function route(app: Express): void {
   router.use('/outreach', outreach);
   router.use('/facebook', facebook);
   router.use('/admin/backup', backup);
+  router.use('/venue-mining/sweep', venueMiningSweep);
 }
