@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import app from '#src/index.js';
 import venueMiningSweepModel from '#src/model/venue-mining-sweep/venue-mining-sweep-schema.js';
 import userModel from '#src/model/user/user-facade.js';
@@ -151,6 +152,26 @@ describe('Venue Mining Sweep Router (/venue-mining/sweep)', () => {
         .set({ origin: allowedUrl })
         .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`)
         .send(validPayload);
+
+      expect(r.status).toBe(409);
+      expect(r.body.message).toContain('already exists');
+    });
+
+    it('normalizes sweptAt timestamps to UTC midnight and returns 409 for duplicate calendar date', async () => {
+      r = await request(app)
+        .post('/venue-mining/sweep')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`)
+        .send({ ...validPayload, sweptAt: '2026-09-16' });
+      expect(r.status).toBe(201);
+      expect(r.body.sweptAt).toBe('2026-09-16T00:00:00.000Z');
+
+      // Attempt second sweep for same metro on same calendar date with timestamp
+      r = await request(app)
+        .post('/venue-mining/sweep')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`)
+        .send({ ...validPayload, sweptAt: '2026-09-16T14:02:00Z' });
 
       expect(r.status).toBe(409);
       expect(r.body.message).toContain('already exists');
@@ -337,7 +358,7 @@ describe('Venue Mining Sweep Router (/venue-mining/sweep)', () => {
       expect(r.body.message).toContain('not authorized for venue mining sweeps');
     });
 
-    it('guard outcome 3: refuses with 401 when token user is not found in database', async () => {
+    it('guard outcome 2: refuses with 401 when token user is not found in database', async () => {
       const missingId = '507f1f77bcf86cd799439011';
       r = await request(app)
         .post('/venue-mining/sweep')
@@ -347,6 +368,21 @@ describe('Venue Mining Sweep Router (/venue-mining/sweep)', () => {
 
       expect(r.status).toBe(401);
       expect(r.body.message).toContain('user not found');
+    });
+
+    it('guard outcome 3: refuses with 500 when auth lookup fails on POST', async () => {
+      vi.spyOn(userModel, 'findById').mockRejectedValueOnce(new Error('User lookup DB error'));
+      r = await request(app)
+        .post('/venue-mining/sweep')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`)
+        .send(validPayload);
+
+      expect(r.status).toBe(500);
+      expect(r.body.message).toBe('User lookup DB error');
+      const count = await venueMiningSweepModel.countDocuments();
+      expect(count).toBe(0);
+      vi.restoreAllMocks();
     });
   });
 
@@ -435,7 +471,7 @@ describe('Venue Mining Sweep Router (/venue-mining/sweep)', () => {
       expect(r.status).toBe(403);
     });
 
-    it('guard outcome 3: refuses GET with 401 when token user does not exist', async () => {
+    it('guard outcome 2: refuses GET with 401 when token user does not exist', async () => {
       const missingId = '507f1f77bcf86cd799439011';
       r = await request(app)
         .get('/venue-mining/sweep')
@@ -443,6 +479,18 @@ describe('Venue Mining Sweep Router (/venue-mining/sweep)', () => {
         .set('Authorization', `Bearer ${authUtils.createJWT({ _id: missingId })}`);
 
       expect(r.status).toBe(401);
+    });
+
+    it('guard outcome 3: refuses with 500 when auth lookup fails on GET', async () => {
+      vi.spyOn(userModel, 'findById').mockRejectedValueOnce(new Error('User lookup DB error'));
+      r = await request(app)
+        .get('/venue-mining/sweep')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`);
+
+      expect(r.status).toBe(500);
+      expect(r.body.message).toBe('User lookup DB error');
+      vi.restoreAllMocks();
     });
   });
 });

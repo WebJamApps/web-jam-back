@@ -35,6 +35,12 @@ export interface SweepBody {
 }
 
 // Privilege-first, role-fallback authorization gate.
+export function toUtcMidnight(dateInput: string | Date | number): Date {
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return d;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
 export function checkAccess(user: AuthedUser): AuthzResult {
   const privileges = user.privileges || [];
   if (privileges.length) {
@@ -132,7 +138,7 @@ export class VenueMiningSweepController {
     if (invalid) return res.status(400).json({ message: invalid });
 
     const body = req.body as SweepBody;
-    const sweptDate = new Date(body.sweptAt);
+    const sweptDate = toUtcMidnight(body.sweptAt);
 
     try {
       const existing = await this.model.findOne({

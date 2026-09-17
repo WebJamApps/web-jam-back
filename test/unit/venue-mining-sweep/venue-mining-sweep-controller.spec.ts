@@ -6,6 +6,7 @@ import {
   VenueMiningSweepController,
   checkAccess,
   validateSweepBody,
+  toUtcMidnight,
   type AuthRequest,
   type AuthedUser,
 } from '#src/model/venue-mining-sweep/venue-mining-sweep-controller.js';
@@ -80,6 +81,29 @@ describe('VenueMiningSweepController', () => {
         venuesCreatedCount: 0,
       };
       expect(validateSweepBody(body)).toBe('publication.type must be a string');
+    });
+  });
+
+  describe('toUtcMidnight', () => {
+    it('normalizes timestamp with hours/minutes to UTC midnight', () => {
+      const d = toUtcMidnight('2026-09-16T14:02:00Z');
+      expect(d.toISOString()).toBe('2026-09-16T00:00:00.000Z');
+    });
+
+    it('normalizes YYYY-MM-DD date string to UTC midnight', () => {
+      const d = toUtcMidnight('2026-09-16');
+      expect(d.toISOString()).toBe('2026-09-16T00:00:00.000Z');
+    });
+
+    it('normalizes Date object with non-midnight time to UTC midnight', () => {
+      const input = new Date('2026-09-16T21:45:30.123Z');
+      const d = toUtcMidnight(input);
+      expect(d.toISOString()).toBe('2026-09-16T00:00:00.000Z');
+    });
+
+    it('returns original invalid Date when input cannot be parsed', () => {
+      const d = toUtcMidnight('invalid-date');
+      expect(Number.isNaN(d.getTime())).toBe(true);
     });
   });
 
