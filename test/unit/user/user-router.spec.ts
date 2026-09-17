@@ -24,7 +24,7 @@ describe('user-router', () => {
   });
   it('findByEmail does not find a match', async () => {
     process.env.NODE_ENV = 'test';
-    authUtils.ensureAuthenticated = vi.fn();
+    authUtils.ensureAuthenticated = vi.fn((req: { userType?: string }) => { req.userType = 'JaM-admin'; return Promise.resolve(); }) as unknown as typeof authUtils.ensureAuthenticated;
     const r = await request(app)
       .post('/user');
     expect(r.status).toBe(400);
