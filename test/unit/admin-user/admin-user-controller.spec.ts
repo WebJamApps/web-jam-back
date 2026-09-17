@@ -216,6 +216,110 @@ describe('Admin User Controller', () => {
     });
   });
 
+  describe('outreach:approve is never granted to an AI-agent account (web-jam-back#1109)', () => {
+    const agentBody = (over = {}) => ({
+      name: 'Bot', email: 'bot@b.com', userType: 'web-jam-llm', privileges: ['outreach:approve'], ...over,
+    });
+
+    it('create refuses an agent account holding approve, by role and by status, and writes nothing', async () => {
+      lib.userRoles = ['JaM-admin', 'web-jam-llm'];
+      const create = vi.fn();
+      lib.model.create = create as any;
+      for (const body of [agentBody(), agentBody({ userStatus: 'ai-agent' })]) {
+        status = 0;
+        await controller.create({ userType: 'Developer', body } as any, resStub);
+        expect(status).toBe(400);
+        expect(testObj.message).toContain('outreach:approve cannot be granted');
+      }
+      expect(create).not.toHaveBeenCalled();
+    });
+
+    it('create still allows a human to hold approve', async () => {
+      lib.userRoles = ['JaM-admin'];
+      lib.model.create = vi.fn(() => Promise.resolve({ _id: 'human' })) as any;
+      await controller.create({
+        userType: 'Developer',
+        body: { name: 'Josh', email: 'j@b.com', userType: 'JaM-admin', privileges: ['outreach:approve'] },
+      } as any, resStub);
+      expect(status).toBe(201);
+    });
+
+    it('update refuses adding approve to a stored agent, and writes nothing', async () => {
+      lib.userRoles = ['JaM-admin', 'web-jam-llm'];
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'web-jam-llm', privileges: ['venue:create'] })) as any;
+      const update = vi.fn();
+      lib.model.findByIdAndUpdate = update as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({
+        params: { id }, userType: 'Developer', body: { privileges: ['venue:create', 'outreach:approve'] },
+      } as any, resStub);
+      expect(status).toBe(400);
+      expect(testObj.message).toContain('outreach:approve cannot be granted');
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('update refuses turning a human who holds approve into an agent, and writes nothing', async () => {
+      lib.userRoles = ['JaM-admin', 'web-jam-llm'];
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'JaM-admin', privileges: ['outreach:approve'] })) as any;
+      const update = vi.fn();
+      lib.model.findByIdAndUpdate = update as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      for (const body of [{ userType: 'web-jam-llm' }, { userType: 'web-jam-llm', userStatus: 'ai-agent' }]) {
+        status = 0;
+        await controller.findByIdAndUpdate({ params: { id }, userType: 'Developer', body } as any, resStub);
+        expect(status).toBe(400);
+      }
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('update still allows an agent edit that does not leave approve in place', async () => {
+      lib.userRoles = ['JaM-admin', 'web-jam-llm'];
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'web-jam-llm', privileges: ['outreach:approve'] })) as any;
+      lib.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({ _id: 'id' })) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      await controller.findByIdAndUpdate({
+        params: { id }, userType: 'Developer', body: { privileges: ['venue-mining:create'] },
+      } as any, resStub);
+      expect(status).toBe(200);
+    });
+
+    it('update refuses when the stored record cannot be read or does not exist, and writes nothing', async () => {
+      const update = vi.fn();
+      lib.model.findByIdAndUpdate = update as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      const body = { privileges: ['outreach:approve'] };
+
+      lib.model.findById = vi.fn(() => Promise.reject(new Error('db down'))) as any;
+      await controller.findByIdAndUpdate({ params: { id }, userType: 'Developer', body } as any, resStub);
+      expect(status).toBe(500);
+
+      status = 0;
+      lib.model.findById = vi.fn(() => Promise.resolve(null)) as any;
+      await controller.findByIdAndUpdate({ params: { id }, userType: 'Developer', body } as any, resStub);
+      expect(status).toBe(400);
+      expect(testObj.message).toContain('Id Not Found');
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('update refuses Mongo update operators and dotted paths that would skip these checks', async () => {
+      const update = vi.fn();
+      lib.model.findByIdAndUpdate = update as any;
+      lib.model.findById = vi.fn(() => Promise.resolve({ userType: 'web-jam-llm' })) as any;
+      const id = new mongoose.Types.ObjectId().toString();
+      for (const body of [
+        { $push: { privileges: 'outreach:approve' } },
+        { $set: { userType: 'JaM-admin' } },
+        { 'privileges.0': 'outreach:approve' },
+      ]) {
+        status = 0;
+        await controller.findByIdAndUpdate({ params: { id }, userType: 'Developer', body } as any, resStub);
+        expect(status).toBe(400);
+        expect(testObj.message).toContain('not allowed');
+      }
+      expect(update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('mintToken', () => {
     it('rejects invalid id', async () => {
       await controller.mintToken({ params: { id: 'bad' } } as any, resStub);

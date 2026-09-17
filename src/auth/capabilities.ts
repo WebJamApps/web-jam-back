@@ -62,6 +62,14 @@ export function isValidCapability(value: string): value is Capability {
   return capabilitySet.has(value);
 }
 
+// The AI-agent account (web-jam-back#1109). Such an account may never hold or use
+// `outreach:approve`: agents may draft but never send, whatever is stored.
+export const AI_AGENT_ROLE = 'web-jam-llm';
+
+export function isAiAgentAccount(account: { userType?: string; userStatus?: string }): boolean {
+  return account.userType === AI_AGENT_ROLE || account.userStatus === 'ai-agent';
+}
+
 export function validatePrivileges(input: unknown): { ok: true; privileges: Capability[] } | { ok: false; message: string } {
   if (!Array.isArray(input)) {
     return { ok: false, message: 'privileges must be an array' };
