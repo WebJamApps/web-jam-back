@@ -3,15 +3,36 @@ import mongoose from 'mongoose';
 import Controller from '#src/lib/controller.js';
 import { Icontroller } from '#src/lib/routeUtils.js';
 import userModel from '../user/user-facade.js';
-import { validatePrivileges } from '../../auth/capabilities.js';
+import { AI_AGENT_ROLE, isAiAgentAccount, validatePrivileges } from '../../auth/capabilities.js';
 import { canGrantRole } from '../../auth/roleGrants.js';
 
 // ensureAuthenticated populates req.userType with the acting admin's role.
 type ActingRequest = Request & { userType?: string };
 
 const USER_STATUS_OPTIONS = ['human', 'ai-agent'];
-// Only the AI-agent bot role may be marked ai-agent.
-const AI_AGENT_ROLE = 'web-jam-llm';
+// Only the AI-agent bot role (AI_AGENT_ROLE) may be marked ai-agent.
+
+type AccessFields = { userType?: string; userStatus?: string; privileges?: string[] };
+type HttpError = { status: number; message: string } | null;
+
+// An AI-agent account may never hold outreach:approve (web-jam-back#1109).
+// `account` is the record as it will be AFTER the write.
+function agentApproveError(account: AccessFields): HttpError {
+  if (isAiAgentAccount(account) && (account.privileges || []).indexOf('outreach:approve') !== -1) {
+    return { status: 400, message: 'outreach:approve cannot be granted to an AI-agent account' };
+  }
+  return null;
+}
+
+// Update bodies are plain field values only. A `$` operator (e.g. $push on
+// privileges) or a dotted path would reach Mongo without passing the privilege,
+// role and status checks below.
+function operatorKeyError(body: Record<string, unknown>): HttpError {
+  if (Object.keys(body).some((k) => k.startsWith('$') || k.includes('.'))) {
+    return { status: 400, message: 'update operators and dotted paths are not allowed' };
+  }
+  return null;
+}
 
 class AdminUserController extends Controller {
   constructor(uModel: typeof userModel) {
@@ -81,6 +102,8 @@ class AdminUserController extends Controller {
     if (roleErr) return res.status(roleErr.status).json({ message: roleErr.message });
     const statusErr = this.userStatusError(body.userStatus, body.userType);
     if (statusErr) return res.status(statusErr.status).json({ message: statusErr.message });
+    const approveErr = agentApproveError(body);
+    if (approveErr) return res.status(approveErr.status).json({ message: approveErr.message });
     if (!body.name) return res.status(400).json({ message: 'Name is required' });
     if (!body.email) return res.status(400).json({ message: 'Email is required' });
     let doc;
@@ -88,28 +111,46 @@ class AdminUserController extends Controller {
     return res.status(201).json(doc);
   }
 
+  // Role, status and agent-approve checks for an update that touches access
+  // fields, judged against `stored` (the record before the write).
+  accessUpdateError(req: Request<{ id: string }>, stored: AccessFields): HttpError {
+    const { body } = req;
+    if ('userType' in body) {
+      const roleErr = this.roleTransitionError((req as unknown as ActingRequest).userType, stored.userType, body.userType);
+      if (roleErr) return roleErr;
+    }
+    const resultingRole = 'userType' in body ? body.userType : stored.userType;
+    if ('userStatus' in body) {
+      const statusErr = this.userStatusError(body.userStatus, resultingRole);
+      if (statusErr) return statusErr;
+    }
+    return agentApproveError({
+      userType: resultingRole,
+      userStatus: 'userStatus' in body ? body.userStatus : stored.userStatus,
+      privileges: 'privileges' in body ? body.privileges : stored.privileges,
+    });
+  }
+
   async findByIdAndUpdate(req: Request<{ id: string }>, res: Response): Promise<unknown> {
     if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ message: 'Update id is invalid' });
     }
+    const opErr = operatorKeyError(req.body || {});
+    if (opErr) return res.status(opErr.status).json({ message: opErr.message });
     if (req.body.privileges !== undefined) {
       const result = validatePrivileges(req.body.privileges);
       if (!result.ok) return res.status(400).json({ message: result.message });
       req.body.privileges = result.privileges;
     }
-    let existing;
-    if ('userType' in req.body || 'userStatus' in req.body) {
+    // Load the stored record whenever the write touches access fields, so every
+    // check judges the record as it will be after the write. If it can't be
+    // read, refuse — never write blind.
+    if ('privileges' in req.body || 'userType' in req.body || 'userStatus' in req.body) {
+      let existing;
       try { existing = await this.model.findById(req.params.id); } catch (e) { return this.resErr(res, e as Error); }
-    }
-    const existingRole = (existing as { userType?: string } | null)?.userType;
-    if ('userType' in req.body) {
-      const roleErr = this.roleTransitionError((req as ActingRequest).userType, existingRole, req.body.userType);
-      if (roleErr) return res.status(roleErr.status).json({ message: roleErr.message });
-    }
-    if ('userStatus' in req.body) {
-      const resultingRole = 'userType' in req.body ? req.body.userType : existingRole;
-      const statusErr = this.userStatusError(req.body.userStatus, resultingRole);
-      if (statusErr) return res.status(statusErr.status).json({ message: statusErr.message });
+      if (!existing) return res.status(400).json({ message: 'Id Not Found' });
+      const accessErr = this.accessUpdateError(req, existing as unknown as AccessFields);
+      if (accessErr) return res.status(accessErr.status).json({ message: accessErr.message });
     }
     return this.contFBIandU(req, res);
   }

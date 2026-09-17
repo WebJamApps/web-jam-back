@@ -281,6 +281,29 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(sendMail).not.toHaveBeenCalled();
     });
 
+    // web-jam-back#1109 — an AI-agent account is refused at the send gate even
+    // if outreach:approve was somehow stored on it (direct DB edit, legacy data).
+    it('403s an AI-agent account holding approve, by role and by status, and sends nothing', async () => {
+      for (const account of [
+        { userType: 'web-jam-llm', privileges: ['outreach:approve'] },
+        { userStatus: 'ai-agent', privileges: ['outreach:approve'] },
+      ]) {
+        status = 0;
+        (userModel as any).findById = vi.fn(() => Promise.resolve(account));
+        await c.sendPitch({ user: 'agent', body: body() }, resStub);
+        expect(status).toBe(403);
+        expect(payload.message).toContain('AI agents may draft but never send');
+      }
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('401s when the caller record is gone, and sends nothing', async () => {
+      (userModel as any).findById = vi.fn(() => Promise.resolve(null));
+      await c.sendPitch({ user: 'ghost', body: body() }, resStub);
+      expect(status).toBe(401);
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
     it('an approver sends immediately as a sent record', async () => {
       asApprover();
       await c.sendPitch({ user: 'josh', body: body() }, resStub);
