@@ -450,6 +450,19 @@ export function extractApprovedFingerprints(draftApproval: Record<string, unknow
   return map;
 }
 
+export function unpitchedApprovedFingerprints(
+  approvedFps: Map<string, string>,
+  pitched: Set<string>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const [venueId, fp] of approvedFps) {
+    if (!pitched.has(venueId)) {
+      map.set(venueId, fp);
+    }
+  }
+  return map;
+}
+
 // The Mongo overlap clause for "an outreach whose targetWeekend range overlaps
 // `tw`" — shared by the dedup guard, the #898 target-filled auto-flip, and the
 // #898 candidates target-weekend filter, so the three stay in lockstep instead
@@ -2582,8 +2595,9 @@ class OutreachController extends Controller {
 
     // Outcome 2: Gate 2 draft fingerprints venue set check
     const approvedFps = extractApprovedFingerprints(draftApproval);
+    const unpitchedFps = unpitchedApprovedFingerprints(approvedFps, pitched);
     const batchSet = new Set(batchVenueIds);
-    if (approvedFps.size !== batchSet.size || !batchVenueIds.every((id) => approvedFps.has(id))) {
+    if (unpitchedFps.size !== batchSet.size || !batchVenueIds.every((id) => unpitchedFps.has(id))) {
       return {
         ok: false,
         status: 403,
@@ -2592,7 +2606,7 @@ class OutreachController extends Controller {
     }
 
     // Re-render draft emails and match fingerprints against Gate 2
-    return this.verifyBatchRenderings(batchVenueIds, approvedFps, body);
+    return this.verifyBatchRenderings(batchVenueIds, unpitchedFps, body);
   }
 }
 

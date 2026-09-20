@@ -17,6 +17,7 @@ const {
   isExactVenueSetMatch,
   unpitchedApprovedVenueIds,
   extractApprovedFingerprints,
+  unpitchedApprovedFingerprints,
   wrapDarkEmail,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
@@ -650,6 +651,25 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         expect(fromMap.get(id1)).toBe('fp1');
         expect(fromMap.get(id2)).toBe('fp2');
       });
+
+      it('unpitchedApprovedFingerprints drops pitched venues and preserves unpitched fingerprints', () => {
+        const id1 = oid();
+        const id2 = oid();
+        const id3 = oid();
+        const approvedFps = new Map([
+          [id1, 'fp1'],
+          [id2, 'fp2'],
+          [id3, 'fp3'],
+        ]);
+        const pitched = new Set([id2]);
+        const result = unpitchedApprovedFingerprints(approvedFps, pitched);
+        expect(Array.from(result.entries())).toEqual([
+          [id1, 'fp1'],
+          [id3, 'fp3'],
+        ]);
+        expect(unpitchedApprovedFingerprints(approvedFps, new Set())).toEqual(approvedFps);
+        expect(unpitchedApprovedFingerprints(approvedFps, new Set([id1, id2, id3]))).toEqual(new Map());
+      });
     });
 
     describe('Outcome 1: Both approvals present and matching (dispatch proceeds)', () => {
@@ -1270,6 +1290,208 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
 
         expect(result).toEqual({ ok: false, status: 400, message: expect.stringContaining('targetWeekend') });
         expect(c.model.find).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('Gate 2 Draft Fingerprint Filtering for Unpitched Candidates (web-jam-back#1114)', () => {
+      const approvals = (batchId: string, venueIds: string[], fps: { venueId: string; fingerprint: string }[]) => {
+        (venueApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({ batchId, weekend: WEEKEND_STR, venueIds }));
+        (draftApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({ batchId, weekend: WEEKEND_STR, draftFingerprints: fps }));
+      };
+      const batchReq = (batchId: string, venueIds: string[]): Request => ({
+        user: oid(),
+        body: { batchId, venueIds, targetDates: 'Oct 16-18', targetWeekend: VALID_WEEKEND },
+      } as unknown as Request);
+
+      describe('Outcome 1: Condition Holds (unpitched subset matches and fingerprints match)', () => {
+        it('succeeds (200) and sends unpitched candidates when Gate 2 approval contains both pitched and unpitched venues', async () => {
+          asApprover();
+          const v1Id = oid(); // already pitched
+          const v2Id = oid(); // unpitched candidate
+          const v2 = validVenue({ _id: v2Id, name: 'Venue Beta' });
+          (venueModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn((id: string) => Promise.resolve(id === v2Id ? v2 : null));
+
+          const fp1 = 'stored-fp-for-v1';
+          const fp2 = computeDraftFingerprint({
+            subject: 'Inquiry: Venue Beta',
+            body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+          });
+          approvals('b-partial-1', [v1Id, v2Id], [
+            { venueId: v1Id, fingerprint: fp1 },
+            { venueId: v2Id, fingerprint: fp2 },
+          ]);
+          (c.model as unknown as { find: ReturnType<typeof vi.fn> }).find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'sent' }]));
+
+          await c.sendBatch(batchReq('b-partial-1', [v2Id]), resStub);
+
+          expect(status).toBe(200);
+          expect(sendMail).toHaveBeenCalledTimes(1);
+          expect(payload.sent).toBe(1);
+          expect(payload.requested).toBe(1);
+        });
+
+        it('verifyBatchDispatch returns { ok: true, verifiedRenderings } for unpitched subset when draft approval covers both', async () => {
+          const v1Id = oid();
+          const v2Id = oid();
+          const v2 = validVenue({ _id: v2Id, name: 'Venue Beta' });
+          (venueModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn((id: string) => Promise.resolve(id === v2Id ? v2 : null));
+
+          const fp1 = 'stored-fp-for-v1';
+          const fp2 = computeDraftFingerprint({
+            subject: 'Inquiry: Venue Beta',
+            body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+          });
+          approvals('b-partial-verify', [v1Id, v2Id], [
+            { venueId: v1Id, fingerprint: fp1 },
+            { venueId: v2Id, fingerprint: fp2 },
+          ]);
+          (c.model as unknown as { find: ReturnType<typeof vi.fn> }).find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'sent' }]));
+
+          const result = await c.verifyBatchDispatch({
+            batchId: 'b-partial-verify',
+            venueIds: [v2Id],
+            targetDates: 'Oct 16-18',
+            targetWeekend: VALID_WEEKEND,
+          });
+
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            expect(result.verifiedRenderings.size).toBe(1);
+            expect(result.verifiedRenderings.has(v2Id)).toBe(true);
+          }
+        });
+      });
+
+      describe('Outcome 2: Condition Does Not Hold (mismatch or set difference)', () => {
+        it('refuses in full (403) when an unpitched venue fingerprint diverges from Gate 2 approval', async () => {
+          asApprover();
+          const v1Id = oid();
+          const v2Id = oid();
+          const v2 = validVenue({ _id: v2Id, name: 'Venue Beta' });
+          (venueModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn((id: string) => Promise.resolve(id === v2Id ? v2 : null));
+
+          approvals('b-mismatch', [v1Id, v2Id], [
+            { venueId: v1Id, fingerprint: 'fp1' },
+            { venueId: v2Id, fingerprint: 'divergent-fingerprint' },
+          ]);
+          (c.model as unknown as { find: ReturnType<typeof vi.fn> }).find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'sent' }]));
+
+          await c.sendBatch(batchReq('b-mismatch', [v2Id]), resStub);
+
+          expect(status).toBe(403);
+          expect(payload.message).toContain(`Gate 2 draft fingerprint mismatch for venue '${v2Id}'`);
+          expect(sendMail).not.toHaveBeenCalled();
+        });
+
+        it('refuses in full (403) when an unpitched venue is missing from Gate 2 draft fingerprints', async () => {
+          asApprover();
+          const v1Id = oid();
+          const v2Id = oid();
+          approvals('b-missing-gate2', [v1Id, v2Id], [
+            { venueId: v1Id, fingerprint: 'fp1' },
+          ]);
+          (c.model as unknown as { find: ReturnType<typeof vi.fn> }).find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'sent' }]));
+
+          await c.sendBatch(batchReq('b-missing-gate2', [v2Id]), resStub);
+
+          expect(status).toBe(403);
+          expect(payload.message).toContain('Gate 2 draft fingerprints venue set does not match batch venues');
+          expect(sendMail).not.toHaveBeenCalled();
+        });
+
+        it('refuses in full (403) when Gate 2 draft fingerprints has extra unpitched venue omitted from batch', async () => {
+          const v1Id = oid();
+          const v2Id = oid();
+          const v3Id = oid();
+          (venueApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({
+            batchId: 'b-extra-gate2', weekend: WEEKEND_STR, venueIds: [v1Id, v2Id],
+          }));
+          (draftApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({
+            batchId: 'b-extra-gate2', weekend: WEEKEND_STR, draftFingerprints: [
+              { venueId: v1Id, fingerprint: 'fp1' },
+              { venueId: v2Id, fingerprint: 'fp2' },
+              { venueId: v3Id, fingerprint: 'fp3' },
+            ],
+          }));
+          (c.model as unknown as { find: ReturnType<typeof vi.fn> }).find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'sent' }]));
+
+          const result = await c.verifyBatchDispatch({
+            batchId: 'b-extra-gate2',
+            venueIds: [v2Id],
+            targetDates: 'Oct 16-18',
+            targetWeekend: VALID_WEEKEND,
+          });
+
+          expect(result).toEqual({
+            ok: false,
+            status: 403,
+            message: "dispatch refused: Gate 2 draft fingerprints venue set does not match batch venues for batch 'b-extra-gate2'",
+          });
+        });
+
+        it('refuses in full (403) when batch omits an unpitched approved venue', async () => {
+          asApprover();
+          const v1Id = oid(); // pitched
+          const v2Id = oid(); // unpitched
+          const v3Id = oid(); // unpitched
+          approvals('b-omit-unpitched', [v1Id, v2Id, v3Id], [
+            { venueId: v1Id, fingerprint: 'fp1' },
+            { venueId: v2Id, fingerprint: 'fp2' },
+            { venueId: v3Id, fingerprint: 'fp3' },
+          ]);
+          (c.model as unknown as { find: ReturnType<typeof vi.fn> }).find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'sent' }]));
+
+          await c.sendBatch(batchReq('b-omit-unpitched', [v2Id]), resStub);
+
+          expect(status).toBe(403);
+          expect(payload.message).toContain('Gate 1 venue-set approval does not match batch venueIds');
+          expect(sendMail).not.toHaveBeenCalled();
+        });
+
+        it('refuses in full (403) when batch attempts to re-pitch an already-pitched venue', async () => {
+          asApprover();
+          const v1Id = oid(); // pitched
+          const v2Id = oid(); // unpitched
+          approvals('b-repitch', [v1Id, v2Id], [
+            { venueId: v1Id, fingerprint: 'fp1' },
+            { venueId: v2Id, fingerprint: 'fp2' },
+          ]);
+          (c.model as unknown as { find: ReturnType<typeof vi.fn> }).find = vi.fn(() => Promise.resolve([{ venueId: v1Id, status: 'sent' }]));
+
+          await c.sendBatch(batchReq('b-repitch', [v1Id, v2Id]), resStub);
+
+          expect(status).toBe(403);
+          expect(payload.message).toContain('Gate 1 venue-set approval does not match batch venueIds');
+          expect(sendMail).not.toHaveBeenCalled();
+        });
+      });
+
+      describe('Outcome 3: Indeterminate check (database error / connection failure -> 500)', () => {
+        it('refuses (500) when reading Gate 2 draft approval fails during dispatch verification', async () => {
+          asApprover();
+          const v1Id = oid();
+          (venueApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({ batchId: 'b-err', weekend: WEEKEND_STR, venueIds: [v1Id] }));
+          (draftApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.reject(new Error('Mongo connection drop on Gate 2')));
+
+          await c.sendBatch(batchReq('b-err', [v1Id]), resStub);
+
+          expect(status).toBe(500);
+          expect(payload.message).toContain('failed to read approval records');
+          expect(sendMail).not.toHaveBeenCalled();
+        });
+
+        it('refuses (500) when reading existing outreach records for pitched check fails', async () => {
+          asApprover();
+          const v1Id = oid();
+          approvals('b-err-pitched', [v1Id], [{ venueId: v1Id, fingerprint: 'fp1' }]);
+          (c.model as unknown as { find: ReturnType<typeof vi.fn> }).find = vi.fn(() => Promise.reject(new Error('Mongo query timeout')));
+
+          await c.sendBatch(batchReq('b-err-pitched', [v1Id]), resStub);
+
+          expect(status).toBe(500);
+          expect(payload.message).toContain('failed to read the venues already pitched');
+          expect(sendMail).not.toHaveBeenCalled();
+        });
       });
     });
 
