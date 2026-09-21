@@ -117,6 +117,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     // exclusion + weekend surfacing); default to empty so unrelated tests
     // never hit the real DB. Tests exercising the linkage override this.
     (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+    (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
     // The real verifyBatchDispatch NEVER returns a bare { ok: true } — on
     // success it always carries a verifiedRenderings Map (empty only when the
     // batch had no venues). Stubbing the bare shape made every sendBatch test
@@ -470,7 +471,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
-  describe('template by stage (#848)', () => {
+  describe('template by stage (#848, #1116)', () => {
     // #1059 retired the hand-pinned relationshipStage override. A venue
     // document that still carries the field (pre-migration data) must be
     // ignored entirely — the stage derives from gig history either way.
@@ -484,13 +485,43 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(await c.resolveStage(validVenue({ bookingStatus: 'booked' }))).toBe('returning');
     });
 
-    it('resolveStage: a prior replied/booked outreach makes it returning', async () => {
+    it('resolveStage: a venue with lastGig auto-derives returning (#1116)', async () => {
+      expect(await c.resolveStage(validVenue({ lastGig: { datetime: '2025-06-01T20:00:00.000Z' } }))).toBe('returning');
+    });
+
+    it('resolveStage: a venue with linked past gig via venueId in gigModel auto-derives returning (#1116)', async () => {
+      const v = validVenue();
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve({
+        _id: 'g1', venueId: String(v._id), datetime: new Date('2025-01-01T00:00:00.000Z'),
+      }));
+      expect(await c.resolveStage(v)).toBe('returning');
+    });
+
+    it('resolveStage: a venue with linked past gig matched by normalized name auto-derives returning (#1116)', async () => {
+      const v = validVenue({ name: 'Olde Salem Brewing' });
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).find = vi.fn(() => Promise.resolve([
+        { venue: '<p>Olde Salem Brewing</p>', datetime: new Date('2025-01-01T00:00:00.000Z') },
+      ]));
+      expect(await c.resolveStage(v)).toBe('returning');
+    });
+
+    it('resolveStage: a prior replied outreach record does NOT make it returning (#1116)', async () => {
       c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'o', status: 'replied' }));
-      expect(await c.resolveStage(validVenue())).toBe('returning');
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+      expect(await c.resolveStage(validVenue())).toBe('cold');
+    });
+
+    it('resolveStage: Outcome 3 - fails closed to cold when gigModel query throws (#1116)', async () => {
+      (gigModel as any).findOne = vi.fn(() => Promise.reject(new Error('db down')));
+      expect(await c.resolveStage(validVenue())).toBe('cold');
     });
 
     it('resolveStage: otherwise cold', async () => {
       c.model.findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).find = vi.fn(() => Promise.resolve([]));
       expect(await c.resolveStage(validVenue())).toBe('cold');
     });
 

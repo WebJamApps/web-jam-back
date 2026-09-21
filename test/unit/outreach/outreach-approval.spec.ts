@@ -25,6 +25,7 @@ const { default: venueModel } = await import('#src/model/venue/venue-facade.js')
 const { default: templateModel } = await import('#src/model/template/template-facade.js');
 const { default: venueApprovalModel } = await import('#src/model/outreach/outreach-venue-approval-facade.js');
 const { default: draftApprovalModel } = await import('#src/model/outreach/outreach-draft-approval-facade.js');
+const { default: gigModel } = await import('#src/model/gig/gig-facade.js');
 
 const c = controller as any;
 const oid = () => new mongoose.Types.ObjectId().toString();
@@ -46,6 +47,8 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
     status = 0;
     payload = undefined;
     vi.restoreAllMocks();
+    (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+    (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
     // findLatestOne is the deterministic (sorted) weekend-fallback lookup. It
     // is stubbed HERE, in the test, rather than production branching on the
     // presence of a vitest `.mock` property (web-jam-back#1082 review) — that
