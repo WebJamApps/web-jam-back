@@ -34,6 +34,7 @@ const {
   buildPitchEmail, buildFollowUpEmail, MissingFooterError, resolveFooterAsset,
   contactFirstName,
   wrapDarkEmail, DARK_WRAPPER_BG, DARK_WRAPPER_TEXT, DARK_WRAPPER_LINK, DARK_WRAPPER_START, DARK_WRAPPER_END,
+  hasLinkedPastGig,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -499,11 +500,19 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('resolveStage: a venue with linked past gig matched by normalized name auto-derives returning (#1116)', async () => {
       const v = validVenue({ name: 'Olde Salem Brewing' });
-      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
-      (gigModel as any).find = vi.fn(() => Promise.resolve([
+      const findOneMock = vi.fn(() => Promise.resolve(null));
+      const findMock = vi.fn(() => Promise.resolve([
         { venue: '<p>Olde Salem Brewing</p>', datetime: new Date('2025-01-01T00:00:00.000Z') },
       ]));
+      (gigModel as any).findOne = findOneMock;
+      (gigModel as any).find = findMock;
       expect(await c.resolveStage(v)).toBe('returning');
+      expect(findOneMock).toHaveBeenCalledWith(expect.objectContaining({
+        venueId: String(v._id),
+      }));
+      expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
+        venueId: null,
+      }));
     });
 
     it('resolveStage: a prior replied outreach record does NOT make it returning (#1116)', async () => {
@@ -516,6 +525,10 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('resolveStage: Outcome 3 - fails closed to cold when gigModel query throws (#1116)', async () => {
       (gigModel as any).findOne = vi.fn(() => Promise.reject(new Error('db down')));
       expect(await c.resolveStage(validVenue())).toBe('cold');
+
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db find down')));
+      expect(await c.resolveStage(validVenue({ name: 'Some Venue' }))).toBe('cold');
     });
 
     it('resolveStage: otherwise cold', async () => {
@@ -523,6 +536,20 @@ describe('Outreach Controller (#844 batch model)', () => {
       (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
       (gigModel as any).find = vi.fn(() => Promise.resolve([]));
       expect(await c.resolveStage(validVenue())).toBe('cold');
+    });
+
+    it('hasLinkedPastGig: returns true for attached past gig, true for gigModel query, and false otherwise (#1116)', async () => {
+      expect(await hasLinkedPastGig(validVenue({ lastGig: { datetime: '2025-06-01T20:00:00.000Z' } }))).toBe(true);
+
+      const v = validVenue({ name: 'Twin Creeks' });
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).find = vi.fn(() => Promise.resolve([
+        { venue: 'Twin Creeks', datetime: new Date('2025-01-01T00:00:00.000Z') },
+      ]));
+      expect(await hasLinkedPastGig(v)).toBe(true);
+
+      (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+      expect(await hasLinkedPastGig(v)).toBe(false);
     });
 
     it('findTemplate: uses the returning variant when present', async () => {

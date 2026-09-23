@@ -873,18 +873,17 @@ async function queryLinkedPastGig(venue: VenueDoc): Promise<boolean> {
   try {
     const now = new Date();
     const venueId = String(venue._id);
-    if (typeof gigModel.findOne === 'function') {
-      const pastGig = await gigModel.findOne({
-        ...JOSH_GIGS_FILTER,
-        venueId,
-        datetime: { $lt: now },
-      });
-      if (pastGig) return true;
-    }
+    const pastGig = await gigModel.findOne({
+      ...JOSH_GIGS_FILTER,
+      venueId,
+      datetime: { $lt: now },
+    });
+    if (pastGig) return true;
 
-    if (venue.name && typeof gigModel.find === 'function') {
+    if (venue.name) {
       const pastGigs = (await gigModel.find({
         ...JOSH_GIGS_FILTER,
+        venueId: null,
         datetime: { $lt: now },
       })) as unknown as LinkableGig[];
       if (Array.isArray(pastGigs) && pastGigs.length > 0) {
