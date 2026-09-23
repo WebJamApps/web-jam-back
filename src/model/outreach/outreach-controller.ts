@@ -249,6 +249,10 @@ export function parseTargetWeekend(raw: RawTargetWeekend | string | undefined): 
   return { start, end };
 }
 
+export function targetWeekendsDiffer(a: TargetWeekend, b: TargetWeekend): boolean {
+  return a.start.getTime() !== b.start.getTime() || a.end.getTime() !== b.end.getTime();
+}
+
 // #1036 — resolve targetWeekend from targetWeekend object or targetDates string fallback for getCandidates.
 export function resolveCandidateWeekend(query: { targetWeekend?: RawTargetWeekend; targetDates?: string }): {
   tw: TargetWeekend | null;
@@ -1097,6 +1101,9 @@ class OutreachController extends Controller {
       if (!bodyTw && !existingTw) {
         return 'targetWeekend ({ start, end }) is required for a target-filled outcome';
       }
+      if (bodyTw && existingTw && targetWeekendsDiffer(bodyTw, existingTw)) {
+        return 'targetWeekend cannot differ from the record\'s existing targetWeekend';
+      }
     }
     return '';
   }
@@ -1194,11 +1201,12 @@ class OutreachController extends Controller {
     const actor = resolveActor(req, body);
     const outcomeAt = new Date();
     const parsedTargetWeekend = body.targetWeekend ? parseTargetWeekend(body.targetWeekend) : null;
+    const existingTw = existing.targetWeekend ? parseTargetWeekend(existing.targetWeekend as RawTargetWeekend) : null;
     const update: Record<string, unknown> = {
       status: body.status, outcomeAt, outcomeBy: actor, nextTouchDue: null, lastModifiedBy: actor,
     };
     if (bookedDate) update.bookedDate = bookedDate;
-    if (parsedTargetWeekend) update.targetWeekend = parsedTargetWeekend;
+    if (!existingTw && parsedTargetWeekend) update.targetWeekend = parsedTargetWeekend;
 
     let updated: OutreachDoc | null;
     try { updated = await this.model.findByIdAndUpdate(req.params.id, update) as unknown as OutreachDoc | null; } catch (e) {
@@ -1206,8 +1214,7 @@ class OutreachController extends Controller {
     }
     if (!updated) return res.status(400).json({ message: 'Id Not Found' });
 
-    const resolvedTw = parsedTargetWeekend
-      || (existing.targetWeekend ? parseTargetWeekend(existing.targetWeekend as RawTargetWeekend) : null);
+    const resolvedTw = existingTw || parsedTargetWeekend;
     await this.applyOutcomeSideEffects(existing, body.status as string, bookedDate, actor, outcomeAt, req.params.id, resolvedTw);
     return res.status(200).json(updated);
   }
