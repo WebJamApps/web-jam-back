@@ -450,6 +450,19 @@ export function extractApprovedFingerprints(draftApproval: Record<string, unknow
   return map;
 }
 
+export function unpitchedApprovedFingerprints(
+  approvedFps: Map<string, string>,
+  pitched: Set<string>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const [venueId, fp] of approvedFps) {
+    if (!pitched.has(venueId)) {
+      map.set(venueId, fp);
+    }
+  }
+  return map;
+}
+
 // The Mongo overlap clause for "an outreach whose targetWeekend range overlaps
 // `tw`" — shared by the dedup guard, the #898 target-filled auto-flip, and the
 // #898 candidates target-weekend filter, so the three stay in lockstep instead
@@ -843,6 +856,54 @@ if (document.readyState === 'loading') {
 }
 `;
 
+function hasAttachedPastGig(venueRecord: Record<string, unknown>): boolean {
+  const lastGig = venueRecord.lastGig as { datetime?: unknown; date?: unknown } | undefined;
+  if (lastGig && (lastGig.datetime || lastGig.date)) {
+    return true;
+  }
+  const priorGigs = venueRecord.priorGigs;
+  if (priorGigs && (Array.isArray(priorGigs) ? priorGigs.length > 0 : Boolean(priorGigs))) {
+    return true;
+  }
+  const reason = venueRecord.reason as { lastGigDate?: unknown } | undefined;
+  return Boolean(reason?.lastGigDate && reason.lastGigDate !== 'never');
+}
+
+async function queryLinkedPastGig(venue: VenueDoc): Promise<boolean> {
+  try {
+    const now = new Date();
+    const venueId = String(venue._id);
+    const pastGig = await gigModel.findOne({
+      ...JOSH_GIGS_FILTER,
+      venueId,
+      datetime: { $lt: now },
+    });
+    if (pastGig) return true;
+
+    if (venue.name) {
+      const pastGigs = (await gigModel.find({
+        ...JOSH_GIGS_FILTER,
+        venueId: null,
+        datetime: { $lt: now },
+      })) as unknown as LinkableGig[];
+      if (Array.isArray(pastGigs) && pastGigs.length > 0) {
+        const groups = groupGigsByVenue(pastGigs, [venue as unknown as LinkableVenue]);
+        const linked = groups.get(venueId);
+        if (linked && linked.length > 0) return true;
+      }
+    }
+  } catch {
+    // Indeterminate / lookup failure: fail closed to false rather than hallucinating prior performances
+    return false;
+  }
+  return false;
+}
+
+export async function hasLinkedPastGig(venue: VenueDoc): Promise<boolean> {
+  if (hasAttachedPastGig(venue as Record<string, unknown>)) return true;
+  return queryLinkedPastGig(venue);
+}
+
 class OutreachController extends Controller {
   static readonly DEFAULT_GIG_SPACING_MONTHS = DEFAULT_GIG_SPACING_MONTHS;
 
@@ -1137,16 +1198,15 @@ class OutreachController extends Controller {
     return res.status(200).json(doc);
   }
 
-  // Resolve a venue's relationship stage (#848). Always derived from gig
+  // Resolve a venue's relationship stage (#848, #1059, #1116). Always derived from gig
   // history — the hand-pinned `venue.relationshipStage` override was retired
   // with the field itself (#1059), so a venue that was pinned by hand now
-  // follows its actual history instead. A currently-booked venue, or one with
-  // a prior outreach that got a reply or a booking, is `returning`; everything
-  // else is `cold`.
+  // follows its actual history instead. A currently-booked venue (bookingStatus: 'booked'),
+  // or one with a linked past gig, is `returning`; everything else is `cold` (#1116).
+  // Prior outreach with status: 'replied' does NOT make a venue returning.
   async resolveStage(venue: VenueDoc): Promise<'cold' | 'returning'> {
     if (venue.bookingStatus === 'booked') return 'returning';
-    const prior = await this.model.findOne({ venueId: String(venue._id), status: { $in: ['replied', 'booked'] } });
-    return prior ? 'returning' : 'cold';
+    return (await hasLinkedPastGig(venue)) ? 'returning' : 'cold';
   }
 
   // Pick the active template for a type + stage (#848). Cold also matches legacy
@@ -2582,8 +2642,9 @@ class OutreachController extends Controller {
 
     // Outcome 2: Gate 2 draft fingerprints venue set check
     const approvedFps = extractApprovedFingerprints(draftApproval);
+    const unpitchedFps = unpitchedApprovedFingerprints(approvedFps, pitched);
     const batchSet = new Set(batchVenueIds);
-    if (approvedFps.size !== batchSet.size || !batchVenueIds.every((id) => approvedFps.has(id))) {
+    if (unpitchedFps.size !== batchSet.size || !batchVenueIds.every((id) => unpitchedFps.has(id))) {
       return {
         ok: false,
         status: 403,
@@ -2592,7 +2653,7 @@ class OutreachController extends Controller {
     }
 
     // Re-render draft emails and match fingerprints against Gate 2
-    return this.verifyBatchRenderings(batchVenueIds, approvedFps, body);
+    return this.verifyBatchRenderings(batchVenueIds, unpitchedFps, body);
   }
 }
 
