@@ -179,7 +179,7 @@ type ApprovalModelWithLatest = {
 interface FollowUp { sentAt?: Date; type?: string; messageId?: string; eventId?: string; step?: number }
 export interface OutreachDoc {
   _id?: unknown; venueId?: unknown; sentAt?: Date; step?: number; targetDates?: string; followUps?: FollowUp[];
-  status?: string; templateUsed?: string; bookingPeriod?: string;
+  status?: string; templateUsed?: string; bookingPeriod?: string; targetWeekend?: TargetWeekend;
 }
 
 // #923 — extends the enum with the outcome values a human (or #898's
@@ -479,9 +479,14 @@ function targetWeekendOverlapClause(tw: TargetWeekend): Record<string, unknown> 
 // the full OUTREACH_STATUSES enum below: this endpoint records a HUMAN (or
 // auto-flip) DECISION about a pitch, not the sent/replied/no-response
 // lifecycle states, which stay on updateOutreach.
-const OUTCOME_VALUES = ['interested', 'not-interested', 'booked', 'target-filled'];
+export const OUTCOME_VALUES = ['interested', 'not-interested', 'booked', 'target-filled'];
 
-interface OutcomeBody { status?: string; bookedDate?: string; actor?: string }
+export interface OutcomeBody {
+  status?: string;
+  bookedDate?: string;
+  actor?: string;
+  targetWeekend?: RawTargetWeekend;
+}
 interface TouchRecord {
   date: Date; type: string; note?: string; templateType?: string; targetWeekend?: TargetWeekend;
   outcome?: string; bookedDate?: Date; outreachId?: string; actor?: string;
@@ -1082,14 +1087,31 @@ class OutreachController extends Controller {
     }
   }
 
+  static validateTargetFilledWeekend(body: OutcomeBody, existing?: { targetWeekend?: unknown } | null): string {
+    const bodyTw = body.targetWeekend !== undefined ? parseTargetWeekend(body.targetWeekend) : null;
+    if (body.targetWeekend !== undefined && !bodyTw) {
+      return 'targetWeekend ({ start, end }) is required for a target-filled outcome';
+    }
+    if (existing !== undefined) {
+      const existingTw = existing?.targetWeekend ? parseTargetWeekend(existing.targetWeekend as RawTargetWeekend) : null;
+      if (!bodyTw && !existingTw) {
+        return 'targetWeekend ({ start, end }) is required for a target-filled outcome';
+      }
+    }
+    return '';
+  }
+
   // Validate a recordOutcome body. Returns an error message, or '' when valid.
   // Split out of recordOutcome to keep its cognitive complexity down.
-  static validateOutcomeBody(body: OutcomeBody): string {
+  static validateOutcomeBody(body: OutcomeBody, existing?: { targetWeekend?: unknown } | null): string {
     if (!body.status || OUTCOME_VALUES.indexOf(body.status) === -1) {
       return `status must be one of ${OUTCOME_VALUES.join(', ')}`;
     }
     if (body.status === 'booked' && (!body.bookedDate || Number.isNaN(new Date(body.bookedDate).getTime()))) {
       return 'bookedDate (valid date) is required for a booked outcome';
+    }
+    if (body.status === 'target-filled') {
+      return OutreachController.validateTargetFilledWeekend(body, existing);
     }
     return '';
   }
@@ -1117,8 +1139,10 @@ class OutreachController extends Controller {
     actor: string,
     outcomeAt: Date,
     recordId: string,
+    targetWeekend?: TargetWeekend | null,
   ): Promise<void> {
-    const tw = (existing as unknown as { targetWeekend?: TargetWeekend }).targetWeekend;
+    const tw = targetWeekend
+      || (existing as unknown as { targetWeekend?: TargetWeekend }).targetWeekend;
     if (status === 'not-interested') {
       try {
         await venueModel.findByIdAndUpdate(String(existing.venueId), { outreachEligible: false, lastModifiedBy: actor });
@@ -1164,12 +1188,17 @@ class OutreachController extends Controller {
     }
     if (!existing) return res.status(400).json({ message: 'Id Not Found' });
 
+    const existingInvalid = OutreachController.validateOutcomeBody(body, existing);
+    if (existingInvalid) return res.status(400).json({ message: existingInvalid });
+
     const actor = resolveActor(req, body);
     const outcomeAt = new Date();
+    const parsedTargetWeekend = body.targetWeekend ? parseTargetWeekend(body.targetWeekend) : null;
     const update: Record<string, unknown> = {
       status: body.status, outcomeAt, outcomeBy: actor, nextTouchDue: null, lastModifiedBy: actor,
     };
     if (bookedDate) update.bookedDate = bookedDate;
+    if (parsedTargetWeekend) update.targetWeekend = parsedTargetWeekend;
 
     let updated: OutreachDoc | null;
     try { updated = await this.model.findByIdAndUpdate(req.params.id, update) as unknown as OutreachDoc | null; } catch (e) {
@@ -1177,7 +1206,9 @@ class OutreachController extends Controller {
     }
     if (!updated) return res.status(400).json({ message: 'Id Not Found' });
 
-    await this.applyOutcomeSideEffects(existing, body.status as string, bookedDate, actor, outcomeAt, req.params.id);
+    const resolvedTw = parsedTargetWeekend
+      || (existing.targetWeekend ? parseTargetWeekend(existing.targetWeekend as RawTargetWeekend) : null);
+    await this.applyOutcomeSideEffects(existing, body.status as string, bookedDate, actor, outcomeAt, req.params.id, resolvedTw);
     return res.status(200).json(updated);
   }
 
