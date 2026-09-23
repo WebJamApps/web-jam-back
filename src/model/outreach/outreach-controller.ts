@@ -179,7 +179,7 @@ type ApprovalModelWithLatest = {
 interface FollowUp { sentAt?: Date; type?: string; messageId?: string; eventId?: string; step?: number }
 export interface OutreachDoc {
   _id?: unknown; venueId?: unknown; sentAt?: Date; step?: number; targetDates?: string; followUps?: FollowUp[];
-  status?: string; templateUsed?: string; bookingPeriod?: string;
+  status?: string; templateUsed?: string; bookingPeriod?: string; targetWeekend?: TargetWeekend;
 }
 
 // #923 — extends the enum with the outcome values a human (or #898's
@@ -247,6 +247,10 @@ export function parseTargetWeekend(raw: RawTargetWeekend | string | undefined): 
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
   if (start.getTime() > end.getTime()) return null;
   return { start, end };
+}
+
+export function targetWeekendsDiffer(a: TargetWeekend, b: TargetWeekend): boolean {
+  return a.start.getTime() !== b.start.getTime() || a.end.getTime() !== b.end.getTime();
 }
 
 // #1036 — resolve targetWeekend from targetWeekend object or targetDates string fallback for getCandidates.
@@ -450,6 +454,19 @@ export function extractApprovedFingerprints(draftApproval: Record<string, unknow
   return map;
 }
 
+export function unpitchedApprovedFingerprints(
+  approvedFps: Map<string, string>,
+  pitched: Set<string>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const [venueId, fp] of approvedFps) {
+    if (!pitched.has(venueId)) {
+      map.set(venueId, fp);
+    }
+  }
+  return map;
+}
+
 // The Mongo overlap clause for "an outreach whose targetWeekend range overlaps
 // `tw`" — shared by the dedup guard, the #898 target-filled auto-flip, and the
 // #898 candidates target-weekend filter, so the three stay in lockstep instead
@@ -466,9 +483,14 @@ function targetWeekendOverlapClause(tw: TargetWeekend): Record<string, unknown> 
 // the full OUTREACH_STATUSES enum below: this endpoint records a HUMAN (or
 // auto-flip) DECISION about a pitch, not the sent/replied/no-response
 // lifecycle states, which stay on updateOutreach.
-const OUTCOME_VALUES = ['interested', 'not-interested', 'booked', 'target-filled'];
+export const OUTCOME_VALUES = ['interested', 'not-interested', 'booked', 'target-filled'];
 
-interface OutcomeBody { status?: string; bookedDate?: string; actor?: string }
+export interface OutcomeBody {
+  status?: string;
+  bookedDate?: string;
+  actor?: string;
+  targetWeekend?: RawTargetWeekend;
+}
 interface TouchRecord {
   date: Date; type: string; note?: string; templateType?: string; targetWeekend?: TargetWeekend;
   outcome?: string; bookedDate?: Date; outreachId?: string; actor?: string;
@@ -843,6 +865,54 @@ if (document.readyState === 'loading') {
 }
 `;
 
+function hasAttachedPastGig(venueRecord: Record<string, unknown>): boolean {
+  const lastGig = venueRecord.lastGig as { datetime?: unknown; date?: unknown } | undefined;
+  if (lastGig && (lastGig.datetime || lastGig.date)) {
+    return true;
+  }
+  const priorGigs = venueRecord.priorGigs;
+  if (priorGigs && (Array.isArray(priorGigs) ? priorGigs.length > 0 : Boolean(priorGigs))) {
+    return true;
+  }
+  const reason = venueRecord.reason as { lastGigDate?: unknown } | undefined;
+  return Boolean(reason?.lastGigDate && reason.lastGigDate !== 'never');
+}
+
+async function queryLinkedPastGig(venue: VenueDoc): Promise<boolean> {
+  try {
+    const now = new Date();
+    const venueId = String(venue._id);
+    const pastGig = await gigModel.findOne({
+      ...JOSH_GIGS_FILTER,
+      venueId,
+      datetime: { $lt: now },
+    });
+    if (pastGig) return true;
+
+    if (venue.name) {
+      const pastGigs = (await gigModel.find({
+        ...JOSH_GIGS_FILTER,
+        venueId: null,
+        datetime: { $lt: now },
+      })) as unknown as LinkableGig[];
+      if (Array.isArray(pastGigs) && pastGigs.length > 0) {
+        const groups = groupGigsByVenue(pastGigs, [venue as unknown as LinkableVenue]);
+        const linked = groups.get(venueId);
+        if (linked && linked.length > 0) return true;
+      }
+    }
+  } catch {
+    // Indeterminate / lookup failure: fail closed to false rather than hallucinating prior performances
+    return false;
+  }
+  return false;
+}
+
+export async function hasLinkedPastGig(venue: VenueDoc): Promise<boolean> {
+  if (hasAttachedPastGig(venue as Record<string, unknown>)) return true;
+  return queryLinkedPastGig(venue);
+}
+
 class OutreachController extends Controller {
   static readonly DEFAULT_GIG_SPACING_MONTHS = DEFAULT_GIG_SPACING_MONTHS;
 
@@ -1021,14 +1091,34 @@ class OutreachController extends Controller {
     }
   }
 
+  static validateTargetFilledWeekend(body: OutcomeBody, existing?: { targetWeekend?: unknown } | null): string {
+    const bodyTw = body.targetWeekend !== undefined ? parseTargetWeekend(body.targetWeekend) : null;
+    if (body.targetWeekend !== undefined && !bodyTw) {
+      return 'targetWeekend ({ start, end }) is required for a target-filled outcome';
+    }
+    if (existing !== undefined) {
+      const existingTw = existing?.targetWeekend ? parseTargetWeekend(existing.targetWeekend as RawTargetWeekend) : null;
+      if (!bodyTw && !existingTw) {
+        return 'targetWeekend ({ start, end }) is required for a target-filled outcome';
+      }
+      if (bodyTw && existingTw && targetWeekendsDiffer(bodyTw, existingTw)) {
+        return 'targetWeekend cannot differ from the record\'s existing targetWeekend';
+      }
+    }
+    return '';
+  }
+
   // Validate a recordOutcome body. Returns an error message, or '' when valid.
   // Split out of recordOutcome to keep its cognitive complexity down.
-  static validateOutcomeBody(body: OutcomeBody): string {
+  static validateOutcomeBody(body: OutcomeBody, existing?: { targetWeekend?: unknown } | null): string {
     if (!body.status || OUTCOME_VALUES.indexOf(body.status) === -1) {
       return `status must be one of ${OUTCOME_VALUES.join(', ')}`;
     }
     if (body.status === 'booked' && (!body.bookedDate || Number.isNaN(new Date(body.bookedDate).getTime()))) {
       return 'bookedDate (valid date) is required for a booked outcome';
+    }
+    if (body.status === 'target-filled') {
+      return OutreachController.validateTargetFilledWeekend(body, existing);
     }
     return '';
   }
@@ -1056,8 +1146,10 @@ class OutreachController extends Controller {
     actor: string,
     outcomeAt: Date,
     recordId: string,
+    targetWeekend?: TargetWeekend | null,
   ): Promise<void> {
-    const tw = (existing as unknown as { targetWeekend?: TargetWeekend }).targetWeekend;
+    const tw = targetWeekend
+      || (existing as unknown as { targetWeekend?: TargetWeekend }).targetWeekend;
     if (status === 'not-interested') {
       try {
         await venueModel.findByIdAndUpdate(String(existing.venueId), { outreachEligible: false, lastModifiedBy: actor });
@@ -1103,12 +1195,18 @@ class OutreachController extends Controller {
     }
     if (!existing) return res.status(400).json({ message: 'Id Not Found' });
 
+    const existingInvalid = OutreachController.validateOutcomeBody(body, existing);
+    if (existingInvalid) return res.status(400).json({ message: existingInvalid });
+
     const actor = resolveActor(req, body);
     const outcomeAt = new Date();
+    const parsedTargetWeekend = body.targetWeekend ? parseTargetWeekend(body.targetWeekend) : null;
+    const existingTw = existing.targetWeekend ? parseTargetWeekend(existing.targetWeekend as RawTargetWeekend) : null;
     const update: Record<string, unknown> = {
       status: body.status, outcomeAt, outcomeBy: actor, nextTouchDue: null, lastModifiedBy: actor,
     };
     if (bookedDate) update.bookedDate = bookedDate;
+    if (!existingTw && parsedTargetWeekend) update.targetWeekend = parsedTargetWeekend;
 
     let updated: OutreachDoc | null;
     try { updated = await this.model.findByIdAndUpdate(req.params.id, update) as unknown as OutreachDoc | null; } catch (e) {
@@ -1116,7 +1214,8 @@ class OutreachController extends Controller {
     }
     if (!updated) return res.status(400).json({ message: 'Id Not Found' });
 
-    await this.applyOutcomeSideEffects(existing, body.status as string, bookedDate, actor, outcomeAt, req.params.id);
+    const resolvedTw = existingTw || parsedTargetWeekend;
+    await this.applyOutcomeSideEffects(existing, body.status as string, bookedDate, actor, outcomeAt, req.params.id, resolvedTw);
     return res.status(200).json(updated);
   }
 
@@ -1137,16 +1236,15 @@ class OutreachController extends Controller {
     return res.status(200).json(doc);
   }
 
-  // Resolve a venue's relationship stage (#848). Always derived from gig
+  // Resolve a venue's relationship stage (#848, #1059, #1116). Always derived from gig
   // history — the hand-pinned `venue.relationshipStage` override was retired
   // with the field itself (#1059), so a venue that was pinned by hand now
-  // follows its actual history instead. A currently-booked venue, or one with
-  // a prior outreach that got a reply or a booking, is `returning`; everything
-  // else is `cold`.
+  // follows its actual history instead. A currently-booked venue (bookingStatus: 'booked'),
+  // or one with a linked past gig, is `returning`; everything else is `cold` (#1116).
+  // Prior outreach with status: 'replied' does NOT make a venue returning.
   async resolveStage(venue: VenueDoc): Promise<'cold' | 'returning'> {
     if (venue.bookingStatus === 'booked') return 'returning';
-    const prior = await this.model.findOne({ venueId: String(venue._id), status: { $in: ['replied', 'booked'] } });
-    return prior ? 'returning' : 'cold';
+    return (await hasLinkedPastGig(venue)) ? 'returning' : 'cold';
   }
 
   // Pick the active template for a type + stage (#848). Cold also matches legacy
@@ -2582,8 +2680,9 @@ class OutreachController extends Controller {
 
     // Outcome 2: Gate 2 draft fingerprints venue set check
     const approvedFps = extractApprovedFingerprints(draftApproval);
+    const unpitchedFps = unpitchedApprovedFingerprints(approvedFps, pitched);
     const batchSet = new Set(batchVenueIds);
-    if (approvedFps.size !== batchSet.size || !batchVenueIds.every((id) => approvedFps.has(id))) {
+    if (unpitchedFps.size !== batchSet.size || !batchVenueIds.every((id) => unpitchedFps.has(id))) {
       return {
         ok: false,
         status: 403,
@@ -2592,7 +2691,7 @@ class OutreachController extends Controller {
     }
 
     // Re-render draft emails and match fingerprints against Gate 2
-    return this.verifyBatchRenderings(batchVenueIds, approvedFps, body);
+    return this.verifyBatchRenderings(batchVenueIds, unpitchedFps, body);
   }
 }
 

@@ -34,6 +34,9 @@ const {
   buildPitchEmail, buildFollowUpEmail, MissingFooterError, resolveFooterAsset,
   contactFirstName,
   wrapDarkEmail, DARK_WRAPPER_BG, DARK_WRAPPER_TEXT, DARK_WRAPPER_LINK, DARK_WRAPPER_START, DARK_WRAPPER_END,
+  hasLinkedPastGig,
+  OUTCOME_VALUES,
+  targetWeekendsDiffer,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -117,6 +120,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     // exclusion + weekend surfacing); default to empty so unrelated tests
     // never hit the real DB. Tests exercising the linkage override this.
     (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+    (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
     // The real verifyBatchDispatch NEVER returns a bare { ok: true } — on
     // success it always carries a verifiedRenderings Map (empty only when the
     // batch had no venues). Stubbing the bare shape made every sendBatch test
@@ -470,7 +474,7 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
-  describe('template by stage (#848)', () => {
+  describe('template by stage (#848, #1116)', () => {
     // #1059 retired the hand-pinned relationshipStage override. A venue
     // document that still carries the field (pre-migration data) must be
     // ignored entirely — the stage derives from gig history either way.
@@ -484,14 +488,70 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(await c.resolveStage(validVenue({ bookingStatus: 'booked' }))).toBe('returning');
     });
 
-    it('resolveStage: a prior replied/booked outreach makes it returning', async () => {
+    it('resolveStage: a venue with lastGig auto-derives returning (#1116)', async () => {
+      expect(await c.resolveStage(validVenue({ lastGig: { datetime: '2025-06-01T20:00:00.000Z' } }))).toBe('returning');
+    });
+
+    it('resolveStage: a venue with linked past gig via venueId in gigModel auto-derives returning (#1116)', async () => {
+      const v = validVenue();
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve({
+        _id: 'g1', venueId: String(v._id), datetime: new Date('2025-01-01T00:00:00.000Z'),
+      }));
+      expect(await c.resolveStage(v)).toBe('returning');
+    });
+
+    it('resolveStage: a venue with linked past gig matched by normalized name auto-derives returning (#1116)', async () => {
+      const v = validVenue({ name: 'Olde Salem Brewing' });
+      const findOneMock = vi.fn(() => Promise.resolve(null));
+      const findMock = vi.fn(() => Promise.resolve([
+        { venue: '<p>Olde Salem Brewing</p>', datetime: new Date('2025-01-01T00:00:00.000Z') },
+      ]));
+      (gigModel as any).findOne = findOneMock;
+      (gigModel as any).find = findMock;
+      expect(await c.resolveStage(v)).toBe('returning');
+      expect(findOneMock).toHaveBeenCalledWith(expect.objectContaining({
+        venueId: String(v._id),
+      }));
+      expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
+        venueId: null,
+      }));
+    });
+
+    it('resolveStage: a prior replied outreach record does NOT make it returning (#1116)', async () => {
       c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'o', status: 'replied' }));
-      expect(await c.resolveStage(validVenue())).toBe('returning');
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+      expect(await c.resolveStage(validVenue())).toBe('cold');
+    });
+
+    it('resolveStage: Outcome 3 - fails closed to cold when gigModel query throws (#1116)', async () => {
+      (gigModel as any).findOne = vi.fn(() => Promise.reject(new Error('db down')));
+      expect(await c.resolveStage(validVenue())).toBe('cold');
+
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db find down')));
+      expect(await c.resolveStage(validVenue({ name: 'Some Venue' }))).toBe('cold');
     });
 
     it('resolveStage: otherwise cold', async () => {
       c.model.findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).find = vi.fn(() => Promise.resolve([]));
       expect(await c.resolveStage(validVenue())).toBe('cold');
+    });
+
+    it('hasLinkedPastGig: returns true for attached past gig, true for gigModel query, and false otherwise (#1116)', async () => {
+      expect(await hasLinkedPastGig(validVenue({ lastGig: { datetime: '2025-06-01T20:00:00.000Z' } }))).toBe(true);
+
+      const v = validVenue({ name: 'Twin Creeks' });
+      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
+      (gigModel as any).find = vi.fn(() => Promise.resolve([
+        { venue: 'Twin Creeks', datetime: new Date('2025-01-01T00:00:00.000Z') },
+      ]));
+      expect(await hasLinkedPastGig(v)).toBe(true);
+
+      (gigModel as any).find = vi.fn(() => Promise.resolve([]));
+      expect(await hasLinkedPastGig(v)).toBe(false);
     });
 
     it('findTemplate: uses the returning variant when present', async () => {
@@ -2425,6 +2485,223 @@ describe('Outreach Controller (#844 batch model)', () => {
       await c.recordOutcome({ user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled' } }, resStub);
       expect(status).toBe(200);
       expect(findMock).not.toHaveBeenCalled(); // auto-flip only runs off a 'booked' recording
+    });
+
+    describe('target-filled outcome targetWeekend validation and persistence (#1117)', () => {
+      it('Outcome 1: succeeds and saves targetWeekend to outreach document and venue touch when body provides targetWeekend', async () => {
+        const rec = outreachRec({ targetWeekend: undefined });
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        const outreachUpd = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
+        c.model.findByIdAndUpdate = outreachUpd;
+        const venueUpd = vi.fn(() => Promise.resolve({}));
+        (venueModel as any).findByIdAndUpdate = venueUpd;
+
+        const twPayload = { start: '2026-11-06', end: '2026-11-08' };
+        await c.recordOutcome({
+          user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled', targetWeekend: twPayload },
+        }, resStub);
+
+        expect(status).toBe(200);
+        expect(payload.status).toBe('target-filled');
+        expect(outreachUpd).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({
+          status: 'target-filled',
+          nextTouchDue: null,
+          targetWeekend: { start: new Date('2026-11-06'), end: new Date('2026-11-08') },
+        }));
+        expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
+          $push: {
+            touches: expect.objectContaining({
+              type: 'outcome',
+              outcome: 'target-filled',
+              targetWeekend: { start: new Date('2026-11-06'), end: new Date('2026-11-08') },
+            }),
+          },
+        }));
+      });
+
+      it('Outcome 1: succeeds using existing.targetWeekend when body.targetWeekend is omitted', async () => {
+        const existingTw = { start: new Date('2026-10-16'), end: new Date('2026-10-18') };
+        const rec = outreachRec({ targetWeekend: existingTw });
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        const outreachUpd = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
+        c.model.findByIdAndUpdate = outreachUpd;
+        const venueUpd = vi.fn(() => Promise.resolve({}));
+        (venueModel as any).findByIdAndUpdate = venueUpd;
+
+        await c.recordOutcome({
+          user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled' },
+        }, resStub);
+
+        expect(status).toBe(200);
+        expect(outreachUpd).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({
+          status: 'target-filled',
+          nextTouchDue: null,
+        }));
+        expect((outreachUpd.mock.calls[0] as any)[1]).not.toHaveProperty('targetWeekend');
+        expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
+          $push: {
+            touches: expect.objectContaining({
+              type: 'outcome',
+              outcome: 'target-filled',
+              targetWeekend: existingTw,
+            }),
+          },
+        }));
+      });
+
+      it('Outcome 2: 400s when body.targetWeekend differs from existing.targetWeekend', async () => {
+        const existingTw = { start: new Date('2026-10-16'), end: new Date('2026-10-18') };
+        const rec = outreachRec({ targetWeekend: existingTw });
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        const outreachUpd = vi.fn();
+        c.model.findByIdAndUpdate = outreachUpd;
+
+        const differentTw = { start: '2026-12-04', end: '2026-12-06' };
+        await c.recordOutcome({
+          user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled', targetWeekend: differentTw },
+        }, resStub);
+
+        expect(status).toBe(400);
+        expect(payload.message).toBe("targetWeekend cannot differ from the record's existing targetWeekend");
+        expect(outreachUpd).not.toHaveBeenCalled();
+      });
+
+      it('Outcome 1: succeeds and preserves existing.targetWeekend without rewriting when matching body.targetWeekend is passed', async () => {
+        const existingTw = { start: new Date('2026-10-16'), end: new Date('2026-10-18') };
+        const rec = outreachRec({ targetWeekend: existingTw });
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        const outreachUpd = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
+        c.model.findByIdAndUpdate = outreachUpd;
+        const venueUpd = vi.fn(() => Promise.resolve({}));
+        (venueModel as any).findByIdAndUpdate = venueUpd;
+
+        const matchingTw = { start: '2026-10-16', end: '2026-10-18' };
+        await c.recordOutcome({
+          user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled', targetWeekend: matchingTw },
+        }, resStub);
+
+        expect(status).toBe(200);
+        expect(outreachUpd).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({
+          status: 'target-filled',
+          nextTouchDue: null,
+        }));
+        expect((outreachUpd.mock.calls[0] as any)[1]).not.toHaveProperty('targetWeekend');
+        expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
+          $push: {
+            touches: expect.objectContaining({
+              type: 'outcome',
+              outcome: 'target-filled',
+              targetWeekend: existingTw,
+            }),
+          },
+        }));
+      });
+
+      it('Outcome 2: 400s when status is target-filled and neither body nor existing provides a targetWeekend', async () => {
+        const rec = outreachRec({ targetWeekend: undefined });
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        await c.recordOutcome({
+          user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled' },
+        }, resStub);
+
+        expect(status).toBe(400);
+        expect(payload.message).toBe('targetWeekend ({ start, end }) is required for a target-filled outcome');
+      });
+
+      it('Outcome 2: 400s when body.targetWeekend is malformed (missing end, invalid dates, or inverted range)', async () => {
+        const rec = outreachRec();
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+
+        // missing end
+        await c.recordOutcome({
+          user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled', targetWeekend: { start: '2026-11-06' } },
+        }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toBe('targetWeekend ({ start, end }) is required for a target-filled outcome');
+
+        // invalid date string
+        await c.recordOutcome({
+          user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled', targetWeekend: { start: 'not-a-date', end: '2026-11-08' } },
+        }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toBe('targetWeekend ({ start, end }) is required for a target-filled outcome');
+
+        // inverted range (start > end)
+        await c.recordOutcome({
+          user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled', targetWeekend: { start: '2026-11-08', end: '2026-11-06' } },
+        }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toBe('targetWeekend ({ start, end }) is required for a target-filled outcome');
+      });
+
+      it('Outcome 3: 500s when findById throws during existing record lookup', async () => {
+        c.model.findById = vi.fn(() => Promise.reject(new Error('db down')));
+        await c.recordOutcome({
+          user: 'a', params: { id: oid() }, body: { status: 'target-filled', targetWeekend: { start: '2026-11-06', end: '2026-11-08' } },
+        }, resStub);
+        expect(status).toBe(500);
+        expect(payload.message).toBe('db down');
+      });
+
+      it('Outcome 3: 500s when findByIdAndUpdate throws during update persistence', async () => {
+        const rec = outreachRec({ targetWeekend: undefined });
+        c.model.findById = vi.fn(() => Promise.resolve(rec));
+        c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('write failed')));
+        await c.recordOutcome({
+          user: 'a', params: { id: String(rec._id) }, body: { status: 'target-filled', targetWeekend: { start: '2026-11-06', end: '2026-11-08' } },
+        }, resStub);
+        expect(status).toBe(500);
+        expect(payload.message).toBe('write failed');
+      });
+
+      it('validateOutcomeBody: validates status, bookedDate, and targetWeekend directly', () => {
+        expect(c.constructor.validateOutcomeBody({})).toContain('status must be one of');
+        expect(c.constructor.validateOutcomeBody({ status: 'unknown' })).toContain('status must be one of');
+        expect(c.constructor.validateOutcomeBody({ status: 'booked' })).toContain('bookedDate (valid date) is required');
+        expect(c.constructor.validateOutcomeBody({ status: 'booked', bookedDate: 'invalid' })).toContain('bookedDate (valid date) is required');
+        expect(c.constructor.validateOutcomeBody({ status: 'booked', bookedDate: '2026-10-10' })).toBe('');
+
+        // target-filled with malformed body.targetWeekend
+        expect(c.constructor.validateOutcomeBody({ status: 'target-filled', targetWeekend: { start: '2026-11-08', end: '2026-11-06' } as any })).toBe(
+          'targetWeekend ({ start, end }) is required for a target-filled outcome',
+        );
+
+        // target-filled with valid body.targetWeekend
+        expect(c.constructor.validateOutcomeBody({ status: 'target-filled', targetWeekend: { start: '2026-11-06', end: '2026-11-08' } })).toBe('');
+
+        // target-filled with omitted body.targetWeekend, checking existing
+        expect(c.constructor.validateOutcomeBody({ status: 'target-filled' }, { targetWeekend: undefined })).toBe(
+          'targetWeekend ({ start, end }) is required for a target-filled outcome',
+        );
+        expect(c.constructor.validateOutcomeBody({ status: 'target-filled' }, { targetWeekend: { start: new Date('2026-11-06'), end: new Date('2026-11-08') } })).toBe('');
+
+        // target-filled with differing body and existing targetWeekend
+        expect(
+          c.constructor.validateOutcomeBody(
+            { status: 'target-filled', targetWeekend: { start: '2026-12-04', end: '2026-12-06' } },
+            { targetWeekend: { start: new Date('2026-11-06'), end: new Date('2026-11-08') } },
+          ),
+        ).toBe("targetWeekend cannot differ from the record's existing targetWeekend");
+
+        // target-filled with matching body and existing targetWeekend
+        expect(
+          c.constructor.validateOutcomeBody(
+            { status: 'target-filled', targetWeekend: { start: '2026-11-06', end: '2026-11-08' } },
+            { targetWeekend: { start: new Date('2026-11-06'), end: new Date('2026-11-08') } },
+          ),
+        ).toBe('');
+      });
+
+      it('targetWeekendsDiffer detects differences in start or end timestamps', () => {
+        const tw1 = { start: new Date('2026-11-06'), end: new Date('2026-11-08') };
+        const tw2 = { start: new Date('2026-11-06'), end: new Date('2026-11-08') };
+        const diffStart = { start: new Date('2026-11-07'), end: new Date('2026-11-08') };
+        const diffEnd = { start: new Date('2026-11-06'), end: new Date('2026-11-09') };
+
+        expect(targetWeekendsDiffer(tw1, tw2)).toBe(false);
+        expect(targetWeekendsDiffer(tw1, diffStart)).toBe(true);
+        expect(targetWeekendsDiffer(tw1, diffEnd)).toBe(true);
+      });
     });
   });
 
