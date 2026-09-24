@@ -945,9 +945,11 @@ export function checkApprovalsChanged(
     return true;
   }
 
-  const currentApprovedIds = ((venueApproval.venueIds as unknown[]) || []).map((id) => String(id).trim());
-  return currentApprovedIds.length !== storedVenueIds.length
-    || !storedVenueIds.every((id, idx) => id === currentApprovedIds[idx]);
+  // The stored set is the approved venues NOT YET PITCHED at preflight, in the
+  // request's order — a subset of the approval, not a copy of it — so this is an
+  // order-free membership check: every checked venue must still be approved.
+  const currentApproved = new Set(((venueApproval.venueIds as unknown[]) || []).map((id) => String(id).trim()));
+  return !storedVenueIds.every((id) => currentApproved.has(id));
 }
 
 export async function getUnsentVenueNames(unsentIds: string[]): Promise<string[]> {
@@ -1647,6 +1649,7 @@ class OutreachController extends Controller {
         venueApprovalUpdatedAt: venueApproval?.updated_at || venueApproval?.updatedAt || venueApproval?.created_at,
         draftApprovalUpdatedAt: draftApproval?.updated_at || draftApproval?.updatedAt || draftApproval?.created_at,
         status: 'pending',
+        createdBy: resolveActor(req, body),
       });
     } catch (e) {
       return res.status(500).json({ message: `dispatch refused: failed to store dispatch record: ${(e as Error).message}` });
@@ -1751,6 +1754,9 @@ class OutreachController extends Controller {
   // POST /outreach/batch with dispatchId (web-jam-back#1120, D-74, D-75, D-76).
   // Time-limited send loop (stops starting new sends after 12s, marked attempted, reports { sent, skipped, records, remaining }).
   async sendDispatchBatch(dispatchId: string, body: BatchBody, req: AuthRequest, res: Response): Promise<unknown> {
+    // The 12-second limit (D-76) bounds the whole call, so the clock starts on arrival,
+    // before the approval reads and the re-render pass, not after them.
+    const startTime = this.nowFn();
     let dispatch: Record<string, unknown> | null = null;
     try {
       dispatch = await outreachDispatchModel.findOne({ dispatchId });
@@ -1759,6 +1765,16 @@ class OutreachController extends Controller {
     }
     if (!dispatch) {
       return res.status(404).json({ message: `dispatch refused: unknown dispatchId '${dispatchId}'` });
+    }
+    // A refused call ends the dispatch for good: an aborted id never sends again,
+    // even if the check that refused it would pass now. Re-run the preflight instead.
+    if (dispatch.status === 'aborted') {
+      return res.status(403).json({
+        message: `dispatch refused: dispatch '${dispatchId}' has ended (aborted); run a new preflight`,
+      });
+    }
+    if (dispatch.status === 'completed') {
+      return res.status(200).json({ sent: 0, skipped: [], records: [], remaining: 0 });
     }
 
     let venueApproval: Record<string, unknown> | null = null;
@@ -1774,7 +1790,7 @@ class OutreachController extends Controller {
 
     const storedVenueIds = ((dispatch.venueIds as unknown[]) || []).map((id) => String(id).trim());
     const attemptedSet = new Set(((dispatch.attemptedVenueIds as unknown[]) || []).map((id) => String(id).trim()));
-    const tw = parseTargetWeekend((dispatch.targetWeekend || body.targetWeekend) as RawTargetWeekend);
+    const tw = parseTargetWeekend(dispatch.targetWeekend as RawTargetWeekend);
     if (!tw) {
       return res.status(500).json({ message: 'dispatch refused: failed to parse targetWeekend from dispatch record' });
     }
@@ -1804,17 +1820,19 @@ class OutreachController extends Controller {
       return res.status(200).json({ sent: 0, skipped: [], records: [], remaining: 0 });
     }
 
+    // Every send parameter comes from the dispatch record alone (D-75): a send
+    // call cannot supply anything the preflight did not check.
     const batchParams: BatchBody = {
       venueIds: unsentIds,
-      batchId: (dispatch.batchId || body.batchId) as string,
-      weekend: (dispatch.weekend || body.weekend) as string,
+      batchId: dispatch.batchId as string,
+      weekend: dispatch.weekend as string | undefined,
       targetWeekend: tw as RawTargetWeekend,
-      targetDates: (dispatch.targetDates || body.targetDates) as string,
-      templateType: (dispatch.templateType || body.templateType) as string,
-      bookingPeriod: (dispatch.bookingPeriod || body.bookingPeriod) as string,
-      customIntro: (dispatch.customIntro ?? body.customIntro) as string,
-      customBody: (dispatch.customBody ?? body.customBody) as string,
-      cc: (dispatch.cc ?? body.cc) as string,
+      targetDates: dispatch.targetDates as string | undefined,
+      templateType: dispatch.templateType as string | undefined,
+      bookingPeriod: dispatch.bookingPeriod as string | undefined,
+      customIntro: dispatch.customIntro as string | undefined,
+      customBody: dispatch.customBody as string | undefined,
+      cc: dispatch.cc as string | string[] | undefined,
     };
     const sendBody: SendBody = {
       targetDates: batchParams.targetDates!,
@@ -1840,7 +1858,6 @@ class OutreachController extends Controller {
     }
 
     const actor = resolveActor(req, body);
-    const startTime = this.nowFn();
     const result = await this.executeDispatchLoop(
       dispatchId,
       unsentIds,

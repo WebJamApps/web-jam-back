@@ -99,6 +99,11 @@ const outreachDispatchSchema = new Schema({
     enum: ['pending', 'in_progress', 'completed', 'aborted'],
     default: 'pending',
   },
+  createdBy: {
+    type: String,
+    required: false,
+    trim: true,
+  },
 }, options);
 
 export default mongoose.models.OutreachDispatch

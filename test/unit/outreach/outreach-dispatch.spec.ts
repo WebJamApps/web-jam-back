@@ -161,6 +161,22 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
       expect(checkApprovalsChanged(dispatch, venueApproval, draftApproval, ['v1', 'v2'])).toBe(false);
     });
 
+    it('checkApprovalsChanged returns false when the stored set is the unpitched part of the approval, in another order', () => {
+      const vId = oid();
+      const dId = oid();
+      const t1 = new Date('2026-10-01T12:00:00Z');
+      const dispatch = {
+        venueApprovalId: vId,
+        draftApprovalId: dId,
+        venueApprovalUpdatedAt: t1,
+        draftApprovalUpdatedAt: t1,
+      };
+      // v1 was already pitched at preflight, so the batch held only v3 and v2.
+      const venueApproval = { _id: vId, updated_at: t1, venueIds: ['v1', 'v2', 'v3'] };
+      const draftApproval = { _id: dId, updated_at: t1 };
+      expect(checkApprovalsChanged(dispatch, venueApproval, draftApproval, ['v3', 'v2'])).toBe(false);
+    });
+
     it('getUnsentVenueNames looks up names and falls back to UNKNOWN_VENUE_NAME on DB failure', async () => {
       const id1 = oid();
       const id2 = oid();
@@ -298,6 +314,7 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
         expect(storedDispatchDoc.venueApprovalId).toBe(gate1Id);
         expect(storedDispatchDoc.draftApprovalId).toBe(gate2Id);
         expect(storedDispatchDoc.status).toBe('pending');
+        expect(storedDispatchDoc.createdBy).toBe(req.user);
       });
     });
 
@@ -944,6 +961,102 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
         expect(payload.remaining).toBe(0);
         expect(sendMail).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('POST /outreach/batch with dispatchId — ended dispatches and record-only parameters', () => {
+    const setupTwoVenueDispatch = (over: Record<string, unknown> = {}) => {
+      const v1Id = oid();
+      const v2Id = oid();
+      const v1 = validVenue({ _id: v1Id, name: 'Venue One' });
+      const v2 = validVenue({ _id: v2Id, name: 'Venue Two' });
+      (venueModel as any).findById = vi.fn((id: string) => {
+        if (id === v1Id) return Promise.resolve(v1);
+        if (id === v2Id) return Promise.resolve(v2);
+        return Promise.resolve(null);
+      });
+      const fp = (name: string) => computeDraftFingerprint({
+        subject: `Inquiry: ${name}`,
+        body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+      });
+      const g1Id = oid();
+      const g2Id = oid();
+      const tDate = new Date('2026-10-01T12:00:00Z');
+      const dispatchDoc: any = {
+        dispatchId: 'disp-x',
+        batchId: 'batch-1',
+        weekend: WEEKEND_STR,
+        targetWeekend: VALID_WEEKEND,
+        targetDates: 'Oct 16-18',
+        templateType: 'Originals',
+        venueIds: [v1Id, v2Id],
+        attemptedVenueIds: [],
+        venueApprovalId: g1Id,
+        draftApprovalId: g2Id,
+        venueApprovalUpdatedAt: tDate,
+        draftApprovalUpdatedAt: tDate,
+        status: 'pending',
+        ...over,
+      };
+      (outreachDispatchModel as any).findOne = vi.fn(() => Promise.resolve(dispatchDoc));
+      // An already-pitched venue (v0) sits in the approval but not in the dispatch.
+      (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+        _id: g1Id, venueIds: [oid(), v2Id, v1Id], updated_at: tDate,
+      }));
+      (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+        _id: g2Id,
+        draftFingerprints: [
+          { venueId: v1Id, fingerprint: fp('Venue One') },
+          { venueId: v2Id, fingerprint: fp('Venue Two') },
+        ],
+        updated_at: tDate,
+      }));
+      return dispatchDoc;
+    };
+
+    it('refuses an aborted dispatch (403) and sends nothing, even when the checks would pass now', async () => {
+      asApprover();
+      setupTwoVenueDispatch({ status: 'aborted' });
+      const req: any = { user: oid(), body: { dispatchId: 'disp-x' } };
+      await c.sendBatch(req, resStub);
+      expect(status).toBe(403);
+      expect(payload.message).toContain("dispatch 'disp-x' has ended");
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty result for a completed dispatch and sends nothing', async () => {
+      asApprover();
+      setupTwoVenueDispatch({ status: 'completed' });
+      const req: any = { user: oid(), body: { dispatchId: 'disp-x' } };
+      await c.sendBatch(req, resStub);
+      expect(status).toBe(200);
+      expect(payload).toEqual({ sent: 0, skipped: [], records: [], remaining: 0 });
+      expect(sendMail).not.toHaveBeenCalled();
+    });
+
+    it('sends a batch whose approval also holds an already-pitched venue, listed in another order', async () => {
+      asApprover();
+      setupTwoVenueDispatch();
+      const req: any = { user: oid(), body: { dispatchId: 'disp-x' } };
+      await c.sendBatch(req, resStub);
+      expect(status).toBe(200);
+      expect(payload.sent).toBe(2);
+      expect(payload.remaining).toBe(0);
+    });
+
+    it('ignores send parameters in the request body and uses only the dispatch record', async () => {
+      asApprover();
+      setupTwoVenueDispatch();
+      const req: any = {
+        user: oid(),
+        body: { dispatchId: 'disp-x', customIntro: 'INJECTED', targetDates: 'Dec 1-3', templateType: 'Covers' },
+      };
+      await c.sendBatch(req, resStub);
+      expect(status).toBe(200);
+      expect(payload.sent).toBe(2);
+      const html = (sendMail.mock.calls[0] as any[])[0].html as string;
+      expect(html).toContain('Oct 16-18');
+      expect(html).not.toContain('INJECTED');
     });
   });
 });
