@@ -24,6 +24,13 @@ router.route('/send')
     void action();
   });
 
+// POST /outreach/batch/preflight — check whole batch before sending, store dispatch record, return dispatchId (web-jam-back#1120, D-74, D-75).
+router.route('/batch/preflight')
+  .post((req, res) => {
+    const action = routeUtils.makeAction(req, res, 'preflightBatch', controller, authUtils);
+    void action();
+  });
+
 // POST /outreach/batch — send the approved target list (#844). Body accepts
 // the same optional `customIntro` + `customBody` (#903), applied to every
 // venue in the batch.
