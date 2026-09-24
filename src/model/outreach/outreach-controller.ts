@@ -16,6 +16,7 @@ import outreachModel from './outreach-facade.js';
 import outreachReportModel from './outreach-report-facade.js';
 import outreachVenueApprovalModel from './outreach-venue-approval-facade.js';
 import outreachDraftApprovalModel from './outreach-draft-approval-facade.js';
+import outreachDispatchModel from './outreach-dispatch-facade.js';
 import venueModel from '../venue/venue-facade.js';
 import templateModel from '../template/template-facade.js';
 import { formatTemplate, sanitizeTemplateText } from '../template/template-controller.js';
@@ -44,6 +45,9 @@ export const DEFAULT_GIG_SPACING_MONTHS = 2;
 
 // #1046 — cooldown in days before an active outreach record no longer blocks candidate re-pitching for the same weekend.
 export const OUTREACH_COOLDOWN_DAYS = 7;
+
+// #1120 (D-76) — time limit in milliseconds on starting new sends during a chunked batch dispatch call.
+export const BATCH_DISPATCH_TIME_LIMIT_MS = 12_000;
 
 // JaMmusic#1250 — placeholder venueName for a skipped-batch entry where no
 // venue doc could even be loaded (invalid id, or venue not found). The
@@ -130,6 +134,7 @@ interface SendBody {
 // the same verifyBatchDispatch check (#1080 retired the standing autoApprove
 // switch that used to gate the agent path here).
 interface BatchBody {
+  dispatchId?: string;
   batchId?: string;
   weekend?: string;
   venueIds?: string[];
@@ -913,8 +918,55 @@ export async function hasLinkedPastGig(venue: VenueDoc): Promise<boolean> {
   return queryLinkedPastGig(venue);
 }
 
+export function checkApprovalsChanged(
+  dispatch: Record<string, unknown>,
+  venueApproval: Record<string, unknown>,
+  draftApproval: Record<string, unknown>,
+  storedVenueIds: string[],
+): boolean {
+  const vPrevId = String(dispatch.venueApprovalId || '');
+  const dPrevId = String(dispatch.draftApprovalId || '');
+  const vCurrentId = String(venueApproval._id || '');
+  const dCurrentId = String(draftApproval._id || '');
+
+  if ((vPrevId && vCurrentId && vPrevId !== vCurrentId) || (dPrevId && dCurrentId && dPrevId !== dCurrentId)) {
+    return true;
+  }
+
+  const vPrevUpdated = dispatch.venueApprovalUpdatedAt ? new Date(dispatch.venueApprovalUpdatedAt as string | Date).getTime() : null;
+  const dPrevUpdated = dispatch.draftApprovalUpdatedAt ? new Date(dispatch.draftApprovalUpdatedAt as string | Date).getTime() : null;
+  const vCurDate = venueApproval.updated_at || venueApproval.updatedAt || venueApproval.created_at;
+  const dCurDate = draftApproval.updated_at || draftApproval.updatedAt || draftApproval.created_at;
+  const vCurUpdated = vCurDate ? new Date(vCurDate as string | Date).getTime() : null;
+  const dCurUpdated = dCurDate ? new Date(dCurDate as string | Date).getTime() : null;
+
+  if ((vPrevUpdated !== null && vCurUpdated !== null && vPrevUpdated !== vCurUpdated)
+    || (dPrevUpdated !== null && dCurUpdated !== null && dPrevUpdated !== dCurUpdated)) {
+    return true;
+  }
+
+  // The stored set is the approved venues NOT YET PITCHED at preflight, in the
+  // request's order — a subset of the approval, not a copy of it — so this is an
+  // order-free membership check: every checked venue must still be approved.
+  const currentApproved = new Set(((venueApproval.venueIds as unknown[]) || []).map((id) => String(id).trim()));
+  return !storedVenueIds.every((id) => currentApproved.has(id));
+}
+
+export async function getUnsentVenueNames(unsentIds: string[]): Promise<string[]> {
+  try {
+    const docs = await venueModel.find({ _id: { $in: unsentIds } }) as unknown as { _id?: unknown; name?: string }[];
+    const docMap = new Map(docs.map((d) => [String(d._id), d.name || UNKNOWN_VENUE_NAME]));
+    return unsentIds.map((id) => docMap.get(id) || UNKNOWN_VENUE_NAME);
+  } catch {
+    return unsentIds;
+  }
+}
+
 class OutreachController extends Controller {
   static readonly DEFAULT_GIG_SPACING_MONTHS = DEFAULT_GIG_SPACING_MONTHS;
+  static readonly BATCH_DISPATCH_TIME_LIMIT_MS = BATCH_DISPATCH_TIME_LIMIT_MS;
+
+  nowFn: () => number = () => Date.now();
 
   // refuseAgents: also refuse an AI-agent account whatever its privileges say
   // (web-jam-back#1109) — used by the send gate, never by read/draft paths.
@@ -1544,6 +1596,295 @@ class OutreachController extends Controller {
     }
   }
 
+  // POST /outreach/batch/preflight (web-jam-back#1120, D-74, D-75).
+  // Checks whole batch before sending. Condition (1) stores dispatch record and returns { dispatchId, venueCount };
+  // Condition (2) refuses with 403 (nothing stored, nothing sent);
+  // Condition (3) fails closed with 500 (nothing stored, nothing sent).
+  async preflightBatch(req: AuthRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, OUTREACH_SEND_CAPS);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    const body = (req.body || {}) as BatchBody;
+    const vResult = validateVenueIds(body.venueIds);
+    if ('error' in vResult) {
+      return res.status(400).json({ message: vResult.error });
+    }
+    if (!body.targetDates || !body.targetDates.trim()) {
+      return res.status(400).json({ message: 'targetDates is required' });
+    }
+    if (!parseTargetWeekend(body.targetWeekend)) {
+      return res.status(400).json({ message: 'targetWeekend {start, end} is required' });
+    }
+
+    const bResult = resolveBatchIdentification(body);
+    if ('error' in bResult) {
+      return res.status(400).json({ message: bResult.error });
+    }
+
+    const approvalCheck = await this.verifyBatchDispatch(body);
+    if (!approvalCheck.ok) {
+      return res.status(approvalCheck.status).json({ message: approvalCheck.message });
+    }
+
+    const { venueApproval, draftApproval } = approvalCheck;
+    const dispatchId = crypto.randomUUID();
+    const { venueIds } = vResult;
+
+    try {
+      await outreachDispatchModel.create({
+        dispatchId,
+        batchId: bResult.batchId,
+        weekend: bResult.weekend,
+        targetWeekend: body.targetWeekend,
+        targetDates: body.targetDates,
+        templateType: body.templateType,
+        bookingPeriod: body.bookingPeriod,
+        customIntro: body.customIntro,
+        customBody: body.customBody,
+        cc: body.cc,
+        venueIds,
+        venueCount: venueIds.length,
+        attemptedVenueIds: [],
+        venueApprovalId: venueApproval?._id,
+        draftApprovalId: draftApproval?._id,
+        venueApprovalUpdatedAt: venueApproval?.updated_at || venueApproval?.updatedAt || venueApproval?.created_at,
+        draftApprovalUpdatedAt: draftApproval?.updated_at || draftApproval?.updatedAt || draftApproval?.created_at,
+        status: 'pending',
+        createdBy: resolveActor(req, body),
+      });
+    } catch (e) {
+      return res.status(500).json({ message: `dispatch refused: failed to store dispatch record: ${(e as Error).message}` });
+    }
+
+    return res.status(200).json({ dispatchId, venueCount: venueIds.length });
+  }
+
+  private async verifyDispatchRenderings(
+    unsentIds: string[],
+    approvedFps: Map<string, string>,
+    batchParams: BatchBody,
+  ): Promise<{ ok: true; verifiedMap: Map<string, VerifiedPitchRender> } | { ok: false; status: number; message: string }> {
+    const verifiedMap = new Map<string, VerifiedPitchRender>();
+    for (const venueId of unsentIds) {
+      const expectedFp = approvedFps.get(venueId);
+      if (!expectedFp) {
+        return { ok: false, status: 403, message: `dispatch refused: Gate 2 draft fingerprint is missing for venue '${venueId}'` };
+      }
+      let renderCheck: Awaited<ReturnType<typeof this.verifyVenueRenderedCopy>>;
+      try {
+        renderCheck = await this.verifyVenueRenderedCopy(venueId, expectedFp, batchParams);
+      } catch (e) {
+        return { ok: false, status: 500, message: `dispatch refused: error during draft fingerprint verification: ${(e as Error).message}` };
+      }
+      if (!renderCheck.ok) {
+        return renderCheck;
+      }
+      if (renderCheck.verified) {
+        verifiedMap.set(venueId, renderCheck.verified);
+      }
+    }
+    return { ok: true, verifiedMap };
+  }
+
+  private async executeDispatchLoop(
+    dispatchId: string,
+    unsentIds: string[],
+    batchParams: BatchBody,
+    sendBody: SendBody,
+    verifiedMap: Map<string, VerifiedPitchRender>,
+    actor: string,
+    startTime: number,
+  ): Promise<{
+    sent: number;
+    skipped: { venueId: string; venueName: string; reason: string }[];
+    records: unknown[];
+    newlyAttempted: string[];
+  }> {
+    const result = {
+      sent: 0,
+      skipped: [] as { venueId: string; venueName: string; reason: string }[],
+      records: [] as unknown[],
+      newlyAttempted: [] as string[],
+    };
+
+    for (const venueId of unsentIds) {
+      const elapsed = this.nowFn() - startTime;
+      if (elapsed >= OutreachController.BATCH_DISPATCH_TIME_LIMIT_MS) {
+        break;
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const item = await this.resolveBatchPitchItem(venueId, batchParams, sendBody, verifiedMap);
+      if (!item.ok) {
+        result.skipped.push({ venueId, venueName: item.venueName, reason: item.reason });
+        result.newlyAttempted.push(venueId);
+        // eslint-disable-next-line no-await-in-loop
+        await outreachDispatchModel.findOneAndUpdate(
+          { dispatchId },
+          { $addToSet: { attemptedVenueIds: venueId }, $set: { status: 'in_progress' } },
+        );
+        continue;
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      const r = await this.performSend(item.venue, item.template, item.type, sendBody, actor, item.preRendered);
+      if (!r.ok) {
+        result.skipped.push({ venueId, venueName: item.venue.name || UNKNOWN_VENUE_NAME, reason: r.message });
+        result.newlyAttempted.push(venueId);
+        // eslint-disable-next-line no-await-in-loop
+        await outreachDispatchModel.findOneAndUpdate(
+          { dispatchId },
+          { $addToSet: { attemptedVenueIds: venueId }, $set: { status: 'in_progress' } },
+        );
+        continue;
+      }
+
+      result.sent += 1;
+      result.records.push(r.record);
+      result.newlyAttempted.push(venueId);
+      // eslint-disable-next-line no-await-in-loop
+      await outreachDispatchModel.findOneAndUpdate(
+        { dispatchId },
+        { $addToSet: { attemptedVenueIds: venueId }, $set: { status: 'in_progress' } },
+      );
+    }
+
+    return result;
+  }
+
+  // POST /outreach/batch with dispatchId (web-jam-back#1120, D-74, D-75, D-76).
+  // Time-limited send loop (stops starting new sends after 12s, marked attempted, reports { sent, skipped, records, remaining }).
+  async sendDispatchBatch(dispatchId: string, body: BatchBody, req: AuthRequest, res: Response): Promise<unknown> {
+    // The 12-second limit (D-76) bounds the whole call, so the clock starts on arrival,
+    // before the approval reads and the re-render pass, not after them.
+    const startTime = this.nowFn();
+    let dispatch: Record<string, unknown> | null = null;
+    try {
+      dispatch = await outreachDispatchModel.findOne({ dispatchId });
+    } catch (e) {
+      return res.status(500).json({ message: `dispatch refused: failed to read dispatch record: ${(e as Error).message}` });
+    }
+    if (!dispatch) {
+      return res.status(404).json({ message: `dispatch refused: unknown dispatchId '${dispatchId}'` });
+    }
+    // A refused call ends the dispatch for good: an aborted id never sends again,
+    // even if the check that refused it would pass now. Re-run the preflight instead.
+    if (dispatch.status === 'aborted') {
+      return res.status(403).json({
+        message: `dispatch refused: dispatch '${dispatchId}' has ended (aborted); run a new preflight`,
+      });
+    }
+    if (dispatch.status === 'completed') {
+      return res.status(200).json({ sent: 0, skipped: [], records: [], remaining: 0 });
+    }
+
+    let venueApproval: Record<string, unknown> | null = null;
+    let draftApproval: Record<string, unknown> | null = null;
+    try {
+      [venueApproval, draftApproval] = await Promise.all([
+        this.getVenueSetApproval(dispatch.batchId as string, dispatch.weekend as string),
+        this.getDraftFingerprintsApproval(dispatch.batchId as string, dispatch.weekend as string),
+      ]);
+    } catch (e) {
+      return res.status(500).json({ message: `dispatch refused: failed to read approval records: ${(e as Error).message}` });
+    }
+
+    const storedVenueIds = ((dispatch.venueIds as unknown[]) || []).map((id) => String(id).trim());
+    const attemptedSet = new Set(((dispatch.attemptedVenueIds as unknown[]) || []).map((id) => String(id).trim()));
+    const tw = parseTargetWeekend(dispatch.targetWeekend as RawTargetWeekend);
+    if (!tw) {
+      return res.status(500).json({ message: 'dispatch refused: failed to parse targetWeekend from dispatch record' });
+    }
+
+    let pitched: Set<string>;
+    try {
+      pitched = await this.pitchedVenueIdsForWeekend(storedVenueIds, tw);
+    } catch (e) {
+      return res.status(500).json({
+        message: `dispatch refused: failed to read the venues already pitched for this weekend: ${(e as Error).message}`,
+      });
+    }
+
+    const unsentIds = storedVenueIds.filter((id) => !attemptedSet.has(id) && !pitched.has(id));
+
+    if (!venueApproval || !draftApproval || checkApprovalsChanged(dispatch, venueApproval, draftApproval, storedVenueIds)) {
+      const unsentNames = await getUnsentVenueNames(unsentIds);
+      await outreachDispatchModel.findOneAndUpdate({ dispatchId }, { $set: { status: 'aborted' } });
+      const reason = (!venueApproval || !draftApproval) ? 'missing' : 'changed';
+      return res.status(403).json({
+        message: `dispatch refused: approval records ${reason} since preflight check. Unsent venues: ${unsentNames.join(', ')}`,
+        unsentVenues: unsentNames,
+      });
+    }
+
+    if (unsentIds.length === 0) {
+      return res.status(200).json({ sent: 0, skipped: [], records: [], remaining: 0 });
+    }
+
+    // Every send parameter comes from the dispatch record alone (D-75): a send
+    // call cannot supply anything the preflight did not check.
+    const batchParams: BatchBody = {
+      venueIds: unsentIds,
+      batchId: dispatch.batchId as string,
+      weekend: dispatch.weekend as string | undefined,
+      targetWeekend: tw as RawTargetWeekend,
+      targetDates: dispatch.targetDates as string | undefined,
+      templateType: dispatch.templateType as string | undefined,
+      bookingPeriod: dispatch.bookingPeriod as string | undefined,
+      customIntro: dispatch.customIntro as string | undefined,
+      customBody: dispatch.customBody as string | undefined,
+      cc: dispatch.cc as string | string[] | undefined,
+    };
+    const sendBody: SendBody = {
+      targetDates: batchParams.targetDates!,
+      targetWeekend: batchParams.targetWeekend,
+      bookingPeriod: batchParams.bookingPeriod,
+      cc: batchParams.cc,
+      customIntro: batchParams.customIntro,
+      customBody: batchParams.customBody,
+    };
+
+    const approvedFps = extractApprovedFingerprints(draftApproval);
+    const renderCheck = await this.verifyDispatchRenderings(unsentIds, approvedFps, batchParams);
+    if (!renderCheck.ok) {
+      if (renderCheck.status === 500) {
+        return res.status(500).json({ message: renderCheck.message });
+      }
+      const unsentNames = await getUnsentVenueNames(unsentIds);
+      await outreachDispatchModel.findOneAndUpdate({ dispatchId }, { $set: { status: 'aborted' } });
+      return res.status(403).json({
+        message: `${renderCheck.message}. Unsent venues: ${unsentNames.join(', ')}`,
+        unsentVenues: unsentNames,
+      });
+    }
+
+    const actor = resolveActor(req, body);
+    const result = await this.executeDispatchLoop(
+      dispatchId,
+      unsentIds,
+      batchParams,
+      sendBody,
+      renderCheck.verifiedMap,
+      actor,
+      startTime,
+    );
+
+    const updatedAttemptedSet = new Set([...attemptedSet, ...result.newlyAttempted]);
+    const remaining = storedVenueIds.filter((id) => !updatedAttemptedSet.has(id) && !pitched.has(id)).length;
+    if (remaining === 0) {
+      await outreachDispatchModel.findOneAndUpdate(
+        { dispatchId },
+        { $set: { status: 'completed' } },
+      );
+    }
+
+    return res.status(200).json({
+      sent: result.sent,
+      skipped: result.skipped,
+      records: result.records,
+      remaining,
+    });
+  }
+
   // POST /outreach/batch — send the approved target list (#844). Body:
   // { venueIds[], targetDates, bookingPeriod?, templateType? }. Authz is the
   // door gate above (create or approve may attempt) PLUS the unconditional
@@ -1556,6 +1897,14 @@ class OutreachController extends Controller {
     const guardErr = await this.authorize(req, OUTREACH_SEND_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     const body = (req.body || {}) as BatchBody;
+
+    if (body.dispatchId !== undefined) {
+      if (typeof body.dispatchId !== 'string' || !body.dispatchId.trim()) {
+        return res.status(400).json({ message: 'dispatchId must be a non-empty string' });
+      }
+      return this.sendDispatchBatch(body.dispatchId.trim(), body, req, res);
+    }
+
     if (!Array.isArray(body.venueIds) || body.venueIds.length === 0) {
       return res.status(400).json({ message: 'venueIds (non-empty array) is required' });
     }
@@ -2610,7 +2959,13 @@ class OutreachController extends Controller {
   // Returns { ok: false, status: 403, message } when either approval is absent or non-matching (Outcome 2, refused in full).
   // Returns { ok: false, status: 500, message } when check is indeterminate / errors occur (Outcome 3, fail closed).
   async verifyBatchDispatch(body: BatchBody): Promise<
-    { ok: true; verifiedRenderings: Map<string, VerifiedPitchRender> } | { ok: false; status: number; message: string }
+    | {
+        ok: true;
+        verifiedRenderings: Map<string, VerifiedPitchRender>;
+        venueApproval?: Record<string, unknown>;
+        draftApproval?: Record<string, unknown>;
+      }
+    | { ok: false; status: number; message: string }
   > {
     const bResult = resolveBatchIdentification(body);
     if ('error' in bResult) {
@@ -2691,7 +3046,14 @@ class OutreachController extends Controller {
     }
 
     // Re-render draft emails and match fingerprints against Gate 2
-    return this.verifyBatchRenderings(batchVenueIds, unpitchedFps, body);
+    const renderRes = await this.verifyBatchRenderings(batchVenueIds, unpitchedFps, body);
+    if (!renderRes.ok) return renderRes;
+    return {
+      ok: true,
+      verifiedRenderings: renderRes.verifiedRenderings,
+      venueApproval: venueApproval ?? undefined,
+      draftApproval: draftApproval ?? undefined,
+    };
   }
 }
 
