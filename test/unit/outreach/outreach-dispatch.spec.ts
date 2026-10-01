@@ -14,6 +14,7 @@ const {
   checkApprovalsChanged,
   getUnsentVenueNames,
   UNKNOWN_VENUE_NAME,
+  DISPATCH_VERIFY_CONCURRENCY,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
 const { default: venueModel } = await import('#src/model/venue/venue-facade.js');
@@ -950,6 +951,91 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
         }
       });
 
+      it('caps verifyDispatchRenderings concurrency at DISPATCH_VERIFY_CONCURRENCY and verifies every venue', async () => {
+        const ids = Array.from({ length: DISPATCH_VERIFY_CONCURRENCY + 5 }, () => oid());
+        const fps = new Map(ids.map((id) => [id, `fp-${id}`]));
+
+        let activeConcurrency = 0;
+        let peakConcurrency = 0;
+
+        const origVerify = c.verifyVenueRenderedCopy;
+        c.verifyVenueRenderedCopy = vi.fn(async (venueId: string) => {
+          activeConcurrency += 1;
+          peakConcurrency = Math.max(peakConcurrency, activeConcurrency);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          activeConcurrency -= 1;
+          return { ok: true, verified: { venueId, email: 'a@b.com' } };
+        });
+
+        try {
+          const res = await c.verifyDispatchRenderings(ids, fps, {} as any);
+          expect(res.ok).toBe(true);
+          expect(peakConcurrency).toBe(DISPATCH_VERIFY_CONCURRENCY);
+          expect(c.verifyVenueRenderedCopy).toHaveBeenCalledTimes(ids.length);
+          expect(res.verifiedMap.size).toBe(ids.length);
+        } finally {
+          c.verifyVenueRenderedCopy = origVerify;
+        }
+      });
+
+      it('does not verify later groups when a venue in the first group fails', async () => {
+        const ids = Array.from({ length: DISPATCH_VERIFY_CONCURRENCY + 5 }, () => oid());
+        const fps = new Map(ids.map((id) => [id, `fp-${id}`]));
+
+        const origVerify = c.verifyVenueRenderedCopy;
+        c.verifyVenueRenderedCopy = vi.fn(async (venueId: string) => {
+          if (venueId === ids[2]) return { ok: false, status: 403, message: 'fingerprint mismatch' };
+          return { ok: true, verified: { venueId, email: 'a@b.com' } };
+        });
+
+        try {
+          const res = await c.verifyDispatchRenderings(ids, fps, {} as any);
+          expect(res.ok).toBe(false);
+          expect(res.status).toBe(403);
+          expect(c.verifyVenueRenderedCopy).toHaveBeenCalledTimes(DISPATCH_VERIFY_CONCURRENCY);
+        } finally {
+          c.verifyVenueRenderedCopy = origVerify;
+        }
+      });
+
+      it('returns the first failure in unsentIds order when a 500 precedes a 403', async () => {
+        const v1Id = oid();
+        const v2Id = oid();
+        const fps = new Map([[v1Id, 'fp1'], [v2Id, 'fp2']]);
+        const origVerify = c.verifyVenueRenderedCopy;
+        c.verifyVenueRenderedCopy = vi.fn(async (venueId: string) => (
+          venueId === v1Id
+            ? { ok: false, status: 500, message: 'transient' }
+            : { ok: false, status: 403, message: 'mismatch' }));
+        try {
+          const res = await c.verifyDispatchRenderings([v1Id, v2Id], fps, {} as any);
+          expect(res.ok).toBe(false);
+          expect(res.status).toBe(500);
+          expect(res.message).toBe('transient');
+        } finally {
+          c.verifyVenueRenderedCopy = origVerify;
+        }
+      });
+
+      it('returns the first failure in unsentIds order when a 403 precedes a 500', async () => {
+        const v1Id = oid();
+        const v2Id = oid();
+        const fps = new Map([[v1Id, 'fp1'], [v2Id, 'fp2']]);
+        const origVerify = c.verifyVenueRenderedCopy;
+        c.verifyVenueRenderedCopy = vi.fn(async (venueId: string) => (
+          venueId === v1Id
+            ? { ok: false, status: 403, message: 'mismatch' }
+            : { ok: false, status: 500, message: 'transient' }));
+        try {
+          const res = await c.verifyDispatchRenderings([v1Id, v2Id], fps, {} as any);
+          expect(res.ok).toBe(false);
+          expect(res.status).toBe(403);
+          expect(res.message).toBe('mismatch');
+        } finally {
+          c.verifyVenueRenderedCopy = origVerify;
+        }
+      });
+
       it('guarantees forward progress even if elapsed time reached the limit before the send loop', async () => {
         asApprover();
         const v1Id = oid();
@@ -1033,6 +1119,99 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
           expect(payload.sent).toBe(1);
           expect(payload.remaining).toBe(1);
           expect(sendMail).toHaveBeenCalledTimes(1);
+          expect(dispatchDoc.attemptedVenueIds).toContain(v1Id);
+          expect(dispatchDoc.attemptedVenueIds).not.toContain(v2Id);
+        } finally {
+          c.verifyVenueRenderedCopy = origVerify;
+        }
+      });
+
+      it('stops after skipping the first venue when the time limit passed before the send loop', async () => {
+        asApprover();
+        const v1Id = oid();
+        const v2Id = oid();
+        const v1 = validVenue({ _id: v1Id, name: 'Venue Slow One', outreachEligible: false });
+        const v2 = validVenue({ _id: v2Id, name: 'Venue Slow Two' });
+
+        (venueModel as any).findById = vi.fn((id: string) => {
+          if (id === v1Id) return Promise.resolve(v1);
+          if (id === v2Id) return Promise.resolve(v2);
+          return Promise.resolve(null);
+        });
+
+        const fp1 = computeDraftFingerprint({
+          subject: 'Inquiry: Venue Slow One',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+        });
+        const fp2 = computeDraftFingerprint({
+          subject: 'Inquiry: Venue Slow Two',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+        });
+
+        const g1Id = oid();
+        const g2Id = oid();
+        const tDate = new Date('2026-10-01T12:00:00Z');
+
+        let currentClock = 1000;
+        c.nowFn = () => currentClock;
+
+        const dispatchDoc: any = {
+          dispatchId: 'disp-progress-skipped',
+          batchId: 'batch-1',
+          weekend: WEEKEND_STR,
+          targetWeekend: VALID_WEEKEND,
+          targetDates: 'Oct 16-18',
+          templateType: 'Originals',
+          venueIds: [v1Id, v2Id],
+          attemptedVenueIds: [],
+          venueApprovalId: g1Id,
+          draftApprovalId: g2Id,
+          venueApprovalUpdatedAt: tDate,
+          draftApprovalUpdatedAt: tDate,
+          status: 'pending',
+        };
+
+        (outreachDispatchModel as any).findOne = vi.fn(() => Promise.resolve(dispatchDoc));
+        (outreachDispatchModel as any).findOneAndUpdate = vi.fn((_q: any, update: any) => {
+          if (update.$addToSet?.attemptedVenueIds) {
+            dispatchDoc.attemptedVenueIds.push(update.$addToSet.attemptedVenueIds);
+          }
+          if (update.$set?.status) {
+            dispatchDoc.status = update.$set.status;
+          }
+          return Promise.resolve(dispatchDoc);
+        });
+
+        (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          _id: g1Id, venueIds: [v1Id, v2Id], updated_at: tDate,
+        }));
+        (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          _id: g2Id,
+          draftFingerprints: [
+            { venueId: v1Id, fingerprint: fp1 },
+            { venueId: v2Id, fingerprint: fp2 },
+          ],
+          updated_at: tDate,
+        }));
+
+        // Advance clock during the verification pass to exceed 12s BEFORE send loop starts
+        const origVerify = c.verifyVenueRenderedCopy;
+        c.verifyVenueRenderedCopy = vi.fn(async (venueId: string, expectedFp: string, params: any) => {
+          currentClock += 13_000; // already past the 12000ms limit!
+          return origVerify.call(c, venueId, expectedFp, params);
+        });
+
+        try {
+          const req: any = { user: oid(), body: { dispatchId: 'disp-progress-skipped' } };
+          await c.sendBatch(req, resStub);
+
+          expect(status).toBe(200);
+          expect(payload.sent).toBe(0);
+          expect(payload.skipped).toHaveLength(1);
+          expect(payload.skipped[0].venueId).toBe(v1Id);
+          expect(payload.skipped[0].reason).toContain('not outreach-eligible');
+          expect(payload.remaining).toBe(1);
+          expect(sendMail).not.toHaveBeenCalled();
           expect(dispatchDoc.attemptedVenueIds).toContain(v1Id);
           expect(dispatchDoc.attemptedVenueIds).not.toContain(v2Id);
         } finally {
