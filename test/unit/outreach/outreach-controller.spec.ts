@@ -35,6 +35,7 @@ const {
   contactFirstName,
   wrapDarkEmail, DARK_WRAPPER_BG, DARK_WRAPPER_TEXT, DARK_WRAPPER_LINK, DARK_WRAPPER_START, DARK_WRAPPER_END,
   hasLinkedPastGig,
+  findNextGigDatetime,
   OUTCOME_VALUES,
   targetWeekendsDiffer,
 } = await import('#src/model/outreach/outreach-controller.js');
@@ -547,6 +548,35 @@ describe('Outreach Controller (#844 batch model)', () => {
         const v = validVenue({ nextGig: { datetime: '2099-10-17T23:00:00.000Z' } });
         expect(await c.resolveStage(v)).toBe('upcoming');
         expect((await c.resolveStageInfo(v)).nextGigDate).toBe('Saturday, October 17');
+      });
+
+      it('resolveStage: an attached nextGig with an unparseable datetime is ignored', async () => {
+        (gigModel as any).find = gigsFor([]);
+        const v = validVenue({ nextGig: { datetime: 'not-a-valid-date' } });
+        expect(await c.resolveStage(v)).toBe('cold');
+        expect(await c.resolveStageInfo(v)).toEqual({ stage: 'cold', nextGigDate: undefined });
+      });
+
+      it('resolveStage: an attached nextGig in the past is ignored', async () => {
+        (gigModel as any).find = gigsFor([]);
+        const v = validVenue({ nextGig: { datetime: '2020-01-01T00:00:00.000Z' } });
+        expect(await c.resolveStage(v)).toBe('cold');
+        expect(await c.resolveStageInfo(v)).toEqual({ stage: 'cold', nextGigDate: undefined });
+      });
+
+      it('findNextGigDatetime: returns attached nextGig only when valid and upcoming, else queries linked', async () => {
+        (gigModel as any).find = gigsFor([{ venueId: '123', datetime: future(20) }]);
+        const futureIso = '2099-10-17T23:00:00.000Z';
+        expect(await findNextGigDatetime(validVenue({ nextGig: { datetime: futureIso } }))).toBe(futureIso);
+
+        const vInvalid = validVenue({ _id: '123', nextGig: { datetime: 'invalid' } });
+        expect(await findNextGigDatetime(vInvalid)).toEqual(future(20));
+
+        const vPast = validVenue({ _id: '123', nextGig: { datetime: '2020-01-01T00:00:00.000Z' } });
+        expect(await findNextGigDatetime(vPast)).toEqual(future(20));
+
+        (gigModel as any).find = gigsFor([]);
+        expect(await findNextGigDatetime(validVenue({ nextGig: { datetime: 'invalid' } }))).toBeUndefined();
       });
 
       it('resolveStage: a future gig matched by venueId (earliest wins) is upcoming', async () => {

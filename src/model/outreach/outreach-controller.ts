@@ -937,7 +937,11 @@ async function queryLinkedPastGig(venue: VenueDoc): Promise<boolean> {
 // Datetime of the venue's earliest linked upcoming gig (attached nextGig, else
 // venueId match, else name match), or undefined when none is found.
 export async function findNextGigDatetime(venue: VenueDoc): Promise<Date | string | undefined> {
-  if (venue.nextGig?.datetime) return venue.nextGig.datetime;
+  const attached = venue.nextGig?.datetime;
+  if (attached) {
+    const time = new Date(attached).getTime();
+    if (!Number.isNaN(time) && time >= Date.now()) return attached;
+  }
   return (await findLinkedGig(venue, 'upcoming'))?.datetime || undefined;
 }
 
