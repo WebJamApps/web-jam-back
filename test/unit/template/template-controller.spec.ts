@@ -101,6 +101,15 @@ describe('Template Controller', () => {
       expect(findOne).toHaveBeenCalledWith({ type: 'Originals', stage: 'returning' });
     });
 
+    it('accepts the upcoming stage and dedupes it separately (#1127)', async () => {
+      const findOne = vi.fn(() => Promise.resolve(null));
+      c.model.findOne = findOne;
+      c.model.create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      await c.createTemplate({ user: 'a', body: { type: 'Originals', stage: 'upcoming' } }, resStub);
+      expect(status).not.toBe(400);
+      expect(findOne).toHaveBeenCalledWith({ type: 'Originals', stage: 'upcoming' });
+    });
+
     it('rejects an invalid stage', async () => {
       await c.createTemplate({ user: 'a', body: { type: 'Originals', stage: 'lukewarm' } }, resStub);
       expect(status).toBe(400);

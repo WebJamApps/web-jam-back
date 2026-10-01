@@ -35,6 +35,7 @@ const {
   contactFirstName,
   wrapDarkEmail, DARK_WRAPPER_BG, DARK_WRAPPER_TEXT, DARK_WRAPPER_LINK, DARK_WRAPPER_START, DARK_WRAPPER_END,
   hasLinkedPastGig,
+  findNextGigDatetime,
   OUTCOME_VALUES,
   targetWeekendsDiffer,
 } = await import('#src/model/outreach/outreach-controller.js');
@@ -480,12 +481,12 @@ describe('Outreach Controller (#844 batch model)', () => {
     // ignored entirely — the stage derives from gig history either way.
     it('resolveStage: a stale relationshipStage no longer overrides the derivation (#1059)', async () => {
       c.model.findOne = vi.fn(() => Promise.resolve(null));
-      expect(await c.resolveStage(validVenue({ relationshipStage: 'cold', bookingStatus: 'booked' }))).toBe('returning');
+      expect(await c.resolveStage(validVenue({ relationshipStage: 'cold', bookingStatus: 'booked' }))).toBe('cold');
       expect(await c.resolveStage(validVenue({ relationshipStage: 'returning' }))).toBe('cold');
     });
 
-    it('resolveStage: a booked venue auto-derives returning', async () => {
-      expect(await c.resolveStage(validVenue({ bookingStatus: 'booked' }))).toBe('returning');
+    it('resolveStage: a stored bookingStatus of booked with no linked gigs is cold (#1127)', async () => {
+      expect(await c.resolveStage(validVenue({ bookingStatus: 'booked' }))).toBe('cold');
     });
 
     it('resolveStage: a venue with lastGig auto-derives returning (#1116)', async () => {
@@ -494,22 +495,20 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('resolveStage: a venue with linked past gig via venueId in gigModel auto-derives returning (#1116)', async () => {
       const v = validVenue();
-      (gigModel as any).findOne = vi.fn(() => Promise.resolve({
+      (gigModel as any).find = vi.fn(() => Promise.resolve([{
         _id: 'g1', venueId: String(v._id), datetime: new Date('2025-01-01T00:00:00.000Z'),
-      }));
+      }]));
       expect(await c.resolveStage(v)).toBe('returning');
     });
 
     it('resolveStage: a venue with linked past gig matched by normalized name auto-derives returning (#1116)', async () => {
       const v = validVenue({ name: 'Olde Salem Brewing' });
-      const findOneMock = vi.fn(() => Promise.resolve(null));
-      const findMock = vi.fn(() => Promise.resolve([
+      const findMock = vi.fn((filter: any) => Promise.resolve(filter.venueId === null ? [
         { venue: '<p>Olde Salem Brewing</p>', datetime: new Date('2025-01-01T00:00:00.000Z') },
-      ]));
-      (gigModel as any).findOne = findOneMock;
+      ] : []));
       (gigModel as any).find = findMock;
       expect(await c.resolveStage(v)).toBe('returning');
-      expect(findOneMock).toHaveBeenCalledWith(expect.objectContaining({
+      expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
         venueId: String(v._id),
       }));
       expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -525,10 +524,6 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
 
     it('resolveStage: Outcome 3 - fails closed to cold when gigModel query throws (#1116)', async () => {
-      (gigModel as any).findOne = vi.fn(() => Promise.reject(new Error('db down')));
-      expect(await c.resolveStage(validVenue())).toBe('cold');
-
-      (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
       (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db find down')));
       expect(await c.resolveStage(validVenue({ name: 'Some Venue' }))).toBe('cold');
     });
@@ -538,6 +533,140 @@ describe('Outreach Controller (#844 batch model)', () => {
       (gigModel as any).findOne = vi.fn(() => Promise.resolve(null));
       (gigModel as any).find = vi.fn(() => Promise.resolve([]));
       expect(await c.resolveStage(validVenue())).toBe('cold');
+    });
+
+    describe('upcoming stage (#1127)', () => {
+      const future = (days: number) => new Date(Date.now() + days * 86400000);
+      // The mock honours the datetime operator so past and future lookups are distinguished.
+      const gigsFor = (all: any[]) => vi.fn((filter: any) => Promise.resolve(all.filter((g) => {
+        if (filter.venueId !== undefined && (g.venueId ?? null) !== filter.venueId) return false;
+        const op = filter.datetime;
+        return op.$lt ? g.datetime < op.$lt : g.datetime >= op.$gte;
+      })));
+
+      it('resolveStage: an attached nextGig with no lastGig is upcoming', async () => {
+        const v = validVenue({ nextGig: { datetime: '2099-10-17T23:00:00.000Z' } });
+        expect(await c.resolveStage(v)).toBe('upcoming');
+        expect((await c.resolveStageInfo(v)).nextGigDate).toBe('Saturday, October 17');
+      });
+
+      it('resolveStage: an attached nextGig with an unparseable datetime is ignored', async () => {
+        (gigModel as any).find = gigsFor([]);
+        const v = validVenue({ nextGig: { datetime: 'not-a-valid-date' } });
+        expect(await c.resolveStage(v)).toBe('cold');
+        expect(await c.resolveStageInfo(v)).toEqual({ stage: 'cold', nextGigDate: undefined });
+      });
+
+      it('resolveStage: an attached nextGig in the past is ignored', async () => {
+        (gigModel as any).find = gigsFor([]);
+        const v = validVenue({ nextGig: { datetime: '2020-01-01T00:00:00.000Z' } });
+        expect(await c.resolveStage(v)).toBe('cold');
+        expect(await c.resolveStageInfo(v)).toEqual({ stage: 'cold', nextGigDate: undefined });
+      });
+
+      it('findNextGigDatetime: returns attached nextGig only when valid and upcoming, else queries linked', async () => {
+        (gigModel as any).find = gigsFor([{ venueId: '123', datetime: future(20) }]);
+        const futureIso = '2099-10-17T23:00:00.000Z';
+        expect(await findNextGigDatetime(validVenue({ nextGig: { datetime: futureIso } }))).toBe(futureIso);
+
+        const vInvalid = validVenue({ _id: '123', nextGig: { datetime: 'invalid' } });
+        expect(await findNextGigDatetime(vInvalid)).toEqual(future(20));
+
+        const vPast = validVenue({ _id: '123', nextGig: { datetime: '2020-01-01T00:00:00.000Z' } });
+        expect(await findNextGigDatetime(vPast)).toEqual(future(20));
+
+        (gigModel as any).find = gigsFor([]);
+        expect(await findNextGigDatetime(validVenue({ nextGig: { datetime: 'invalid' } }))).toBeUndefined();
+      });
+
+      it('resolveStage: a future gig matched by venueId (earliest wins) is upcoming', async () => {
+        const v = validVenue();
+        (gigModel as any).find = gigsFor([
+          { venueId: String(v._id), datetime: future(40) },
+          { venueId: String(v._id), datetime: future(10) },
+        ]);
+        const info = await c.resolveStageInfo(v);
+        expect(info.stage).toBe('upcoming');
+        expect(info.nextGigDate).toBe(new Date(future(10)).toLocaleDateString('en-US', {
+          weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York',
+        }));
+      });
+
+      it('resolveStage: a future gig matched by name is upcoming', async () => {
+        const v = validVenue({ name: 'Olde Salem Brewing' });
+        (gigModel as any).find = gigsFor([
+          { venue: '<p>Olde Salem Brewing</p>', venueId: null, datetime: future(30) },
+          { venue: 'Olde Salem Brewing', venueId: null, datetime: future(20) },
+        ]);
+        expect(await c.resolveStage(v)).toBe('upcoming');
+      });
+
+      it('resolveStage: name lookup is skipped when the venue has no name', async () => {
+        (gigModel as any).find = gigsFor([{ venue: 'Anything', venueId: null, datetime: future(5) }]);
+        expect(await c.resolveStage(validVenue({ name: '' }))).toBe('cold');
+      });
+
+      it('resolveStage: past and future gigs together are returning', async () => {
+        const v = validVenue();
+        (gigModel as any).find = gigsFor([
+          { venueId: String(v._id), datetime: new Date('2025-01-01T00:00:00.000Z') },
+          { venueId: String(v._id), datetime: future(10) },
+        ]);
+        expect(await c.resolveStage(v)).toBe('returning');
+      });
+
+      it('resolveStage: unrelated future gigs leave the venue cold', async () => {
+        (gigModel as any).find = gigsFor([{ venue: 'Somewhere Else', venueId: null, datetime: future(10) }]);
+        expect(await c.resolveStage(validVenue({ name: 'Olde Salem Brewing' }))).toBe('cold');
+      });
+
+      it('resolveStage: a throwing upcoming lookup counts as no gig (cold)', async () => {
+        (gigModel as any).find = vi.fn(() => Promise.reject(new Error('db down')));
+        const info = await c.resolveStageInfo(validVenue());
+        expect(info).toEqual({ stage: 'cold', nextGigDate: undefined });
+      });
+
+      it('resolveStage: a non-array gig result is treated as no gigs', async () => {
+        (gigModel as any).find = vi.fn(() => Promise.resolve(undefined));
+        expect(await c.resolveStage(validVenue())).toBe('cold');
+      });
+
+      it('findTemplate: returns the upcoming template when active, else the cold template', async () => {
+        const findOne = vi.fn(() => Promise.resolve(validTemplate({ stage: 'upcoming' })));
+        (templateModel as any).findOne = findOne;
+        expect(((await c.findTemplate('Originals', 'upcoming')) as any).stage).toBe('upcoming');
+        expect(findOne).toHaveBeenCalledWith({ type: 'Originals', active: true, stage: 'upcoming' });
+
+        const fallback = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(validTemplate());
+        (templateModel as any).findOne = fallback;
+        expect(await c.findTemplate('Originals', 'upcoming')).toBeTruthy();
+        expect(fallback).toHaveBeenCalledTimes(2);
+      });
+
+      it('buildPitchEmail: fills [Next Gig Date] in subject, intro and body, and never leaks the token', () => {
+        const t = validTemplate({
+          subject: 'See you [Next Gig Date] at [Venue Name]',
+          introHtml: '<p>Hi, our show is [Next Gig Date].</p>',
+          bodyHtml: '[Custom Body]<p>[Next Gig Date]</p>',
+        });
+        const withDate = buildPitchEmail(validVenue(), t as any, { nextGigDate: 'Saturday, October 17' } as any);
+        expect(withDate.subject).toContain('Saturday, October 17');
+        expect(withDate.html.match(/Saturday, October 17/g)?.length).toBe(2);
+        expect(withDate.html).not.toContain('[Next Gig Date]');
+        const without = buildPitchEmail(validVenue(), t as any, {} as any);
+        expect(without.subject).toContain('our upcoming show');
+        expect(without.subject).not.toContain('[Next Gig Date]');
+        expect(without.html).not.toContain('[Next Gig Date]');
+        expect(without.html).toContain('our upcoming show');
+      });
+
+      it('resolvePitch carries the date on the context and ignores a request-supplied nextGigDate', async () => {
+        const v = validVenue({ nextGig: { datetime: '2099-10-17T23:00:00.000Z' } });
+        (venueModel as any).findById = vi.fn(() => Promise.resolve(v));
+        (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ stage: 'upcoming' })));
+        const ctx = await c.resolvePitch({ venueId: oid(), nextGigDate: 'Fake Day' } as any, { skipDedup: true });
+        expect(ctx.nextGigDate).toBe('Saturday, October 17');
+      });
     });
 
     it('hasLinkedPastGig: returns true for attached past gig, true for gigModel query, and false otherwise (#1116)', async () => {
