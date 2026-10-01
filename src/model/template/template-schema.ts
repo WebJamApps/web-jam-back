@@ -10,7 +10,8 @@ const options = {
 // is an API for AI agents (Phase 2 = editing UI, JaMmusic#1116). One template
 // per venue type + the Online Form Information Block. `bodyHtml` carries the
 // personalization tokens [Contact Name] / [Venue Name] / [Booking Period] /
-// [Target Dates], filled in at send time (#823). `footerPhotoRef` is a KEY into
+// [Target Dates] / [Next Gig Date], filled in at send time (#823, #1127).
+// `footerPhotoRef` is a KEY into
 // the repo-bundled email assets (resolved to an inline-CID image at send), not a
 // URL. `type` is unique — one template per type.
 //
@@ -27,14 +28,15 @@ const templateSchema = new Schema({
     required: true,
     enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar', 'OnlineForm'],
   },
-  // Relationship stage (#848): `cold` = first contact, `returning` = "we've
-  // played here, would love to come back". A template is now keyed by type +
-  // stage, so each venue type can have a different cold vs. returning pitch.
-  // Existing single-per-type templates default to `cold`.
+  // Relationship stage (#848, #1127): `cold` = first contact, `returning` =
+  // "we've played here, would love to come back", `upcoming` = booked debut
+  // gig coming up, pitching follow-up dates. A template is now keyed by type +
+  // stage, so each venue type can have a different cold vs. returning vs. upcoming
+  // pitch. Existing single-per-type templates default to `cold`.
   stage: {
     type: String,
     required: false,
-    enum: ['cold', 'returning'],
+    enum: ['cold', 'returning', 'upcoming'],
     default: 'cold',
   },
   subject: { type: String, required: false, trim: true },
