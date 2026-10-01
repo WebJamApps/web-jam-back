@@ -918,6 +918,151 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
         expect(dispatchDoc.status).toBe('completed');
       });
 
+      it('parallelizes verifyDispatchRenderings across all unsent venues', async () => {
+        const v1Id = oid();
+        const v2Id = oid();
+        const v3Id = oid();
+        const fps = new Map([
+          [v1Id, 'fp1'],
+          [v2Id, 'fp2'],
+          [v3Id, 'fp3'],
+        ]);
+
+        let activeConcurrency = 0;
+        let peakConcurrency = 0;
+
+        const origVerify = c.verifyVenueRenderedCopy;
+        c.verifyVenueRenderedCopy = vi.fn(async (_venueId: string, _fp: string, _batchParams: any) => {
+          activeConcurrency += 1;
+          peakConcurrency = Math.max(peakConcurrency, activeConcurrency);
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          activeConcurrency -= 1;
+          return { ok: true, verified: { venueId: _venueId, email: 'a@b.com' } };
+        });
+
+        try {
+          const res = await c.verifyDispatchRenderings([v1Id, v2Id, v3Id], fps, {} as any);
+          expect(res.ok).toBe(true);
+          expect(peakConcurrency).toBe(3);
+          expect(c.verifyVenueRenderedCopy).toHaveBeenCalledTimes(3);
+        } finally {
+          c.verifyVenueRenderedCopy = origVerify;
+        }
+      });
+
+      it('guarantees forward progress even if elapsed time reached the limit before the send loop', async () => {
+        asApprover();
+        const v1Id = oid();
+        const v2Id = oid();
+        const v1 = validVenue({ _id: v1Id, name: 'Venue Slow One' });
+        const v2 = validVenue({ _id: v2Id, name: 'Venue Slow Two' });
+
+        (venueModel as any).findById = vi.fn((id: string) => {
+          if (id === v1Id) return Promise.resolve(v1);
+          if (id === v2Id) return Promise.resolve(v2);
+          return Promise.resolve(null);
+        });
+
+        const fp1 = computeDraftFingerprint({
+          subject: 'Inquiry: Venue Slow One',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+        });
+        const fp2 = computeDraftFingerprint({
+          subject: 'Inquiry: Venue Slow Two',
+          body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+        });
+
+        const g1Id = oid();
+        const g2Id = oid();
+        const tDate = new Date('2026-10-01T12:00:00Z');
+
+        let currentClock = 1000;
+        c.nowFn = () => currentClock;
+
+        const dispatchDoc: any = {
+          dispatchId: 'disp-progress-guaranteed',
+          batchId: 'batch-1',
+          weekend: WEEKEND_STR,
+          targetWeekend: VALID_WEEKEND,
+          targetDates: 'Oct 16-18',
+          templateType: 'Originals',
+          venueIds: [v1Id, v2Id],
+          attemptedVenueIds: [],
+          venueApprovalId: g1Id,
+          draftApprovalId: g2Id,
+          venueApprovalUpdatedAt: tDate,
+          draftApprovalUpdatedAt: tDate,
+          status: 'pending',
+        };
+
+        (outreachDispatchModel as any).findOne = vi.fn(() => Promise.resolve(dispatchDoc));
+        (outreachDispatchModel as any).findOneAndUpdate = vi.fn((_q: any, update: any) => {
+          if (update.$addToSet?.attemptedVenueIds) {
+            dispatchDoc.attemptedVenueIds.push(update.$addToSet.attemptedVenueIds);
+          }
+          if (update.$set?.status) {
+            dispatchDoc.status = update.$set.status;
+          }
+          return Promise.resolve(dispatchDoc);
+        });
+
+        (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          _id: g1Id, venueIds: [v1Id, v2Id], updated_at: tDate,
+        }));
+        (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+          _id: g2Id,
+          draftFingerprints: [
+            { venueId: v1Id, fingerprint: fp1 },
+            { venueId: v2Id, fingerprint: fp2 },
+          ],
+          updated_at: tDate,
+        }));
+
+        // Advance clock during the verification pass to exceed 12s BEFORE send loop starts
+        const origVerify = c.verifyVenueRenderedCopy;
+        c.verifyVenueRenderedCopy = vi.fn(async (venueId: string, expectedFp: string, params: any) => {
+          currentClock += 13_000; // already past the 12000ms limit!
+          return origVerify.call(c, venueId, expectedFp, params);
+        });
+
+        try {
+          const req: any = { user: oid(), body: { dispatchId: 'disp-progress-guaranteed' } };
+          await c.sendBatch(req, resStub);
+
+          expect(status).toBe(200);
+          expect(payload.sent).toBe(1);
+          expect(payload.remaining).toBe(1);
+          expect(sendMail).toHaveBeenCalledTimes(1);
+          expect(dispatchDoc.attemptedVenueIds).toContain(v1Id);
+          expect(dispatchDoc.attemptedVenueIds).not.toContain(v2Id);
+        } finally {
+          c.verifyVenueRenderedCopy = origVerify;
+        }
+      });
+
+      it('returns error when Gate 2 fingerprint is missing or verification throws', async () => {
+        const v1Id = oid();
+        const fps = new Map(); // v1Id missing
+
+        const res1 = await c.verifyDispatchRenderings([v1Id], fps, {} as any);
+        expect(res1.ok).toBe(false);
+        expect(res1.status).toBe(403);
+        expect(res1.message).toContain(`Gate 2 draft fingerprint is missing for venue '${v1Id}'`);
+
+        const origVerify = c.verifyVenueRenderedCopy;
+        c.verifyVenueRenderedCopy = vi.fn(async () => {
+          throw new Error('atlas socket timeout');
+        });
+        try {
+          const res2 = await c.verifyDispatchRenderings([v1Id], new Map([[v1Id, 'fp1']]), {} as any);
+          expect(res2.ok).toBe(false);
+          expect(res2.status).toBe(500);
+          expect(res2.message).toContain('error during draft fingerprint verification: atlas socket timeout');
+        } finally {
+          c.verifyVenueRenderedCopy = origVerify;
+        }
+      });
+
       it('returns remaining: 0 and sent: 0 when all venues were already attempted or pitched', async () => {
         asApprover();
         const v1Id = oid();

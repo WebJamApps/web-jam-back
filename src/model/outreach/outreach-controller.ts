@@ -1707,22 +1707,34 @@ class OutreachController extends Controller {
     batchParams: BatchBody,
   ): Promise<{ ok: true; verifiedMap: Map<string, VerifiedPitchRender> } | { ok: false; status: number; message: string }> {
     const verifiedMap = new Map<string, VerifiedPitchRender>();
-    for (const venueId of unsentIds) {
-      const expectedFp = approvedFps.get(venueId);
-      if (!expectedFp) {
-        return { ok: false, status: 403, message: `dispatch refused: Gate 2 draft fingerprint is missing for venue '${venueId}'` };
+    const checks = await Promise.all(
+      unsentIds.map(async (venueId) => {
+        const expectedFp = approvedFps.get(venueId);
+        if (!expectedFp) {
+          return {
+            ok: false as const,
+            status: 403,
+            message: `dispatch refused: Gate 2 draft fingerprint is missing for venue '${venueId}'`,
+          };
+        }
+        try {
+          return await this.verifyVenueRenderedCopy(venueId, expectedFp, batchParams);
+        } catch (e) {
+          return {
+            ok: false as const,
+            status: 500,
+            message: `dispatch refused: error during draft fingerprint verification: ${(e as Error).message}`,
+          };
+        }
+      }),
+    );
+    for (const [i, unsentId] of unsentIds.entries()) {
+      const check = checks[i];
+      if (!check.ok) {
+        return check;
       }
-      let renderCheck: Awaited<ReturnType<typeof this.verifyVenueRenderedCopy>>;
-      try {
-        renderCheck = await this.verifyVenueRenderedCopy(venueId, expectedFp, batchParams);
-      } catch (e) {
-        return { ok: false, status: 500, message: `dispatch refused: error during draft fingerprint verification: ${(e as Error).message}` };
-      }
-      if (!renderCheck.ok) {
-        return renderCheck;
-      }
-      if (renderCheck.verified) {
-        verifiedMap.set(venueId, renderCheck.verified);
+      if (check.verified) {
+        verifiedMap.set(unsentId, check.verified);
       }
     }
     return { ok: true, verifiedMap };
@@ -1751,7 +1763,7 @@ class OutreachController extends Controller {
 
     for (const venueId of unsentIds) {
       const elapsed = this.nowFn() - startTime;
-      if (elapsed >= OutreachController.BATCH_DISPATCH_TIME_LIMIT_MS) {
+      if (elapsed >= OutreachController.BATCH_DISPATCH_TIME_LIMIT_MS && (result.sent > 0 || result.skipped.length > 0)) {
         break;
       }
 
