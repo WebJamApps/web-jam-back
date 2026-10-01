@@ -904,8 +904,9 @@ function hasAttachedPastGig(venueRecord: Record<string, unknown>): boolean {
 }
 
 // Shared by the past and upcoming lookups: the nearest linked gig on one side of
-// now, matched by venueId or, failing that, by name (venueId: null gigs grouped
-// by groupGigsByVenue). A throwing query counts as "no gig found" (fails closed).
+// now, considering id-linked and name-matched gigs together (venueId: null gigs
+// grouped by groupGigsByVenue). A venue with no name matches by venueId only.
+// A throwing query counts as "no gig found" (fails closed).
 type RelationshipStage = 'cold' | 'returning' | 'upcoming';
 type LinkedGig = { datetime?: Date | string };
 const gigTime = (g: LinkedGig): number => new Date(g.datetime as string).getTime();
@@ -917,16 +918,19 @@ const queryLinkableGigs = async (filter: Record<string, unknown>): Promise<Linka
 async function findLinkedGig(venue: VenueDoc, when: 'past' | 'upcoming'): Promise<LinkedGig | null> {
   const datetime = { [when === 'past' ? '$lt' : '$gte']: new Date() };
   const dir = when === 'past' ? -1 : 1;
-  const nearest = (gigs: LinkedGig[]): LinkedGig | null => (
-    gigs.length > 0 ? [...gigs].sort((x, y) => dir * (gigTime(x) - gigTime(y)))[0] : null
-  );
+  const nearest = (gigs: LinkedGig[]): LinkedGig | null => {
+    const valid = gigs.filter((g) => g.datetime && !Number.isNaN(gigTime(g)));
+    return valid.length > 0 ? [...valid].sort((x, y) => dir * (gigTime(x) - gigTime(y)))[0] : null;
+  };
   try {
     const venueId = String(venue._id);
-    const byId = nearest(await queryLinkableGigs({ venueId, datetime }));
-    if (byId || !venue.name) return byId;
+    const byIdGigs = await queryLinkableGigs({ venueId, datetime });
+    if (!venue.name) return nearest(byIdGigs);
     const unlinked = await queryLinkableGigs({ venueId: null, datetime });
-    if (unlinked.length === 0) return null;
-    return nearest(groupGigsByVenue(unlinked, [venue as unknown as LinkableVenue]).get(venueId) || []);
+    const byNameGigs = unlinked.length > 0
+      ? (groupGigsByVenue(unlinked, [venue as unknown as LinkableVenue]).get(venueId) || [])
+      : [];
+    return nearest([...byIdGigs, ...byNameGigs]);
   } catch {
     // Indeterminate / lookup failure: fail closed rather than hallucinating gigs
     return null;

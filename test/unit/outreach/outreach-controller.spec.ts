@@ -565,15 +565,16 @@ describe('Outreach Controller (#844 batch model)', () => {
       });
 
       it('findNextGigDatetime: returns attached nextGig only when valid and upcoming, else queries linked', async () => {
-        (gigModel as any).find = gigsFor([{ venueId: '123', datetime: future(20) }]);
+        const gig20 = future(20);
+        (gigModel as any).find = gigsFor([{ venueId: '123', datetime: gig20 }]);
         const futureIso = '2099-10-17T23:00:00.000Z';
         expect(await findNextGigDatetime(validVenue({ nextGig: { datetime: futureIso } }))).toBe(futureIso);
 
         const vInvalid = validVenue({ _id: '123', nextGig: { datetime: 'invalid' } });
-        expect(await findNextGigDatetime(vInvalid)).toEqual(future(20));
+        expect(await findNextGigDatetime(vInvalid)).toEqual(gig20);
 
         const vPast = validVenue({ _id: '123', nextGig: { datetime: '2020-01-01T00:00:00.000Z' } });
-        expect(await findNextGigDatetime(vPast)).toEqual(future(20));
+        expect(await findNextGigDatetime(vPast)).toEqual(gig20);
 
         (gigModel as any).find = gigsFor([]);
         expect(await findNextGigDatetime(validVenue({ nextGig: { datetime: 'invalid' } }))).toBeUndefined();
@@ -590,6 +591,80 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(info.nextGigDate).toBe(new Date(future(10)).toLocaleDateString('en-US', {
           weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York',
         }));
+      });
+
+      it('resolveStage: id-linked gig 40 days out and name-matched gig 10 days out returns 10-day gig date (#1130)', async () => {
+        const v = validVenue({ name: 'Olde Salem Brewing' });
+        (gigModel as any).find = gigsFor([
+          { venueId: String(v._id), datetime: future(40) },
+          { venue: 'Olde Salem Brewing', venueId: null, datetime: future(10) },
+        ]);
+        const info = await c.resolveStageInfo(v);
+        expect(info.stage).toBe('upcoming');
+        expect(info.nextGigDate).toBe(new Date(future(10)).toLocaleDateString('en-US', {
+          weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York',
+        }));
+      });
+
+      it('resolveStage: id-linked gig 10 days out and name-matched gig 40 days out returns 10-day gig date (#1130)', async () => {
+        const v = validVenue({ name: 'Olde Salem Brewing' });
+        (gigModel as any).find = gigsFor([
+          { venueId: String(v._id), datetime: future(10) },
+          { venue: 'Olde Salem Brewing', venueId: null, datetime: future(40) },
+        ]);
+        const info = await c.resolveStageInfo(v);
+        expect(info.stage).toBe('upcoming');
+        expect(info.nextGigDate).toBe(new Date(future(10)).toLocaleDateString('en-US', {
+          weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York',
+        }));
+      });
+
+      it('resolveStage: a venue with only a name-matched future gig returns that gig date (#1130)', async () => {
+        const v = validVenue({ name: 'Olde Salem Brewing' });
+        (gigModel as any).find = gigsFor([
+          { venue: 'Olde Salem Brewing', venueId: null, datetime: future(20) },
+        ]);
+        const info = await c.resolveStageInfo(v);
+        expect(info.stage).toBe('upcoming');
+        expect(info.nextGigDate).toBe(new Date(future(20)).toLocaleDateString('en-US', {
+          weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York',
+        }));
+      });
+
+      it('resolveStage: empty venue name matches id-linked gig only and ignores name-matched gigs (#1130)', async () => {
+        const v = validVenue({ name: '' });
+        (gigModel as any).find = gigsFor([
+          { venueId: String(v._id), datetime: future(15) },
+          { venue: 'Other Venue', venueId: null, datetime: future(5) },
+        ]);
+        const info = await c.resolveStageInfo(v);
+        expect(info.stage).toBe('upcoming');
+        expect(info.nextGigDate).toBe(new Date(future(15)).toLocaleDateString('en-US', {
+          weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York',
+        }));
+      });
+
+      it('resolveStage: past gig linked by name and future gig linked by id resolves to returning (#1130)', async () => {
+        const v = validVenue({ name: 'Olde Salem Brewing' });
+        (gigModel as any).find = gigsFor([
+          { venue: 'Olde Salem Brewing', venueId: null, datetime: new Date('2025-01-01T00:00:00.000Z') },
+          { venueId: String(v._id), datetime: future(10) },
+        ]);
+        const info = await c.resolveStageInfo(v);
+        expect(info.stage).toBe('returning');
+        expect(info.nextGigDate).toBe(new Date(future(10)).toLocaleDateString('en-US', {
+          weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York',
+        }));
+      });
+
+      it('findNextGigDatetime: picks earliest future gig across id-linked and name-matched gigs (#1130)', async () => {
+        const v = validVenue({ name: 'Olde Salem Brewing' });
+        const earliest = future(10);
+        (gigModel as any).find = gigsFor([
+          { venueId: String(v._id), datetime: future(30) },
+          { venue: 'Olde Salem Brewing', venueId: null, datetime: earliest },
+        ]);
+        expect(await findNextGigDatetime(v)).toEqual(earliest);
       });
 
       it('resolveStage: a future gig matched by name is upcoming', async () => {
