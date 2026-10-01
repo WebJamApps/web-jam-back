@@ -30,6 +30,11 @@ jobs:
           command: npm run typecheck
       - run:
           name: run all tests
+          # In test mode the app connects to TEST_DB (src/lib/utils.ts), not DB_URL.
+          # Point it at this job's own mongo container so two overlapping CI runs
+          # never share a database (they collided on duplicate test users).
+          environment:
+            TEST_DB: mongodb://127.0.0.1:27017/web-jam-test
           command: npm test
       - store_artifacts:
           path: coverage

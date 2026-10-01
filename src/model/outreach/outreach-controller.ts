@@ -49,6 +49,9 @@ export const OUTREACH_COOLDOWN_DAYS = 7;
 // #1120 (D-76) — time limit in milliseconds on starting new sends during a chunked batch dispatch call.
 export const BATCH_DISPATCH_TIME_LIMIT_MS = 12_000;
 
+// web-jam-back#1132 — number of venues whose rendered drafts are verified at the same time during dispatch verification.
+export const DISPATCH_VERIFY_CONCURRENCY = 15;
+
 // JaMmusic#1250 — placeholder venueName for a skipped-batch entry where no
 // venue doc could even be loaded (invalid id, or venue not found). The
 // frontend always renders venueName, so this field is never omitted.
@@ -901,8 +904,11 @@ function hasAttachedPastGig(venueRecord: Record<string, unknown>): boolean {
 }
 
 // Shared by the past and upcoming lookups: the nearest linked gig on one side of
-// now, matched by venueId or, failing that, by name (venueId: null gigs grouped
-// by groupGigsByVenue). A throwing query counts as "no gig found" (fails closed).
+// now. The upcoming lookup considers id-linked and name-matched gigs together
+// (venueId: null gigs grouped by groupGigsByVenue) so the earliest wins. The past
+// lookup stops at an id-linked gig because its result is only used as yes or no.
+// A venue with no name matches by venueId only.
+// A throwing query counts as "no gig found" (fails closed).
 type RelationshipStage = 'cold' | 'returning' | 'upcoming';
 type LinkedGig = { datetime?: Date | string };
 const gigTime = (g: LinkedGig): number => new Date(g.datetime as string).getTime();
@@ -914,16 +920,20 @@ const queryLinkableGigs = async (filter: Record<string, unknown>): Promise<Linka
 async function findLinkedGig(venue: VenueDoc, when: 'past' | 'upcoming'): Promise<LinkedGig | null> {
   const datetime = { [when === 'past' ? '$lt' : '$gte']: new Date() };
   const dir = when === 'past' ? -1 : 1;
-  const nearest = (gigs: LinkedGig[]): LinkedGig | null => (
-    gigs.length > 0 ? [...gigs].sort((x, y) => dir * (gigTime(x) - gigTime(y)))[0] : null
-  );
+  const nearest = (gigs: LinkedGig[]): LinkedGig | null => {
+    const valid = gigs.filter((g) => g.datetime && !Number.isNaN(gigTime(g)));
+    return valid.length > 0 ? [...valid].sort((x, y) => dir * (gigTime(x) - gigTime(y)))[0] : null;
+  };
   try {
     const venueId = String(venue._id);
-    const byId = nearest(await queryLinkableGigs({ venueId, datetime }));
-    if (byId || !venue.name) return byId;
+    const byIdGigs = await queryLinkableGigs({ venueId, datetime });
+    const byId = nearest(byIdGigs);
+    if (!venue.name || (when === 'past' && byId)) return byId;
     const unlinked = await queryLinkableGigs({ venueId: null, datetime });
-    if (unlinked.length === 0) return null;
-    return nearest(groupGigsByVenue(unlinked, [venue as unknown as LinkableVenue]).get(venueId) || []);
+    const byNameGigs = unlinked.length > 0
+      ? (groupGigsByVenue(unlinked, [venue as unknown as LinkableVenue]).get(venueId) || [])
+      : [];
+    return nearest([...byIdGigs, ...byNameGigs]);
   } catch {
     // Indeterminate / lookup failure: fail closed rather than hallucinating gigs
     return null;
@@ -1707,22 +1717,37 @@ class OutreachController extends Controller {
     batchParams: BatchBody,
   ): Promise<{ ok: true; verifiedMap: Map<string, VerifiedPitchRender> } | { ok: false; status: number; message: string }> {
     const verifiedMap = new Map<string, VerifiedPitchRender>();
-    for (const venueId of unsentIds) {
+    const verifyOne = async (venueId: string) => {
       const expectedFp = approvedFps.get(venueId);
       if (!expectedFp) {
-        return { ok: false, status: 403, message: `dispatch refused: Gate 2 draft fingerprint is missing for venue '${venueId}'` };
+        return {
+          ok: false as const,
+          status: 403,
+          message: `dispatch refused: Gate 2 draft fingerprint is missing for venue '${venueId}'`,
+        };
       }
-      let renderCheck: Awaited<ReturnType<typeof this.verifyVenueRenderedCopy>>;
       try {
-        renderCheck = await this.verifyVenueRenderedCopy(venueId, expectedFp, batchParams);
+        return await this.verifyVenueRenderedCopy(venueId, expectedFp, batchParams);
       } catch (e) {
-        return { ok: false, status: 500, message: `dispatch refused: error during draft fingerprint verification: ${(e as Error).message}` };
+        return {
+          ok: false as const,
+          status: 500,
+          message: `dispatch refused: error during draft fingerprint verification: ${(e as Error).message}`,
+        };
       }
-      if (!renderCheck.ok) {
-        return renderCheck;
-      }
-      if (renderCheck.verified) {
-        verifiedMap.set(venueId, renderCheck.verified);
+    };
+    for (let start = 0; start < unsentIds.length; start += DISPATCH_VERIFY_CONCURRENCY) {
+      const group = unsentIds.slice(start, start + DISPATCH_VERIFY_CONCURRENCY);
+      // eslint-disable-next-line no-await-in-loop
+      const checks = await Promise.all(group.map(verifyOne));
+      for (const [i, unsentId] of group.entries()) {
+        const check = checks[i];
+        if (!check.ok) {
+          return check;
+        }
+        if (check.verified) {
+          verifiedMap.set(unsentId, check.verified);
+        }
       }
     }
     return { ok: true, verifiedMap };
@@ -1751,7 +1776,7 @@ class OutreachController extends Controller {
 
     for (const venueId of unsentIds) {
       const elapsed = this.nowFn() - startTime;
-      if (elapsed >= OutreachController.BATCH_DISPATCH_TIME_LIMIT_MS) {
+      if (elapsed >= OutreachController.BATCH_DISPATCH_TIME_LIMIT_MS && (result.sent > 0 || result.skipped.length > 0)) {
         break;
       }
 
