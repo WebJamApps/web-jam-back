@@ -45,7 +45,7 @@ const { Schema } = mongoose;
 // can replace it; marker dropped into bodyHtml as the customBody insertion point.
 const templateSchema = new Schema({
   type: { type: String, required: true, enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar', 'OnlineForm'] },
-  stage: { type: String, enum: ['cold', 'returning'], default: 'cold' },
+  stage: { type: String, enum: ['cold', 'returning', 'upcoming'], default: 'cold' },
   subject: String,
   introHtml: String,
   bodyHtml: String,
@@ -122,7 +122,7 @@ const User = mongoose.models.User || mongoose.model('User', userSchema);
 const Outreach = mongoose.models.Outreach || mongoose.model('Outreach', outreachSchema);
 const OutreachConfig = mongoose.models.OutreachConfig || mongoose.model('OutreachConfig', configSchema);
 
-// ── Seed data: 6 Templates (3 venueTypes × 2 stages) ────────────────────────
+// ── Seed data: 9 Templates (3 venueTypes × 3 stages) ────────────────────────
 //
 // #903 template migration: each template's intro (greeting + opening line)
 // is split out into `introHtml`, and `bodyHtml` now opens with a
@@ -238,6 +238,25 @@ const templates = [
     ].join(''),
     footerPhotoRef: 'footer-josh-maria', active: true, lastModifiedBy: 'seed-outreach',
   },
+  // #1127 — `upcoming` stage: a first gig is booked in the future and there is
+  // no past gig, so the copy must not claim a prior show. The sign-off is the
+  // one each type's `returning` template uses.
+  ...['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'].map((type) => ({
+    type, stage: 'upcoming',
+    subject: 'Looking forward to [Next Gig Date] at [Venue Name] — Josh & Maria',
+    introHtml: [
+      '<p>Hi [Contact Name],</p>',
+      '<p>Looking forward to our show at [Venue Name] on [Next Gig Date]!',
+      ' While we\'re putting together our [Booking Period] calendar,',
+      ' we wanted to check if [Target Dates] might work for a follow-up show.</p>',
+    ].join(''),
+    bodyHtml: [
+      '[Custom Body]',
+      '<p>Best,<br>Josh &amp; Maria<br>540-494-8035<br>',
+      '<a href="https://www.joshandmariamusic.com">joshandmariamusic.com</a></p>',
+    ].join(''),
+    footerPhotoRef: 'footer-josh-maria', active: true, lastModifiedBy: 'seed-outreach',
+  })),
 ];
 
 // ── Seed data: 22 Venues ────────────────────────────────────────────────────
@@ -509,7 +528,7 @@ async function run() {
   await mongoose.connect(uri);
   console.log(`Connected to "${mongoose.connection.name}" (${uri})\n`);
 
-  // 1. Templates — 6 total (3 venueTypes × cold/returning)
+  // 1. Templates — 9 total (3 venueTypes × cold/returning/upcoming)
   let tUpserted = 0;
   for (const t of templates) {
     await upsertTemplate(t); // eslint-disable-line no-await-in-loop
@@ -582,7 +601,7 @@ async function run() {
 
   console.log(`
 Seed complete:
-  ${tUpserted} templates  (3 venueTypes × cold/returning)
+  ${tUpserted} templates  (3 venueTypes × cold/returning/upcoming)
   ${vUpserted} venues     (outreachEligible + varied types/stages)
   ${uUpserted} test user(s) (privileged E2E / local admin user)
   1 OutreachConfig (autoApprove: false)

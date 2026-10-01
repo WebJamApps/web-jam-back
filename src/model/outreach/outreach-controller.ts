@@ -84,7 +84,7 @@ type AuthIdRequest = Request<{ id: string }> & { user?: string };
 // could be loaded at all), never left undefined for a batch-originated error.
 type AuthzError = { status: number; message: string; outreach?: unknown; venueName?: string };
 type AuthzResult = AuthzError | null;
-interface PitchContext { error?: AuthzError; venue?: VenueDoc; template?: TemplateDoc; type?: string }
+interface PitchContext { error?: AuthzError; venue?: VenueDoc; template?: TemplateDoc; type?: string; nextGigDate?: string }
 interface ResolveOpts { skipDedup?: boolean; requireEligible?: boolean }
 type SendResult = { ok: true; record: unknown } | { ok: false; status: number; message: string };
 
@@ -125,6 +125,9 @@ interface SendBody {
   //     of the body is unchanged. Absent => the marker renders to nothing.
   customIntro?: string;
   customBody?: string;
+  // Server-set only (never read from a request): the formatted date of the
+  // venue's earliest linked upcoming gig, for the [Next Gig Date] token.
+  nextGigDate?: string;
 }
 
 // #844 — batch target-list approval. The approval gate is the TARGET SELECTION
@@ -154,7 +157,7 @@ interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
 interface VenueDoc {
   _id?: unknown; name?: string; email?: string; secondaryEmail?: string; contactName?: string; phone?: string;
   venueType?: string; status?: string; outreachEligible?: boolean;
-  bookingStatus?: string; templateOverride?: string;
+  bookingStatus?: string; templateOverride?: string; nextGig?: { datetime?: Date | string } | null;
 }
 // introHtml (#903) is the template's addressable intro (greeting + opening
 // line), split out from bodyHtml so customIntro can replace it independently.
@@ -533,7 +536,21 @@ function personalize(text: string, venue: VenueDoc, body: SendBody): string {
     .split('[Contact Name]').join(contact)
     .split('[Venue Name]').join(venue.name || 'your venue')
     .split('[Booking Period]').join(body.bookingPeriod || 'upcoming')
-    .split('[Target Dates]').join(body.targetDates || 'flexible dates');
+    .split('[Target Dates]').join(body.targetDates || 'flexible dates')
+    .split('[Next Gig Date]').join(body.nextGigDate || 'our upcoming show');
+}
+
+// Format a gig datetime like "Saturday, October 17" (America/New_York).
+export function formatNextGigDate(datetime: Date | string): string {
+  return new Date(datetime).toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', timeZone: 'America/New_York',
+  });
+}
+
+// Per-send body: the server-resolved next-gig date always overrides whatever
+// the request carried (undefined clears it), so a caller cannot inject it.
+function withNextGig(body: SendBody, nextGigDate?: string): SendBody {
+  return { ...body, nextGigDate };
 }
 
 export class MissingFooterError extends Error {
@@ -883,34 +900,45 @@ function hasAttachedPastGig(venueRecord: Record<string, unknown>): boolean {
   return Boolean(reason?.lastGigDate && reason.lastGigDate !== 'never');
 }
 
-async function queryLinkedPastGig(venue: VenueDoc): Promise<boolean> {
-  try {
-    const now = new Date();
-    const venueId = String(venue._id);
-    const pastGig = await gigModel.findOne({
-      ...JOSH_GIGS_FILTER,
-      venueId,
-      datetime: { $lt: now },
-    });
-    if (pastGig) return true;
+// Shared by the past and upcoming lookups: the nearest linked gig on one side of
+// now, matched by venueId or, failing that, by name (venueId: null gigs grouped
+// by groupGigsByVenue). A throwing query counts as "no gig found" (fails closed).
+type RelationshipStage = 'cold' | 'returning' | 'upcoming';
+type LinkedGig = { datetime?: Date | string };
+const gigTime = (g: LinkedGig): number => new Date(g.datetime as string).getTime();
+const queryLinkableGigs = async (filter: Record<string, unknown>): Promise<LinkableGig[]> => {
+  const gigs = await gigModel.find({ ...JOSH_GIGS_FILTER, ...filter }) as unknown as LinkableGig[];
+  return Array.isArray(gigs) ? gigs : [];
+};
 
-    if (venue.name) {
-      const pastGigs = (await gigModel.find({
-        ...JOSH_GIGS_FILTER,
-        venueId: null,
-        datetime: { $lt: now },
-      })) as unknown as LinkableGig[];
-      if (Array.isArray(pastGigs) && pastGigs.length > 0) {
-        const groups = groupGigsByVenue(pastGigs, [venue as unknown as LinkableVenue]);
-        const linked = groups.get(venueId);
-        if (linked && linked.length > 0) return true;
-      }
-    }
+async function findLinkedGig(venue: VenueDoc, when: 'past' | 'upcoming'): Promise<LinkedGig | null> {
+  const datetime = { [when === 'past' ? '$lt' : '$gte']: new Date() };
+  const dir = when === 'past' ? -1 : 1;
+  const nearest = (gigs: LinkedGig[]): LinkedGig | null => (
+    gigs.length > 0 ? [...gigs].sort((x, y) => dir * (gigTime(x) - gigTime(y)))[0] : null
+  );
+  try {
+    const venueId = String(venue._id);
+    const byId = nearest(await queryLinkableGigs({ venueId, datetime }));
+    if (byId || !venue.name) return byId;
+    const unlinked = await queryLinkableGigs({ venueId: null, datetime });
+    if (unlinked.length === 0) return null;
+    return nearest(groupGigsByVenue(unlinked, [venue as unknown as LinkableVenue]).get(venueId) || []);
   } catch {
-    // Indeterminate / lookup failure: fail closed to false rather than hallucinating prior performances
-    return false;
+    // Indeterminate / lookup failure: fail closed rather than hallucinating gigs
+    return null;
   }
-  return false;
+}
+
+async function queryLinkedPastGig(venue: VenueDoc): Promise<boolean> {
+  return Boolean(await findLinkedGig(venue, 'past'));
+}
+
+// Datetime of the venue's earliest linked upcoming gig (attached nextGig, else
+// venueId match, else name match), or undefined when none is found.
+export async function findNextGigDatetime(venue: VenueDoc): Promise<Date | string | undefined> {
+  if (venue.nextGig?.datetime) return venue.nextGig.datetime;
+  return (await findLinkedGig(venue, 'upcoming'))?.datetime || undefined;
 }
 
 export async function hasLinkedPastGig(venue: VenueDoc): Promise<boolean> {
@@ -1288,26 +1316,31 @@ class OutreachController extends Controller {
     return res.status(200).json(doc);
   }
 
-  // Resolve a venue's relationship stage (#848, #1059, #1116). Always derived from gig
-  // history — the hand-pinned `venue.relationshipStage` override was retired
-  // with the field itself (#1059), so a venue that was pinned by hand now
-  // follows its actual history instead. A currently-booked venue (bookingStatus: 'booked'),
-  // or one with a linked past gig, is `returning`; everything else is `cold` (#1116).
-  // Prior outreach with status: 'replied' does NOT make a venue returning.
-  async resolveStage(venue: VenueDoc): Promise<'cold' | 'returning'> {
-    if (venue.bookingStatus === 'booked') return 'returning';
-    return (await hasLinkedPastGig(venue)) ? 'returning' : 'cold';
+  // Resolve a venue's relationship stage (#848, #1059, #1116, #1127). Always derived
+  // from linked-gig data only — never from bookingStatus (a stale stored field),
+  // the retired relationshipStage pin, or prior outreach status. A venue with a
+  // linked past gig is `returning` (even with a future gig too); otherwise one
+  // with a linked upcoming gig is `upcoming`; everything else is `cold`.
+  async resolveStageInfo(venue: VenueDoc): Promise<{ stage: RelationshipStage; nextGigDate?: string }> { // eslint-disable-line class-methods-use-this
+    const next = await findNextGigDatetime(venue);
+    const nextGigDate = next ? formatNextGigDate(next) : undefined;
+    if (await hasLinkedPastGig(venue)) return { stage: 'returning', nextGigDate };
+    return { stage: nextGigDate ? 'upcoming' : 'cold', nextGigDate };
+  }
+
+  async resolveStage(venue: VenueDoc): Promise<RelationshipStage> {
+    return (await this.resolveStageInfo(venue)).stage;
   }
 
   // Pick the active template for a type + stage (#848). Cold also matches legacy
-  // templates with no stage set. A `returning` request with no returning variant
-  // yet falls back to the cold template, so sends never break before the
-  // returning copy is authored.
-  async findTemplate(type: string, stage: 'cold' | 'returning'): Promise<TemplateDoc | null> { // eslint-disable-line class-methods-use-this
+  // templates with no stage set. A `returning` or `upcoming` request with no
+  // variant of that stage yet falls back to the cold template, so sends never
+  // break before the copy is authored.
+  async findTemplate(type: string, stage: RelationshipStage): Promise<TemplateDoc | null> { // eslint-disable-line class-methods-use-this
     const coldMatch = { type, active: true, $or: [{ stage: 'cold' }, { stage: { $exists: false } }, { stage: null }] };
-    if (stage === 'returning') {
-      const returning = await templateModel.findOne({ type, active: true, stage: 'returning' }) as unknown as TemplateDoc | null;
-      if (returning) return formatTemplate(returning as unknown as Record<string, unknown>) as unknown as TemplateDoc;
+    if (stage === 'returning' || stage === 'upcoming') {
+      const staged = await templateModel.findOne({ type, active: true, stage }) as unknown as TemplateDoc | null;
+      if (staged) return formatTemplate(staged as unknown as Record<string, unknown>) as unknown as TemplateDoc;
     }
     const cold = await templateModel.findOne(coldMatch) as unknown as TemplateDoc | null;
     return cold ? (formatTemplate(cold as unknown as Record<string, unknown>) as unknown as TemplateDoc) : null;
@@ -1398,15 +1431,19 @@ class OutreachController extends Controller {
     const type = (body.templateType || venue.templateOverride || venue.venueType || '').trim() || DEFAULT_TEMPLATE_TYPE;
 
     let template: TemplateDoc | null;
+    let nextGigDate: string | undefined;
     try {
-      const stage = await this.resolveStage(venue);
-      template = await this.findTemplate(type, stage);
+      const info = await this.resolveStageInfo(venue);
+      nextGigDate = info.nextGigDate;
+      template = await this.findTemplate(type, info.stage);
     } catch (e) {
       return { error: { status: 500, message: (e as Error).message, venueName } };
     }
     if (!template) return { error: { status: 400, message: `no active template for type ${type}`, venueName } };
 
-    return { venue, template, type };
+    return {
+      venue, template, type, nextGigDate,
+    };
   }
 
   // The single place an email actually leaves: render + send + write the outreach
@@ -1489,7 +1526,7 @@ class OutreachController extends Controller {
     const ctx = await this.resolvePitch(body);
     if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message, outreach: ctx.error.outreach });
     const { venue, template, type } = ctx as Required<PitchContext>;
-    const result = await this.performSend(venue, template, type, body, resolveActor(req, body));
+    const result = await this.performSend(venue, template, type, withNextGig(body, ctx.nextGigDate), resolveActor(req, body));
     if (!result.ok) return res.status(result.status).json({ message: result.message });
     return res.status(201).json(result.record);
   }
@@ -1505,6 +1542,7 @@ class OutreachController extends Controller {
         venue: VenueDoc;
         template: TemplateDoc;
         type: string;
+        nextGigDate?: string;
         preRendered?: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] };
       }
     | { ok: false; venueName: string; reason: string }
@@ -1522,11 +1560,12 @@ class OutreachController extends Controller {
       return { ok: false, venueName: ctx.error.venueName || UNKNOWN_VENUE_NAME, reason: ctx.error.message };
     }
     const { venue, template, type } = ctx as Required<PitchContext>;
+    const { nextGigDate } = ctx;
     // Verified bytes win: the copy Gate 2 approved is the copy that is mailed.
     // Only the RENDERING is reused — the send/record state comes from this
     // fresh, fully-guarded resolve.
     return {
-      ok: true, venue, template, type, preRendered: verifiedMap?.get(venueId)?.rendered,
+      ok: true, venue, template, type, nextGigDate, preRendered: verifiedMap?.get(venueId)?.rendered,
     };
   }
 
@@ -1552,7 +1591,7 @@ class OutreachController extends Controller {
       if (ctx.error) continue; // the send loop reports it as skipped
       const { venue, template } = ctx as Required<PitchContext>;
       try {
-        buildPitchEmail(venue, template, sendBody);
+        buildPitchEmail(venue, template, withNextGig(sendBody, ctx.nextGigDate));
       } catch (e) {
         if (!(e instanceof MissingFooterError)) throw e;
         footerErrors.push(e.message);
@@ -1586,7 +1625,7 @@ class OutreachController extends Controller {
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const r = await this.performSend(item.venue, item.template, item.type, sendBody, actor, item.preRendered);
+      const r = await this.performSend(item.venue, item.template, item.type, withNextGig(sendBody, item.nextGigDate), actor, item.preRendered);
       if (!r.ok) {
         result.skipped.push({ venueId, venueName: item.venue.name || UNKNOWN_VENUE_NAME, reason: r.message });
         continue;
@@ -1726,7 +1765,7 @@ class OutreachController extends Controller {
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const r = await this.performSend(item.venue, item.template, item.type, sendBody, actor, item.preRendered);
+      const r = await this.performSend(item.venue, item.template, item.type, withNextGig(sendBody, item.nextGigDate), actor, item.preRendered);
       if (!r.ok) {
         result.skipped.push({ venueId, venueName: item.venue.name || UNKNOWN_VENUE_NAME, reason: r.message });
         result.newlyAttempted.push(venueId);
@@ -2181,9 +2220,10 @@ class OutreachController extends Controller {
     venue: VenueDoc,
     template: TemplateDoc,
     q: { targetDates?: string; bookingPeriod?: string; customIntro?: string; customBody?: string },
+    nextGigDate?: string,
   ): { subject: string; html: string } {
     return buildPitchEmail(venue, template, {
-      targetDates: q.targetDates, bookingPeriod: q.bookingPeriod, customIntro: q.customIntro, customBody: q.customBody,
+      targetDates: q.targetDates, bookingPeriod: q.bookingPeriod, customIntro: q.customIntro, customBody: q.customBody, nextGigDate,
     } as SendBody);
   }
 
@@ -2203,7 +2243,7 @@ class OutreachController extends Controller {
       if (ctx.error) continue; // skip unresolvable venues
       const { venue, template } = ctx as Required<PitchContext>;
       try {
-        const { subject, html } = this.renderPreviewPitch(venue, template, q);
+        const { subject, html } = this.renderPreviewPitch(venue, template, q, ctx.nextGigDate);
         results.push({ venueId, venueName: venue.name || '', subject, body: html });
       } catch (e) {
         if (!(e instanceof MissingFooterError)) throw e;
@@ -2253,7 +2293,7 @@ class OutreachController extends Controller {
     if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message });
     const { venue, template } = ctx as Required<PitchContext>;
     try {
-      const { subject, html } = this.renderPreviewPitch(venue, template, q);
+      const { subject, html } = this.renderPreviewPitch(venue, template, q, ctx.nextGigDate);
       return res.status(200).json({ to: venue.email, cc: PITCH_CC, subject, html });
     } catch (e) {
       if (!(e instanceof MissingFooterError)) throw e;
@@ -2880,7 +2920,7 @@ class OutreachController extends Controller {
     const { venue, template, type } = ctx as Required<PitchContext>;
     let rendered: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] };
     try {
-      rendered = buildPitchEmail(venue, template, sendBody as SendBody);
+      rendered = buildPitchEmail(venue, template, withNextGig(sendBody as SendBody, ctx.nextGigDate));
     } catch (e) {
       // Only a missing footer is a refusal; any other render error propagates to
       // verifyBatchRenderings' indeterminate (500, fails closed) branch.

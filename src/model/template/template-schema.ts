@@ -34,7 +34,7 @@ const templateSchema = new Schema({
   stage: {
     type: String,
     required: false,
-    enum: ['cold', 'returning'],
+    enum: ['cold', 'returning', 'upcoming'],
     default: 'cold',
   },
   subject: { type: String, required: false, trim: true },
