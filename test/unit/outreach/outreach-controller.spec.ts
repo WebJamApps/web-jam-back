@@ -667,6 +667,28 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(await findNextGigDatetime(v)).toEqual(earliest);
       });
 
+      it('resolveStage: the past lookup stops at an id-linked past gig and never queries unlinked gigs (#1130)', async () => {
+        const v = validVenue({ name: 'Olde Salem Brewing' });
+        const find = gigsFor([{ venueId: String(v._id), datetime: new Date('2025-01-01T00:00:00.000Z') }]);
+        (gigModel as any).find = find;
+        expect(await c.resolveStage(v)).toBe('returning');
+        const pastCalls = find.mock.calls.filter(([f]: any[]) => f.datetime.$lt);
+        expect(pastCalls).toHaveLength(1);
+        expect(pastCalls[0][0].venueId).toBe(String(v._id));
+        expect(pastCalls.some(([f]: any[]) => f.venueId === null)).toBe(false);
+      });
+
+      it('resolveStage: an id-linked past gig still resolves to returning when the unlinked query would throw (#1130)', async () => {
+        const v = validVenue({ name: 'Olde Salem Brewing' });
+        (gigModel as any).find = vi.fn((filter: any) => {
+          if (filter.venueId === null) return Promise.reject(new Error('unlinked query failed'));
+          return Promise.resolve(filter.datetime.$lt
+            ? [{ venueId: String(v._id), datetime: new Date('2025-01-01T00:00:00.000Z') }]
+            : []);
+        });
+        expect(await c.resolveStage(v)).toBe('returning');
+      });
+
       it('resolveStage: a future gig matched by name is upcoming', async () => {
         const v = validVenue({ name: 'Olde Salem Brewing' });
         (gigModel as any).find = gigsFor([

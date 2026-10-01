@@ -904,8 +904,10 @@ function hasAttachedPastGig(venueRecord: Record<string, unknown>): boolean {
 }
 
 // Shared by the past and upcoming lookups: the nearest linked gig on one side of
-// now, considering id-linked and name-matched gigs together (venueId: null gigs
-// grouped by groupGigsByVenue). A venue with no name matches by venueId only.
+// now. The upcoming lookup considers id-linked and name-matched gigs together
+// (venueId: null gigs grouped by groupGigsByVenue) so the earliest wins. The past
+// lookup stops at an id-linked gig because its result is only used as yes or no.
+// A venue with no name matches by venueId only.
 // A throwing query counts as "no gig found" (fails closed).
 type RelationshipStage = 'cold' | 'returning' | 'upcoming';
 type LinkedGig = { datetime?: Date | string };
@@ -925,7 +927,8 @@ async function findLinkedGig(venue: VenueDoc, when: 'past' | 'upcoming'): Promis
   try {
     const venueId = String(venue._id);
     const byIdGigs = await queryLinkableGigs({ venueId, datetime });
-    if (!venue.name) return nearest(byIdGigs);
+    const byId = nearest(byIdGigs);
+    if (!venue.name || (when === 'past' && byId)) return byId;
     const unlinked = await queryLinkableGigs({ venueId: null, datetime });
     const byNameGigs = unlinked.length > 0
       ? (groupGigsByVenue(unlinked, [venue as unknown as LinkableVenue]).get(venueId) || [])
