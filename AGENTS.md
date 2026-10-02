@@ -29,7 +29,7 @@ rules and do not reconstruct them from memory or from this file.
 - **Sliding Window Quota Preservation:** Google Antigravity (`agy`) tracks model token usage on a rolling 5-hour sliding window. To preserve quota and avoid 3+ hour lockouts during heavy or multi-repo tasks:
   - Keep command outputs compact: avoid printing thousands of lines of raw test logs directly into main turn outputs.
   - Redirect large multi-line summaries, test plans, and evidence to scratch files (`--summary-file`, `--test-plan-file`, `--test-evidence-file`) when calling `create-draft-pr.sh`.
-  - **Automatic Flash Med Subagent Handoff on "Go":** Once requirements and implementation steps are aligned interactively on `Flash High`, automatically delegate contained execution work (coding, running test suites, branch/PR creation) down to a `Flash Med` subagent without waiting for Josh to explicitly request delegation.
+  - **Automatic Flash High Subagent Handoff on "Go":** After Josh says go, an agy session on Flash High does the work itself or hands it to a subagent at the same level.
 
 ## Routes & Verbs
 - **Venue Updates (`/venue/:id`)**: `PATCH /venue/:id` is the partial-merge update verb (routing to `controller.updateVenue`). Address updates enforce immutability once set (`400: address cannot be removed`).
