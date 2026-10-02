@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import Controller from '#src/lib/controller.js';
 import { Icontroller } from '#src/lib/routeUtils.js';
 import { sendMail } from '#src/lib/mailer.js';
+import { mustStopDispatch } from '#src/lib/mail-failure.js';
 import { EMAIL_RE, isValidEmail } from '#src/lib/email.js';
 import { createCallTaskEvent } from '#src/lib/calendar.js';
 import { findReplies } from '#src/lib/imap-replies.js';
@@ -89,7 +90,9 @@ type AuthzError = { status: number; message: string; outreach?: unknown; venueNa
 type AuthzResult = AuthzError | null;
 interface PitchContext { error?: AuthzError; venue?: VenueDoc; template?: TemplateDoc; type?: string; nextGigDate?: string }
 interface ResolveOpts { skipDedup?: boolean; requireEligible?: boolean }
-type SendResult = { ok: true; record: unknown } | { ok: false; status: number; message: string };
+// `stop` is set only when sendMail threw and the failure is the mail account or connection
+// (mustStopDispatch), so a dispatch loop stops instead of skipping every remaining venue.
+type SendResult = { ok: true; record: unknown } | { ok: false; status: number; message: string; stop?: boolean };
 
 // #923 — the canonical target-weekend identity a pitch is sent against. Raw
 // wire shape (strings from JSON); parseTargetWeekend below validates + turns
@@ -1486,7 +1489,9 @@ class OutreachController extends Controller {
       sent = await sendMail({
         to: venue.email || '', cc: resolveCc(venue, body.cc || PITCH_CC), subject, html, attachments,
       });
-    } catch (e) { return { ok: false, status: 502, message: `email send failed: ${(e as Error).message}` }; }
+    } catch (e) {
+      return { ok: false, status: 502, message: `email send failed: ${(e as Error).message}`, stop: mustStopDispatch(e) };
+    }
 
     const sentAt = new Date();
     const fields = {
@@ -1766,12 +1771,14 @@ class OutreachController extends Controller {
     skipped: { venueId: string; venueName: string; reason: string }[];
     records: unknown[];
     newlyAttempted: string[];
+    stopped?: { venueId: string; venueName: string; reason: string };
   }> {
     const result = {
       sent: 0,
       skipped: [] as { venueId: string; venueName: string; reason: string }[],
       records: [] as unknown[],
       newlyAttempted: [] as string[],
+      stopped: undefined as { venueId: string; venueName: string; reason: string } | undefined,
     };
 
     for (const venueId of unsentIds) {
@@ -1795,6 +1802,12 @@ class OutreachController extends Controller {
 
       // eslint-disable-next-line no-await-in-loop
       const r = await this.performSend(item.venue, item.template, item.type, withNextGig(sendBody, item.nextGigDate), actor, item.preRendered);
+      if (!r.ok && r.stop) {
+        // The mail account or connection is the problem: leave this venue unattempted and stop,
+        // so the same dispatch can be called again once it clears.
+        result.stopped = { venueId, venueName: item.venue.name || UNKNOWN_VENUE_NAME, reason: r.message };
+        break;
+      }
       if (!r.ok) {
         result.skipped.push({ venueId, venueName: item.venue.name || UNKNOWN_VENUE_NAME, reason: r.message });
         result.newlyAttempted.push(venueId);
@@ -1936,6 +1949,16 @@ class OutreachController extends Controller {
       startTime,
     );
 
+    if (result.stopped && result.sent === 0 && result.skipped.length === 0) {
+      // The failing venue was the first one this call handled: no progress, so report it as an error.
+      const unsentNames = await getUnsentVenueNames(unsentIds);
+      return res.status(502).json({
+        message: `dispatch paused: ${result.stopped.venueName}: ${result.stopped.reason}. ${unsentIds.length} venue(s) remain unsent; `
+          + 'check Gmail Sent for that venue before calling this dispatch again',
+        unsentVenues: unsentNames,
+      });
+    }
+
     const updatedAttemptedSet = new Set([...attemptedSet, ...result.newlyAttempted]);
     const remaining = storedVenueIds.filter((id) => !updatedAttemptedSet.has(id) && !pitched.has(id)).length;
     if (remaining === 0) {
@@ -1950,6 +1973,7 @@ class OutreachController extends Controller {
       skipped: result.skipped,
       records: result.records,
       remaining,
+      ...(result.stopped ? { stopped: result.stopped } : {}),
     });
   }
 

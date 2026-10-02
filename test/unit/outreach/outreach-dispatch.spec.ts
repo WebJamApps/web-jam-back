@@ -1287,6 +1287,125 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
       });
     });
   });
+  describe('POST /outreach/batch with dispatchId — stop on a mail account or connection failure (web-jam-back#1136)', () => {
+    const EAUTH = { code: 'EAUTH', responseCode: 454 };
+
+    // Three approved, unsent venues; the dispatch model records attempts like the real one.
+    const setupThree = () => {
+      asApprover();
+      const ids = [oid(), oid(), oid()];
+      const names = ['Venue One', 'Venue Two', 'Venue Three'];
+      const venues = ids.map((id, i) => validVenue({ _id: id, name: names[i] }));
+      (venueModel as any).findById = vi.fn((id: string) => Promise.resolve(venues.find((v) => v._id === id) || null));
+      (venueModel as any).find = vi.fn(() => Promise.resolve(venues));
+      const g1Id = oid();
+      const g2Id = oid();
+      const tDate = new Date('2026-10-01T12:00:00Z');
+      const dispatchDoc: any = {
+        dispatchId: 'disp-stop',
+        batchId: 'batch-1',
+        weekend: WEEKEND_STR,
+        targetWeekend: VALID_WEEKEND,
+        targetDates: 'Oct 16-18',
+        templateType: 'Originals',
+        venueIds: ids,
+        attemptedVenueIds: [],
+        venueApprovalId: g1Id,
+        draftApprovalId: g2Id,
+        venueApprovalUpdatedAt: tDate,
+        draftApprovalUpdatedAt: tDate,
+        status: 'pending',
+      };
+      (outreachDispatchModel as any).findOne = vi.fn(() => Promise.resolve(dispatchDoc));
+      (outreachDispatchModel as any).findOneAndUpdate = vi.fn((_q: any, update: any) => {
+        if (update.$addToSet?.attemptedVenueIds) dispatchDoc.attemptedVenueIds.push(update.$addToSet.attemptedVenueIds);
+        if (update.$set?.status) dispatchDoc.status = update.$set.status;
+        return Promise.resolve(dispatchDoc);
+      });
+      (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({ _id: g1Id, venueIds: ids, updated_at: tDate }));
+      (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+        _id: g2Id,
+        draftFingerprints: names.map((n, i) => ({
+          venueId: ids[i],
+          fingerprint: computeDraftFingerprint({
+            subject: `Inquiry: ${n}`,
+            body: wrapDarkEmail(`<p>Hi Pat, booking for Oct 16-18.</p>${FOOTER_HTML}`),
+          }),
+        })),
+        updated_at: tDate,
+      }));
+      return { ids, dispatchDoc };
+    };
+
+    const callBatch = () => c.sendBatch({ user: oid(), body: { dispatchId: 'disp-stop' } }, resStub);
+
+    it('returns 502 "dispatch paused" and marks nothing attempted when the first venue hits a login failure', async () => {
+      const { ids, dispatchDoc } = setupThree();
+      sendMail.mockRejectedValueOnce(EAUTH as never);
+      await callBatch();
+      expect(status).toBe(502);
+      expect(payload.message.startsWith('dispatch paused:')).toBe(true);
+      expect(payload.message).toContain('Venue One');
+      expect(payload.message).toContain('3 venue(s) remain');
+      expect(payload.unsentVenues).toEqual(['Venue One', 'Venue Two', 'Venue Three']);
+      expect(sendMail).toHaveBeenCalledTimes(1);
+      for (const id of ids) expect(dispatchDoc.attemptedVenueIds).not.toContain(id);
+      expect(dispatchDoc.status).not.toBe('aborted');
+      expect(dispatchDoc.status).not.toBe('completed');
+    });
+
+    it('returns 200 with stopped when a later venue hits a login failure, leaving it and the rest unattempted', async () => {
+      const { ids, dispatchDoc } = setupThree();
+      sendMail.mockResolvedValueOnce({ messageId: 'mid-1' }).mockRejectedValueOnce(EAUTH as never);
+      await callBatch();
+      expect(status).toBe(200);
+      expect(payload.sent).toBe(1);
+      expect(payload.remaining).toBe(2);
+      expect(payload.skipped).toEqual([]);
+      expect(payload.stopped.venueId).toBe(ids[1]);
+      expect(payload.stopped.venueName).toBe('Venue Two');
+      expect(payload.stopped.reason).toContain('email send failed');
+      expect(sendMail).toHaveBeenCalledTimes(2);
+      expect(dispatchDoc.attemptedVenueIds).toEqual([ids[0]]);
+      expect(dispatchDoc.status).toBe('in_progress');
+    });
+
+    it('still skips and marks attempted a venue-specific failure (EENVELOPE 550) and sends the rest, with no stopped field', async () => {
+      const { ids, dispatchDoc } = setupThree();
+      sendMail.mockRejectedValueOnce({ code: 'EENVELOPE', responseCode: 550 } as never);
+      await callBatch();
+      expect(status).toBe(200);
+      expect(payload.sent).toBe(2);
+      expect(payload.skipped).toHaveLength(1);
+      expect(payload.skipped[0].venueId).toBe(ids[0]);
+      expect(payload.stopped).toBeUndefined();
+      expect(dispatchDoc.attemptedVenueIds).toEqual(ids);
+    });
+
+    it('fails closed: a plain Error from sendMail returns 502 and marks nothing attempted', async () => {
+      const { dispatchDoc } = setupThree();
+      sendMail.mockRejectedValueOnce(new Error('boom'));
+      await callBatch();
+      expect(status).toBe(502);
+      expect(dispatchDoc.attemptedVenueIds).toEqual([]);
+    });
+
+    it('still skips and marks attempted a venue whose email was sent but whose record could not be written, and continues', async () => {
+      const { ids, dispatchDoc } = setupThree();
+      c.model.create = vi.fn()
+        .mockRejectedValueOnce(new Error('db down'))
+        .mockImplementation((doc: any) => Promise.resolve({ _id: oid(), ...doc }));
+      await callBatch();
+      expect(status).toBe(200);
+      expect(payload.sent).toBe(2);
+      expect(payload.skipped).toHaveLength(1);
+      expect(payload.skipped[0].venueId).toBe(ids[0]);
+      expect(payload.skipped[0].reason).toBe('db down');
+      expect(payload.stopped).toBeUndefined();
+      expect(dispatchDoc.attemptedVenueIds).toEqual(ids);
+    });
+  });
+
 
   describe('POST /outreach/batch with dispatchId — ended dispatches and record-only parameters', () => {
     const setupTwoVenueDispatch = (over: Record<string, unknown> = {}) => {
