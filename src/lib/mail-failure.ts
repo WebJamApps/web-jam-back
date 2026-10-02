@@ -4,7 +4,7 @@
 // Nodemailer puts on its errors: a string `code` and, when the server replied,
 // a numeric `responseCode`.
 const ACCOUNT_OR_CONNECTION_CODES = new Set([
-  'EAUTH', 'ENOAUTH', 'EOAUTH2', 'ECONNECTION', 'EDNS', 'ETLS', 'ETIMEDOUT', 'ESOCKET',
+  'EAUTH', 'ENOAUTH', 'EOAUTH2', 'ECONNECTION', 'EDNS', 'ETLS', 'ETIMEDOUT', 'ESOCKET', 'EPROTOCOL',
 ]);
 
 // Returns true when the dispatch must stop. Fails closed: anything that cannot

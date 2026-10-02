@@ -1,7 +1,7 @@
 import { mustStopDispatch } from '#src/lib/mail-failure.js';
 
 describe('mail-failure.ts — mustStopDispatch', () => {
-  it.each(['EAUTH', 'ENOAUTH', 'EOAUTH2', 'ECONNECTION', 'EDNS', 'ETLS', 'ETIMEDOUT', 'ESOCKET'])(
+  it.each(['EAUTH', 'ENOAUTH', 'EOAUTH2', 'ECONNECTION', 'EDNS', 'ETLS', 'ETIMEDOUT', 'ESOCKET', 'EPROTOCOL'])(
     'stops for an account or connection code %s',
     (code) => {
       expect(mustStopDispatch({ code })).toBe(true);

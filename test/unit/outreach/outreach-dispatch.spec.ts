@@ -1290,18 +1290,34 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
   describe('POST /outreach/batch with dispatchId — stop on a mail account or connection failure (web-jam-back#1136)', () => {
     const EAUTH = { code: 'EAUTH', responseCode: 454 };
 
+    interface DispatchDocStub {
+      dispatchId: string;
+      batchId: string;
+      weekend: string;
+      targetWeekend: { start: string; end: string };
+      targetDates: string;
+      templateType: string;
+      venueIds: string[];
+      attemptedVenueIds: string[];
+      venueApprovalId: string;
+      draftApprovalId: string;
+      venueApprovalUpdatedAt: Date;
+      draftApprovalUpdatedAt: Date;
+      status: string;
+    }
+
     // Three approved, unsent venues; the dispatch model records attempts like the real one.
     const setupThree = () => {
       asApprover();
       const ids = [oid(), oid(), oid()];
       const names = ['Venue One', 'Venue Two', 'Venue Three'];
       const venues = ids.map((id, i) => validVenue({ _id: id, name: names[i] }));
-      (venueModel as any).findById = vi.fn((id: string) => Promise.resolve(venues.find((v) => v._id === id) || null));
-      (venueModel as any).find = vi.fn(() => Promise.resolve(venues));
+      (venueModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn((id: string) => Promise.resolve(venues.find((v) => v._id === id) || null));
+      (venueModel as unknown as { find: ReturnType<typeof vi.fn> }).find = vi.fn(() => Promise.resolve(venues));
       const g1Id = oid();
       const g2Id = oid();
       const tDate = new Date('2026-10-01T12:00:00Z');
-      const dispatchDoc: any = {
+      const dispatchDoc: DispatchDocStub = {
         dispatchId: 'disp-stop',
         batchId: 'batch-1',
         weekend: WEEKEND_STR,
@@ -1316,14 +1332,14 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
         draftApprovalUpdatedAt: tDate,
         status: 'pending',
       };
-      (outreachDispatchModel as any).findOne = vi.fn(() => Promise.resolve(dispatchDoc));
-      (outreachDispatchModel as any).findOneAndUpdate = vi.fn((_q: any, update: any) => {
+      (outreachDispatchModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve(dispatchDoc));
+      (outreachDispatchModel as unknown as { findOneAndUpdate: ReturnType<typeof vi.fn> }).findOneAndUpdate = vi.fn((_q: unknown, update: { $addToSet?: { attemptedVenueIds?: string }; $set?: { status?: string } }) => {
         if (update.$addToSet?.attemptedVenueIds) dispatchDoc.attemptedVenueIds.push(update.$addToSet.attemptedVenueIds);
         if (update.$set?.status) dispatchDoc.status = update.$set.status;
         return Promise.resolve(dispatchDoc);
       });
-      (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({ _id: g1Id, venueIds: ids, updated_at: tDate }));
-      (draftApprovalModel as any).findOne = vi.fn(() => Promise.resolve({
+      (venueApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({ _id: g1Id, venueIds: ids, updated_at: tDate }));
+      (draftApprovalModel as unknown as { findOne: ReturnType<typeof vi.fn> }).findOne = vi.fn(() => Promise.resolve({
         _id: g2Id,
         draftFingerprints: names.map((n, i) => ({
           venueId: ids[i],
@@ -1394,7 +1410,7 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
       const { ids, dispatchDoc } = setupThree();
       c.model.create = vi.fn()
         .mockRejectedValueOnce(new Error('db down'))
-        .mockImplementation((doc: any) => Promise.resolve({ _id: oid(), ...doc }));
+        .mockImplementation((doc: Record<string, unknown>) => Promise.resolve({ _id: oid(), ...doc }));
       await callBatch();
       expect(status).toBe(200);
       expect(payload.sent).toBe(2);
@@ -1405,7 +1421,6 @@ describe('Outreach Batch Dispatch — Preflight, Stored State & Time-Limited Sen
       expect(dispatchDoc.attemptedVenueIds).toEqual(ids);
     });
   });
-
 
   describe('POST /outreach/batch with dispatchId — ended dispatches and record-only parameters', () => {
     const setupTwoVenueDispatch = (over: Record<string, unknown> = {}) => {
