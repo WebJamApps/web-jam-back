@@ -8,12 +8,17 @@ const debug = Debug('web-jam-back:mailer');
 
 let transporter: Transporter | null = null;
 
-function getTransporter(): Transporter {
-  /* istanbul ignore else */
+export function getTransporter(): Transporter {
   if (transporter) return transporter;
+  // pool reuses one logged-in connection across sendMail calls (and across the
+  // separate POST /outreach/batch calls of one dispatch) instead of logging in
+  // per message, which Gmail rejects with "454-4.7.0 Too many login attempts".
   transporter = nodemailer.createTransport({
     service: 'gmail',
     secure: true,
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 50,
     auth: {
       user: process.env.GMAIL_USER || /* istanbul ignore next */ '',
       pass: process.env.GMAIL_APP_PASSWORD || /* istanbul ignore next */ '',
