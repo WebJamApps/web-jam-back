@@ -1949,6 +1949,21 @@ class OutreachController extends Controller {
       startTime,
     );
 
+    return this.replyAfterDispatchLoop(res, dispatchId, result, unsentIds, storedVenueIds, attemptedSet, pitched);
+  }
+
+  // Builds the reply for one send call: the 502 for a stop on the call's first venue, otherwise the
+  // 200 with the usual counts (plus `stopped` when the loop stopped later). Completes the dispatch
+  // only when nothing remains; a stopped dispatch keeps its status so it can be called again.
+  private async replyAfterDispatchLoop(
+    res: Response,
+    dispatchId: string,
+    result: Awaited<ReturnType<OutreachController['executeDispatchLoop']>>,
+    unsentIds: string[],
+    storedVenueIds: string[],
+    attemptedSet: Set<string>,
+    pitched: Set<string>,
+  ): Promise<unknown> {
     if (result.stopped && result.sent === 0 && result.skipped.length === 0) {
       // The failing venue was the first one this call handled: no progress, so report it as an error.
       const unsentNames = await getUnsentVenueNames(unsentIds);
