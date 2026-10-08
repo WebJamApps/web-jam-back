@@ -34,6 +34,10 @@ export interface DbExportResult {
 }
 
 export interface BackupManifest {
+  startedAt?: string;
+  finishedAt?: string;
+  trigger?: string;
+  who?: string;
   generatedAt: string;
   databases: Record<string, DbExportResult>;
 }
@@ -125,6 +129,9 @@ export interface RunBackupOptions {
   // this used to also export was retired along with GIGS_MONGO_DB_URI).
   primaryUri?: string;
   connect?: (uri: string) => Promise<OpenDb>;
+  startedAt?: string;
+  trigger?: string;
+  who?: string;
 }
 
 // Exports this app's own database (web-jam-tools#116) into
@@ -134,11 +141,20 @@ export interface RunBackupOptions {
 export async function runFullBackup(outDir: string, opts: RunBackupOptions = {}): Promise<BackupManifest> {
   const connect = opts.connect || defaultConnect;
   const primaryUri = opts.primaryUri ?? process.env.MONGO_DB_URI;
+  const startedAt = opts.startedAt || new Date().toISOString();
 
   const databases: Record<string, DbExportResult> = {};
   databases.webjamsalem = await exportLabeledDb('webjamsalem', primaryUri, path.join(outDir, 'webjamsalem'), connect);
 
-  const manifest: BackupManifest = { generatedAt: new Date().toISOString(), databases };
+  const finishedAt = new Date().toISOString();
+  const manifest: BackupManifest = {
+    startedAt,
+    finishedAt,
+    trigger: opts.trigger || 'backup button',
+    ...(opts.who ? { who: opts.who } : {}),
+    generatedAt: startedAt,
+    databases,
+  };
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   return manifest;
