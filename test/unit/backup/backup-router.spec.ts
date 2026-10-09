@@ -1,9 +1,18 @@
 // Auth-gating test for POST /admin/backup (web-jam-tools#116, web-jam-back#1141).
-// Mocks Dropbox + the Mongo export entirely — this file never touches a real database or the
-// network — and drives the route through the real Express app + real
-// authUtils.ensureAuthenticated.
+// Mocks Dropbox and injects Mongo fixtures — this file never touches a real database or the
+// network. The caller-attribution case runs the real export through the Express route.
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import type { AuthRequest } from '#src/auth/authUtils.js';
+import type { BackupManifest, DbLike, RunBackupOptions } from '#src/lib/backup-export.js';
+import type { DropboxClientLike } from '#src/model/backup/backup-controller.js';
 
-const runFullBackup = vi.fn(() => Promise.resolve({
+vi.mock('#src/lib/utils.js', () => ({
+  default: { mongoConnect: vi.fn(() => Promise.resolve()) },
+}));
+
+const runFullBackup = vi.fn<(outDir: string, opts?: RunBackupOptions) => Promise<BackupManifest>>(() => Promise.resolve({
   generatedAt: new Date().toISOString(),
   databases: { webjamsalem: { ok: true, collections: {} } },
 }));
@@ -19,7 +28,7 @@ const readManifest = vi.fn(() => Promise.resolve({
   generatedAt: new Date().toISOString(),
   databases: { webjamsalem: { ok: true, collections: {} } },
 }));
-const uploadFile = vi.fn(() => Promise.resolve());
+const uploadFile = vi.fn<DropboxClientLike['uploadFile']>(() => Promise.resolve());
 const deletePath = vi.fn(() => Promise.resolve());
 const uploadBackupAndPrune = vi.fn(() => Promise.resolve());
 const BACKUP_ROOT = '/webjam-backups';
@@ -27,7 +36,7 @@ const RETAIN_RUNS = 8;
 const isGoodRun = vi.fn(() => true);
 const parseRunDate = vi.fn(() => null);
 const foldersToPrune = vi.fn(() => []);
-const listFilesRecursive = vi.fn(() => []);
+const listFilesRecursive = vi.fn<(dir: string) => string[]>(() => []);
 
 vi.mock('#src/lib/dropbox.js', () => ({
   dropboxConfigured,
@@ -81,6 +90,62 @@ describe('POST /admin/backup', () => {
 
   afterEach(() => {
     resetActiveBackup();
+  });
+
+  it('uploads a manifest identifying the authenticated caller rather than a body-supplied identity', async () => {
+    const exporter = await vi.importActual<typeof import('#src/lib/backup-export.js')>('#src/lib/backup-export.js');
+    const storage = await vi.importActual<typeof import('#src/lib/dropbox.js')>('#src/lib/dropbox.js');
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'backup-caller-test-'));
+    const originalEnv = { ...process.env };
+    const originalAuthenticate = authUtils.ensureAuthenticated;
+    const callerId = 'authenticated-fixture-user';
+    const db: DbLike = {
+      listCollections: () => ({ toArray: () => Promise.resolve([{ name: 'user' }]) }),
+      collection: () => ({
+        find: () => ({
+          // eslint-disable-next-line @typescript-eslint/require-await
+          [Symbol.asyncIterator]: async function* asyncIterator() {
+            yield { name: 'fixture' };
+          },
+        }),
+      }),
+    };
+    let uploadedManifest: BackupManifest | undefined;
+    try {
+      process.env.BACKUP_OUTPUT_DIR = tempRoot;
+      runFullBackup.mockImplementationOnce((outDir, opts) => exporter.runFullBackup(outDir, {
+        ...opts,
+        primaryUri: 'mongodb://injected-fixture',
+        connect: () => Promise.resolve({ db, close: () => Promise.resolve() }),
+      }));
+      listFilesRecursive.mockImplementation(storage.listFilesRecursive);
+      uploadFile.mockImplementation((_token, dest, contents) => {
+        if (dest.endsWith('/manifest.json')) {
+          uploadedManifest = JSON.parse(contents.toString('utf8')) as BackupManifest;
+        }
+        return Promise.resolve();
+      });
+      authUtils.ensureAuthenticated = vi.fn((req: AuthRequest) => {
+        req.user = callerId;
+        return Promise.resolve();
+      });
+
+      const response = await request(app).post('/admin/backup')
+        .set('Authorization', 'fixture-request')
+        .send({ who: 'spoofed-body-user' });
+      expect(response.status).toBe(202);
+      await vi.waitFor(() => expect(isBackupActive()).toBe(false));
+      expect(runFullBackup).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ who: callerId }));
+      expect(uploadedManifest).toMatchObject({
+        trigger: 'backup button',
+        who: callerId,
+        databases: { webjamsalem: { ok: true, collections: { user: 1 } } },
+      });
+    } finally {
+      authUtils.ensureAuthenticated = originalAuthenticate;
+      process.env = originalEnv;
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('rejects a request with no Authorization header (401), and never starts an export', async () => {

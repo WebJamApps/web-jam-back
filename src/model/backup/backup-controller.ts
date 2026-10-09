@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
@@ -6,6 +6,7 @@ import Debug from 'debug';
 import { runFullBackup, type BackupManifest, type RunBackupOptions, type DbLike } from '#src/lib/backup-export.js';
 import dropbox, { BACKUP_ROOT, RETAIN_RUNS, type RunFolderEntry } from '#src/lib/dropbox.js';
 import type { Icontroller } from '#src/lib/routeUtils.js';
+import type { AuthRequest } from '#src/auth/authUtils.js';
 
 // POST /admin/backup — Mongo backup (web-jam-tools#116, web-jam-back#1141).
 // Exports every collection of this app's own database as EJSON
@@ -222,7 +223,7 @@ export async function performBackup(opts: PerformBackupOptions = {}): Promise<Ba
 
 class BackupController {
   // eslint-disable-next-line class-methods-use-this
-  async runBackup(_req: Request, res: Response): Promise<unknown> {
+  async runBackup(req: AuthRequest, res: Response): Promise<unknown> {
     if (!dropbox.dropboxConfigured()) {
       debug('Dropbox backup settings absent — refusing HTTP backup request');
       return res.status(500).json({ message: 'Dropbox backup settings absent' });
@@ -231,7 +232,7 @@ class BackupController {
       debug('backup run in progress — refusing concurrent HTTP backup request');
       return res.status(409).json({ message: 'backup run in progress' });
     }
-    performBackup().catch((e) => {
+    performBackup({ who: req.user }).catch((e) => {
       console.error('[backup] run failed:', (e as Error).message); // eslint-disable-line no-console
     });
     return res.status(202).json({ message: 'backup started' });
