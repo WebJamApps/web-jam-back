@@ -119,6 +119,16 @@ async function deleteOldRuns(
   }
 }
 
+let activeBackup: { label: string; startedAt: Date } | null = null;
+
+export function isBackupActive(): boolean {
+  return activeBackup !== null;
+}
+
+export function resetActiveBackup(): void {
+  activeBackup = null;
+}
+
 // The actual export + upload + prune work. Exported so it can be invoked
 // directly without going through HTTP/auth.
 export async function performBackup(opts: PerformBackupOptions = {}): Promise<BackupManifest> {
@@ -130,76 +140,97 @@ export async function performBackup(opts: PerformBackupOptions = {}): Promise<Ba
     throw new Error('Dropbox backup settings absent');
   }
 
-  const accessToken = client.getAccessToken
-    ? await client.getAccessToken()
-    : await dropbox.getAccessToken();
+  // Active export / single-run guard: acquire run reservation before export,
+  // making competing starts refuse throughout export and upload.
+  if (activeBackup) {
+    debug('backup run in progress: an export/upload is already active (%s)', activeBackup.label);
+    throw new Error(`backup run in progress: active backup already running (${activeBackup.label})`);
+  }
 
-  // 2. In-progress check: refuse if folder < 10m old has no manifest;
-  // refuse if folders cannot be listed.
   const now = opts.now || new Date();
-  await checkInProgress(client, accessToken, now);
-
-  // 3. Export configured databases; if any export fails, upload nothing and delete nothing.
   const label = runLabel(now);
-  const outDir = path.join(outputRoot(), label);
-  let manifest: BackupManifest;
+  activeBackup = { label, startedAt: now };
+
   try {
-    const dbOptions: RunBackupOptions = {
-      primaryUri: opts.dbOptions?.primaryUri || (opts.db ? 'mongodb://injected-db' : undefined),
-      ...(opts.dbOptions || (opts.db ? { connect: async () => ({ db: opts.db!, close: async () => {} }) } : {})),
-      startedAt: now.toISOString(),
-      trigger: opts.trigger || 'backup button',
-      who: opts.who,
-    };
-    manifest = await runFullBackup(outDir, dbOptions);
-  } catch (e) {
-    fs.rmSync(outDir, { recursive: true, force: true });
-    throw new Error(`export failed: ${(e as Error).message}`);
-  }
+    const accessToken = client.getAccessToken
+      ? await client.getAccessToken()
+      : await dropbox.getAccessToken();
 
-  const allDbsOk = Object.keys(manifest.databases).length > 0
-    && Object.values(manifest.databases).every((db) => db.ok);
+    // 2. In-progress check: refuse if folder < 10m old has no manifest;
+    // refuse if folders cannot be listed.
+    await checkInProgress(client, accessToken, now);
 
-  if (!allDbsOk) {
-    debug('one or more databases failed export: %o', manifest.databases);
-    fs.rmSync(outDir, { recursive: true, force: true });
-    throw new Error('one or more databases failed export');
-  }
-
-  // 4. Upload files with manifest.json uploaded last
-  let uploaded = false;
-  try {
-    await uploadRunFiles(client, accessToken, outDir, label);
-    uploaded = true;
-  } finally {
-    if (uploaded && process.env.BACKUP_KEEP_LOCAL !== 'true') {
+    // 3. Export configured databases; if any export fails, upload nothing and delete nothing.
+    const outDir = path.join(outputRoot(), label);
+    let manifest: BackupManifest;
+    try {
+      const dbOptions: RunBackupOptions = {
+        primaryUri: opts.dbOptions?.primaryUri || (opts.db ? 'mongodb://injected-db' : undefined),
+        ...(opts.dbOptions || (opts.db ? { connect: async () => ({ db: opts.db!, close: async () => {} }) } : {})),
+        startedAt: now.toISOString(),
+        trigger: opts.trigger || 'backup button',
+        who: opts.who,
+      };
+      manifest = await runFullBackup(outDir, dbOptions);
+    } catch (e) {
       fs.rmSync(outDir, { recursive: true, force: true });
+      throw new Error(`export failed: ${(e as Error).message}`);
     }
-  }
 
-  // 5. Manifest read-back / verify good run
-  let verifiedManifest: BackupManifest | null = null;
-  try {
-    verifiedManifest = await client.readManifest(accessToken, label);
-  } catch (e) {
-    debug('failed to read back manifest from Dropbox: %s', (e as Error).message);
+    const allDbsOk = Object.keys(manifest.databases).length > 0
+      && Object.values(manifest.databases).every((db) => db.ok);
+
+    if (!allDbsOk) {
+      debug('one or more databases failed export: %o', manifest.databases);
+      fs.rmSync(outDir, { recursive: true, force: true });
+      throw new Error('one or more databases failed export');
+    }
+
+    // 4. Upload files with manifest.json uploaded last
+    let uploaded = false;
+    try {
+      await uploadRunFiles(client, accessToken, outDir, label);
+      uploaded = true;
+    } finally {
+      if (uploaded && process.env.BACKUP_KEEP_LOCAL !== 'true') {
+        fs.rmSync(outDir, { recursive: true, force: true });
+      }
+    }
+
+    // 5. Manifest read-back / verify good run
+    let verifiedManifest: BackupManifest | null = null;
+    try {
+      verifiedManifest = await client.readManifest(accessToken, label);
+    } catch (e) {
+      debug('failed to read back manifest from Dropbox: %s', (e as Error).message);
+      return manifest;
+    }
+
+    if (!dropbox.isGoodRun(verifiedManifest)) {
+      debug('uploaded run was not good, refusing to delete anything');
+      return manifest;
+    }
+
+    // 6. Delete only after a good run: good runs beyond newest 8, incomplete folders > 24 hours
+    await deleteOldRuns(client, accessToken, now);
+
     return manifest;
+  } finally {
+    activeBackup = null;
   }
-
-  if (!dropbox.isGoodRun(verifiedManifest)) {
-    debug('uploaded run was not good, refusing to delete anything');
-    return manifest;
-  }
-
-  // 6. Delete only after a good run: good runs beyond newest 8, incomplete folders > 24 hours
-  await deleteOldRuns(client, accessToken, now);
-
-  return manifest;
 }
 
 class BackupController {
   // eslint-disable-next-line class-methods-use-this
   async runBackup(_req: Request, res: Response): Promise<unknown> {
+    if (!dropbox.dropboxConfigured()) {
+      debug('Dropbox backup settings absent — refusing HTTP backup request');
+      return res.status(500).json({ message: 'Dropbox backup settings absent' });
+    }
+    if (isBackupActive()) {
+      debug('backup run in progress — refusing concurrent HTTP backup request');
+      return res.status(409).json({ message: 'backup run in progress' });
+    }
     performBackup().catch((e) => {
       console.error('[backup] run failed:', (e as Error).message); // eslint-disable-line no-console
     });

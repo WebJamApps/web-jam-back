@@ -4,6 +4,8 @@ import path from 'path';
 import {
   performBackup,
   outputRoot,
+  isBackupActive,
+  resetActiveBackup,
   type DropboxClientLike,
 } from '#src/model/backup/backup-controller.js';
 import type { DbLike, BackupManifest } from '#src/lib/backup-export.js';
@@ -52,11 +54,13 @@ describe('backup-controller.ts: performBackup', () => {
   let testOutputDir: string;
 
   beforeEach(() => {
+    resetActiveBackup();
     testOutputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'backup-controller-test-'));
     process.env.BACKUP_OUTPUT_DIR = testOutputDir;
   });
 
   afterEach(() => {
+    resetActiveBackup();
     fs.rmSync(testOutputDir, { recursive: true, force: true });
     process.env = { ...originalEnv };
     vi.restoreAllMocks();
@@ -300,6 +304,165 @@ describe('backup-controller.ts: performBackup', () => {
     expect(parsedUploaded.finishedAt).toBeDefined();
     expect(parsedUploaded.trigger).toBe('daily check');
     expect(parsedUploaded.who).toBe('josh');
+  });
+
+  it('holds first export pending and verifies second start begins neither export nor upload', async () => {
+    let resolveExport: (val: unknown) => void;
+    const exportPending = new Promise((resolve) => {
+      resolveExport = resolve;
+    });
+
+    const pendingDb: DbLike = {
+      listCollections: () => ({
+        toArray: () => exportPending.then(() => [{ name: 'user' }]),
+      }),
+      collection: () => ({
+        find: () => ({
+          // eslint-disable-next-line @typescript-eslint/require-await
+          [Symbol.asyncIterator]: async function* asyncIterator() {
+            yield { name: 'josh' };
+          },
+        }),
+      }),
+    };
+
+    const client = createMockDropboxClient();
+    const firstRunPromise = performBackup({ dropboxClient: client, db: pendingDb });
+
+    // Allow first run to execute until awaiting export
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(isBackupActive()).toBe(true);
+
+    // Second run attempted while first run export is still pending
+    const secondDbListCollections = vi.fn(() => ({
+      toArray: () => Promise.resolve([{ name: 'user' }]),
+    }));
+    const secondDb: DbLike = {
+      listCollections: secondDbListCollections,
+      collection: () => ({
+        find: () => ({
+          // eslint-disable-next-line @typescript-eslint/require-await
+          [Symbol.asyncIterator]: async function* asyncIterator() {
+            yield { name: 'other' };
+          },
+        }),
+      }),
+    };
+
+    await expect(performBackup({ dropboxClient: client, db: secondDb })).rejects.toThrow(
+      /backup run in progress/i,
+    );
+
+    // Second run must have started neither export nor upload
+    expect(secondDbListCollections).not.toHaveBeenCalled();
+    expect(client.uploadFile).not.toHaveBeenCalled();
+
+    // Now complete the first export
+    resolveExport!([{ name: 'user' }]);
+    const manifest = await firstRunPromise;
+
+    expect(manifest.databases.webjamsalem.ok).toBe(true);
+    expect(client.uploadFile).toHaveBeenCalled();
+    expect(isBackupActive()).toBe(false);
+  });
+
+  it('failed active export uploads zero files and releases the run guard for subsequent runs', async () => {
+    let rejectExport: (err: Error) => void;
+    const exportPending = new Promise((_, reject) => {
+      rejectExport = reject;
+    });
+
+    const failingDb: DbLike = {
+      listCollections: () => ({
+        toArray: () => exportPending.then(() => [{ name: 'user' }]),
+      }),
+      collection: () => ({
+        find: () => ({
+          // eslint-disable-next-line @typescript-eslint/require-await
+          [Symbol.asyncIterator]: async function* asyncIterator() {
+            yield { name: 'josh' };
+          },
+        }),
+      }),
+    };
+
+    const client = createMockDropboxClient();
+    const firstRunPromise = performBackup({ dropboxClient: client, db: failingDb });
+
+    await new Promise((resolve) => { setTimeout(resolve, 10); });
+    expect(isBackupActive()).toBe(true);
+
+    // Competing start while active is refused
+    await expect(performBackup({ dropboxClient: client, db: createFakeDb() })).rejects.toThrow(
+      /backup run in progress/i,
+    );
+
+    // Reject the active export
+    rejectExport!(new Error('Mongo network timeout'));
+    await expect(firstRunPromise).rejects.toThrow(/one or more databases failed export/i);
+
+    // Uploaded no backup files
+    expect(client.uploadFile).not.toHaveBeenCalled();
+    expect(client.deletePath).not.toHaveBeenCalled();
+    expect(fs.readdirSync(outputRoot())).toHaveLength(0);
+
+    // Reservation is released
+    expect(isBackupActive()).toBe(false);
+
+    // Subsequent backup can now start and succeed
+    const subsequentManifest = await performBackup({ dropboxClient: client, db: createFakeDb() });
+    expect(subsequentManifest.databases.webjamsalem.ok).toBe(true);
+    expect(client.uploadFile).toHaveBeenCalled();
+  });
+
+  it('parallel starts in the same turn refuse competing runs via single-run reservation', async () => {
+    const client = createMockDropboxClient();
+    const p1 = performBackup({ dropboxClient: client, db: createFakeDb() });
+    const p2 = performBackup({ dropboxClient: client, db: createFakeDb() });
+
+    const results = await Promise.allSettled([p1, p2]);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason.message).toMatch(/backup run in progress/i);
+    expect(isBackupActive()).toBe(false);
+  });
+
+  it('retention pruning aborts and deletes nothing when readManifest throws on a lookup error', async () => {
+    const now = new Date('2026-10-08T12:00:00.000Z');
+    const existingFolders = [
+      '2026-10-01T00-00-00-000Z', // good 1
+      '2026-10-07T10-00-00-000Z', // 26h old, but readManifest encounters 409 restricted_content
+    ];
+
+    const goodManifest: BackupManifest = {
+      startedAt: '2026-10-01T00:00:00.000Z',
+      finishedAt: '2026-10-01T00:01:00.000Z',
+      generatedAt: '2026-10-01T00:00:00.000Z',
+      databases: { webjamsalem: { ok: true, collections: { user: 1 } } },
+    };
+
+    const client = createMockDropboxClient({
+      listSubfolders: vi.fn(() => Promise.resolve([...existingFolders, '2026-10-08T12-00-00-000Z'])),
+      readManifest: vi.fn((_token, label) => {
+        if (label === '2026-10-07T10-00-00-000Z') {
+          // Throws lookup error instead of returning null
+          return Promise.reject(new Error('dropbox download failed: 409 Conflict (path/restricted_content)'));
+        }
+        return Promise.resolve(goodManifest);
+      }),
+    });
+
+    await performBackup({
+      dropboxClient: client,
+      db: createFakeDb(),
+      now,
+    });
+
+    // deletePath must NOT have been called on the uncertain folder or any other folder
+    expect(client.deletePath).not.toHaveBeenCalled();
   });
 
   it('verifies that src contains zero references to process.env.DROPBOX_', () => {

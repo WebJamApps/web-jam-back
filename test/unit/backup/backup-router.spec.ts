@@ -62,12 +62,14 @@ vi.mock('#src/lib/dropbox.js', () => ({
 
 const { default: app } = await import('#src/index.js');
 const { default: authUtils } = await import('#src/auth/authUtils.js');
+const { resetActiveBackup, isBackupActive } = await import('#src/model/backup/backup-controller.js');
 const { default: request } = await import('../../helpers/api.js');
 
 const flush = () => new Promise((resolve) => { setImmediate(resolve); });
 
 describe('POST /admin/backup', () => {
   beforeEach(() => {
+    resetActiveBackup();
     runFullBackup.mockClear();
     dropboxConfigured.mockClear();
     dropboxConfigured.mockReturnValue(true);
@@ -75,6 +77,10 @@ describe('POST /admin/backup', () => {
     listSubfolders.mockClear();
     uploadFile.mockClear();
     readManifest.mockClear();
+  });
+
+  afterEach(() => {
+    resetActiveBackup();
   });
 
   it('rejects a request with no Authorization header (401), and never starts an export', async () => {
@@ -95,18 +101,53 @@ describe('POST /admin/backup', () => {
     expect(runFullBackup).not.toHaveBeenCalled();
   });
 
-  it('when backup settings are absent, responds 202 but never starts an export', async () => {
+  it('when backup settings are absent, refuses the request (500) and never starts an export', async () => {
     dropboxConfigured.mockReturnValue(false);
     (authUtils as unknown as { ensureAuthenticated: ReturnType<typeof vi.fn> }).ensureAuthenticated = vi.fn(
       () => Promise.resolve(),
     );
     const r = await request(app).post('/admin/backup').set('Authorization', 'Bearer service-token');
-    expect(r.status).toBe(202);
-    expect(r.body.message).toMatch(/backup started/i);
+    expect(r.status).toBe(500);
+    expect(r.body.message).toMatch(/Dropbox backup settings absent/i);
 
     await flush();
     await flush();
     expect(runFullBackup).not.toHaveBeenCalled();
+    expect(uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('when a backup is already in progress, refuses the request (409) and never starts another export', async () => {
+    (authUtils as unknown as { ensureAuthenticated: ReturnType<typeof vi.fn> }).ensureAuthenticated = vi.fn(
+      () => Promise.resolve(),
+    );
+    let resolveExport: (val: unknown) => void = () => {};
+    const exportPending = new Promise((resolve) => {
+      resolveExport = resolve;
+    });
+    runFullBackup.mockImplementationOnce(() => exportPending as Promise<never>);
+
+    const r1 = await request(app).post('/admin/backup').set('Authorization', 'Bearer service-token');
+    expect(r1.status).toBe(202);
+    expect(r1.body.message).toMatch(/backup started/i);
+
+    // Guard is held
+    expect(isBackupActive()).toBe(true);
+
+    // Second request while first is in progress
+    const r2 = await request(app).post('/admin/backup').set('Authorization', 'Bearer service-token');
+    expect(r2.status).toBe(409);
+    expect(r2.body.message).toMatch(/backup run in progress/i);
+
+    // Complete the first run
+    resolveExport({
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      trigger: 'backup button',
+      databases: { webjamsalem: { ok: true, collections: {} } },
+    });
+    await flush();
+    await flush();
+    expect(runFullBackup).toHaveBeenCalledTimes(1);
   });
 
   it('responds 202 immediately for an authenticated caller and kicks off the export async', async () => {

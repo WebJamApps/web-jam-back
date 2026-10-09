@@ -7,6 +7,8 @@ import {
   uploadBackupAndPrune,
   downloadFile,
   readManifest,
+  listSubfolders,
+  isDropboxNotFoundError,
   isGoodRun,
   parseRunDate,
   BACKUP_ROOT,
@@ -22,8 +24,23 @@ const okText = (text: string) => {
     ok: true,
     status: 200,
     arrayBuffer: () => Promise.resolve(ab),
+    text: () => Promise.resolve(text),
   };
 };
+
+const error409 = (errorSummary: string, errorObj?: Record<string, unknown>) => ({
+  ok: false,
+  status: 409,
+  statusText: 'Conflict',
+  text: () => Promise.resolve(JSON.stringify({
+    error_summary: errorSummary,
+    error: errorObj || { '.tag': 'path', path: { '.tag': errorSummary.replace('path/', '') } },
+  })),
+  json: () => Promise.resolve({
+    error_summary: errorSummary,
+    error: errorObj || { '.tag': 'path', path: { '.tag': errorSummary.replace('path/', '') } },
+  }),
+});
 
 describe('dropbox.ts', () => {
   const ORIGINAL_ENV = { ...process.env };
@@ -70,10 +87,17 @@ describe('dropbox.ts', () => {
       expect(res?.toString('utf8')).toBe('hello');
     });
 
-    it('downloadFile returns null on 409 (not found)', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 409, statusText: 'Conflict' }));
+    it('downloadFile returns null on 409 path/not_found', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(error409('path/not_found/')));
       const res = await downloadFile('token', '/webjam-backups/missing.txt');
       expect(res).toBeNull();
+    });
+
+    it('downloadFile throws on 409 non-not-found lookup error (e.g. path/restricted_content)', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(error409('path/restricted_content/')));
+      await expect(downloadFile('token', '/webjam-backups/restricted.txt')).rejects.toThrow(
+        /dropbox download failed.*path\/restricted_content/i,
+      );
     });
 
     it('downloadFile throws on unexpected HTTP errors', async () => {
@@ -94,15 +118,74 @@ describe('dropbox.ts', () => {
       expect(res).toEqual(manifest);
     });
 
-    it('readManifest returns null when file is not found (409)', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 409, statusText: 'Conflict' }));
+    it('readManifest returns null when file is not found (409 path/not_found)', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(error409('path/not_found/')));
       const res = await readManifest('token', 'run-missing');
       expect(res).toBeNull();
+    });
+
+    it('readManifest throws when download encounters a 409 lookup error other than not_found', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(error409('path/restricted_content/')));
+      await expect(readManifest('token', 'run-restricted')).rejects.toThrow(
+        /dropbox download failed.*path\/restricted_content/i,
+      );
     });
 
     it('readManifest throws when JSON is invalid', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(okText('{ invalid-json')));
       await expect(readManifest('token', 'run-corrupt')).rejects.toThrow(/failed to parse manifest/);
+    });
+  });
+
+  describe('listSubfolders', () => {
+    it('returns folder names on success', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(okJson({
+        entries: [
+          { '.tag': 'folder', name: 'folder-a' },
+          { '.tag': 'file', name: 'ignore-file.txt' },
+          { '.tag': 'folder', name: 'folder-b' },
+        ],
+      })));
+      const res = await listSubfolders('token', '/webjam-backups');
+      expect(res).toEqual(['folder-a', 'folder-b']);
+    });
+
+    it('returns [] on 409 path/not_found (initial run before folder exists)', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(error409('path/not_found/')));
+      const res = await listSubfolders('token', '/webjam-backups');
+      expect(res).toEqual([]);
+    });
+
+    it('throws on 409 non-not-found lookup error (e.g. path/restricted_content)', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(error409('path/restricted_content/')));
+      await expect(listSubfolders('token', '/webjam-backups')).rejects.toThrow(
+        /dropbox list_folder failed.*path\/restricted_content/i,
+      );
+    });
+
+    it('throws on 500 server error', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({ ok: false, status: 500, statusText: 'Server Error' }));
+      await expect(listSubfolders('token', '/webjam-backups')).rejects.toThrow(
+        /dropbox list_folder failed/i,
+      );
+    });
+  });
+
+  describe('isDropboxNotFoundError', () => {
+    it('positively identifies path/not_found in error_summary and error object', () => {
+      expect(isDropboxNotFoundError({ error_summary: 'path/not_found/' })).toBe(true);
+      expect(isDropboxNotFoundError({ error: { path: { '.tag': 'not_found' } } })).toBe(true);
+      expect(isDropboxNotFoundError({ error: { '.tag': 'not_found' } })).toBe(true);
+      expect(isDropboxNotFoundError(null, 'path/not_found/xyz')).toBe(true);
+      expect(isDropboxNotFoundError(null, '{"error_summary":"path/not_found/"}')).toBe(true);
+    });
+
+    it('returns false for non-not-found errors', () => {
+      expect(isDropboxNotFoundError({ error_summary: 'path/restricted_content/' })).toBe(false);
+      expect(isDropboxNotFoundError({ error: { path: { '.tag': 'restricted_content' } } })).toBe(false);
+      expect(isDropboxNotFoundError(null, 'path/restricted_content/')).toBe(false);
+      expect(isDropboxNotFoundError(null)).toBe(false);
+      expect(isDropboxNotFoundError({})).toBe(false);
     });
   });
 

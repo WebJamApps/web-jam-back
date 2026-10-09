@@ -61,6 +61,70 @@ export async function uploadFile(accessToken: string, dropboxPath: string, conte
   if (!res.ok) throw new Error(`dropbox upload failed for ${dropboxPath}: ${res.status} ${res.statusText}`);
 }
 
+interface DropboxErrorPayload {
+  error_summary?: string;
+  error?: {
+    '.tag'?: string;
+    path?: {
+      '.tag'?: string;
+    } | string;
+    [key: string]: unknown;
+  };
+}
+
+export function isDropboxNotFoundError(payload: unknown, rawText?: string): boolean {
+  if (typeof payload === 'object' && payload !== null) {
+    const err = payload as DropboxErrorPayload;
+    if (typeof err.error_summary === 'string' && err.error_summary.startsWith('path/not_found')) {
+      return true;
+    }
+    if (typeof err.error?.path === 'object' && err.error.path !== null && err.error.path['.tag'] === 'not_found') {
+      return true;
+    }
+    if (err.error?.['.tag'] === 'not_found') {
+      return true;
+    }
+  }
+  if (typeof rawText === 'string') {
+    const trimmed = rawText.trim();
+    if (trimmed.startsWith('path/not_found')) return true;
+    try {
+      const parsed = JSON.parse(trimmed) as DropboxErrorPayload;
+      return isDropboxNotFoundError(parsed);
+    } catch {
+      // not JSON
+    }
+  }
+  return false;
+}
+
+type ResponseWithBody = { text?: () => Promise<string>; json?: () => Promise<unknown> };
+
+async function inspectDropbox409(res: ResponseWithBody): Promise<{ isNotFound: boolean; detail: string }> {
+  let text = '';
+  try {
+    if (typeof res.text === 'function') {
+      text = await res.text();
+    } else if (typeof res.json === 'function') {
+      const j = await res.json();
+      text = typeof j === 'string' ? j : JSON.stringify(j);
+    }
+  } catch {
+    text = '';
+  }
+  if (!text) return { isNotFound: false, detail: '' };
+
+  try {
+    const json = JSON.parse(text) as DropboxErrorPayload;
+    const isNotFound = isDropboxNotFoundError(json);
+    const detail = json.error_summary || text;
+    return { isNotFound, detail };
+  } catch {
+    const isNotFound = isDropboxNotFoundError(null, text);
+    return { isNotFound, detail: text };
+  }
+}
+
 export async function downloadFile(accessToken: string, dropboxPath: string): Promise<Buffer | null> {
   const res = await fetch(DOWNLOAD_URL, {
     method: 'POST',
@@ -69,7 +133,12 @@ export async function downloadFile(accessToken: string, dropboxPath: string): Pr
       'Dropbox-API-Arg': JSON.stringify({ path: dropboxPath }),
     },
   });
-  if (res.status === 409) return null;
+  if (res.status === 409) {
+    const { isNotFound, detail } = await inspectDropbox409(res);
+    if (isNotFound) return null;
+    const suffix = detail ? ` (${detail})` : '';
+    throw new Error(`dropbox download failed for ${dropboxPath}: 409 ${res.statusText}${suffix}`);
+  }
   if (!res.ok) throw new Error(`dropbox download failed for ${dropboxPath}: ${res.status} ${res.statusText}`);
   const arrayBuffer = await res.arrayBuffer();
   return Buffer.from(arrayBuffer);
@@ -116,7 +185,12 @@ export async function listSubfolders(accessToken: string, folderPath: string): P
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: folderPath }),
   });
-  if (res.status === 409) return [];
+  if (res.status === 409) {
+    const { isNotFound, detail } = await inspectDropbox409(res);
+    if (isNotFound) return [];
+    const suffix = detail ? ` (${detail})` : '';
+    throw new Error(`dropbox list_folder failed: 409 ${res.statusText}${suffix}`);
+  }
   if (!res.ok) throw new Error(`dropbox list_folder failed: ${res.status} ${res.statusText}`);
   const body = await res.json() as ListFolderResponse;
   return (body.entries || []).filter((e) => e['.tag'] === 'folder').map((e) => e.name);
@@ -248,6 +322,7 @@ export default {
   deletePath,
   foldersToPrune,
   isGoodRun,
+  isDropboxNotFoundError,
   parseRunDate,
   listFilesRecursive,
   uploadBackupAndPrune,
