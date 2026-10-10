@@ -22,6 +22,11 @@ router.route('/runs/:name/restore')
     controller.startRestore(req, res);
   });
 
+router.route('/runs/:name/copy-to-dev')
+  .post((req, res) => {
+    controller.startCopyToDev(req, res);
+  });
+
 router.route('/operations/:name')
   .get((req, res) => {
     controller.getOperation(req, res);

@@ -79,6 +79,36 @@ The script refuses any database whose name contains neither `dev` nor `test` (an
 `localhost`/`127.0.0.1`) unless `--force` is given. Options: `--folder` (required), `--db`
 (default `webjamsalem`), `--uri` (default `MONGO_DB_URI`), `--transform`, `--force`.
 
+## Copy production into DEV (from the admin API)
+
+The production backend can put a chosen good run into the DEV database with every email address
+replaced, so DEV has realistic data that can never email a real person. It reads only the run's
+files from Dropbox; production is not touched.
+
+Setting on `webjamsalem`: `DEV_MONGO_DB_URI`, the address of the DEV database with the login that
+covers that database only.
+
+```sh
+curl -X POST --oauth2-bearer "$TOKEN" https://webjamsalem.herokuapp.com/admin/backup/runs/RUN_NAME/copy-to-dev
+curl --oauth2-bearer "$TOKEN" https://webjamsalem.herokuapp.com/admin/backup/operations/OPERATION_NAME
+```
+
+It answers `202` with a `copy-to-dev-<time>` name; the operations route then reports
+`status: completed` with the per-collection counts copied beside the manifest counts, the addresses
+replaced per collection, and the read-back, or `status: failed` with the refusal.
+
+It refuses (nothing changed) when `DEV_MONGO_DB_URI` is absent or unparseable; when its database name
+does not contain `dev` or cannot be determined; when its host is production's or production's host
+cannot be determined; when the DEV cluster cannot be reached (a Free cluster pauses after 30 days;
+`Resume` for the DEV cluster on the Atlas website wakes it); and when the run is not good or a file's
+record count differs from the manifest.
+
+On the way in: every email address, in every collection and every text value, becomes
+`<collection>-<record id>@example.invalid`; accounts holding the `Developer` role keep their own
+`email`; Facebook token values are emptied and the records kept. The read-back scans every DEV
+collection and reports any remaining real address other than those accounts' own. A copy is clean
+only when `clean` is `true`.
+
 ## Restore into production
 
 A production restore replaces the live data. It is a deliberate act with four guards, and the first
