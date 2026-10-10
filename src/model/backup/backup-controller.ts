@@ -7,6 +7,10 @@ import { runFullBackup, type BackupManifest, type RunBackupOptions, type DbLike 
 import dropbox, { BACKUP_ROOT, RETAIN_RUNS, type RunFolderEntry } from '#src/lib/dropbox.js';
 import type { Icontroller } from '#src/lib/routeUtils.js';
 import type { AuthRequest } from '#src/auth/authUtils.js';
+import { buildRunSummary, type BackupRunSummary } from './backup-runs.js';
+import {
+  recordOperation, updateOperation, getOperation, type BackupOperation,
+} from './backup-operations.js';
 
 // POST /admin/backup — Mongo backup (web-jam-tools#116, web-jam-back#1141).
 // Exports every collection of this app's own database as EJSON
@@ -31,6 +35,7 @@ export interface DropboxClientLike {
   readManifest(accessToken: string, runLabel: string): Promise<BackupManifest | null>;
   uploadFile(accessToken: string, dropboxPath: string, contents: Buffer): Promise<void>;
   deletePath(accessToken: string, targetPath: string): Promise<void>;
+  getFolderSize?(accessToken: string, folderPath: string): Promise<number | null>;
 }
 
 export interface PerformBackupOptions {
@@ -221,7 +226,121 @@ export async function performBackup(opts: PerformBackupOptions = {}): Promise<Ba
   }
 }
 
-class BackupController {
+export class BackupController {
+  // eslint-disable-next-line class-methods-use-this
+  async listRuns(_req: AuthRequest, res: Response): Promise<unknown> {
+    if (!dropbox.dropboxConfigured()) {
+      return res.status(500).json({ message: 'Dropbox backup settings absent' });
+    }
+    try {
+      const accessToken = dropbox.getAccessToken
+        ? await dropbox.getAccessToken()
+        : await (dropbox as unknown as { getAccessToken(): Promise<string> }).getAccessToken();
+      const folderNames = await dropbox.listSubfolders(accessToken, BACKUP_ROOT);
+      const sorted = [...folderNames].sort((a, b) => {
+        const aDate = dropbox.parseRunDate(a);
+        const bDate = dropbox.parseRunDate(b);
+        if (aDate && bDate) return bDate.getTime() - aDate.getTime();
+        return b.localeCompare(a);
+      });
+      const runs: BackupRunSummary[] = [];
+      for (const name of sorted) {
+        // eslint-disable-next-line no-await-in-loop
+        const manifest = await dropbox.readManifest(accessToken, name);
+        let size: number | null = null;
+        const getFolderSizeFn = (dropbox as unknown as DropboxClientLike).getFolderSize;
+        if (typeof getFolderSizeFn === 'function') {
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            size = await getFolderSizeFn(accessToken, `${BACKUP_ROOT}/${name}`);
+          } catch {
+            size = null;
+          }
+        }
+        runs.push(buildRunSummary(name, manifest, size));
+      }
+      return res.status(200).json(runs);
+    } catch (e) {
+      debug('failed to list backup runs: %s', (e as Error).message);
+      return res.status(500).json({ message: (e as Error).message });
+    }
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  async startRun(req: AuthRequest, res: Response): Promise<unknown> {
+    if (!dropbox.dropboxConfigured()) {
+      debug('Dropbox backup settings absent — refusing HTTP backup request');
+      return res.status(500).json({ message: 'Dropbox backup settings absent' });
+    }
+    if (isBackupActive()) {
+      debug('backup run in progress — refusing concurrent HTTP backup request');
+      return res.status(409).json({ message: 'backup run in progress' });
+    }
+    const now = new Date();
+    const name = runLabel(now);
+    recordOperation({
+      name,
+      type: 'backup',
+      status: 'in_progress',
+      startedAt: now.toISOString(),
+      progress: 'starting',
+    });
+    performBackup({ who: req.user, now })
+      .then((manifest) => {
+        updateOperation(name, {
+          status: 'completed',
+          finishedAt: new Date().toISOString(),
+          progress: 'complete',
+          result: manifest,
+        });
+      })
+      .catch((e) => {
+        console.error('[backup] run failed:', (e as Error).message); // eslint-disable-line no-console
+        updateOperation(name, {
+          status: 'failed',
+          finishedAt: new Date().toISOString(),
+          progress: 'failed',
+          error: (e as Error).message,
+        });
+      });
+    return res.status(202).json({ name, message: 'backup started' });
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  async getOperation(req: AuthRequest, res: Response): Promise<unknown> {
+    const rawName = req.params?.name;
+    const name = Array.isArray(rawName) ? rawName[0] : rawName;
+    if (!name || typeof name !== 'string') return res.status(400).json({ message: 'operation name is required' });
+    if (name.includes('..') || name.includes('/') || name.includes('\\')) {
+      return res.status(400).json({ message: 'invalid operation name' });
+    }
+    const op = getOperation(name);
+    if (op) {
+      return res.status(200).json(op);
+    }
+    if (dropbox.dropboxConfigured()) {
+      try {
+        const accessToken = await dropbox.getAccessToken();
+        const manifest = await dropbox.readManifest(accessToken, name);
+        if (manifest) {
+          const fallbackOp: BackupOperation = {
+            name,
+            type: 'backup',
+            status: dropbox.isGoodRun(manifest) ? 'completed' : 'failed',
+            startedAt: manifest.startedAt || name,
+            finishedAt: manifest.finishedAt || null,
+            progress: 'complete',
+            result: manifest,
+          };
+          return res.status(200).json(fallbackOp);
+        }
+      } catch (err) {
+        return res.status(500).json({ message: (err as Error).message });
+      }
+    }
+    return res.status(404).json({ message: `operation '${name}' not found` });
+  }
+
   // eslint-disable-next-line class-methods-use-this
   async runBackup(req: AuthRequest, res: Response): Promise<unknown> {
     if (!dropbox.dropboxConfigured()) {
@@ -232,11 +351,35 @@ class BackupController {
       debug('backup run in progress — refusing concurrent HTTP backup request');
       return res.status(409).json({ message: 'backup run in progress' });
     }
-    performBackup({ who: req.user }).catch((e) => {
-      console.error('[backup] run failed:', (e as Error).message); // eslint-disable-line no-console
+    const now = new Date();
+    const name = runLabel(now);
+    recordOperation({
+      name,
+      type: 'backup',
+      status: 'in_progress',
+      startedAt: now.toISOString(),
+      progress: 'starting',
     });
+    performBackup({ who: req.user, now })
+      .then((manifest) => {
+        updateOperation(name, {
+          status: 'completed',
+          finishedAt: new Date().toISOString(),
+          progress: 'complete',
+          result: manifest,
+        });
+      })
+      .catch((e) => {
+        console.error('[backup] run failed:', (e as Error).message); // eslint-disable-line no-console
+        updateOperation(name, {
+          status: 'failed',
+          finishedAt: new Date().toISOString(),
+          progress: 'failed',
+          error: (e as Error).message,
+        });
+      });
     return res.status(202).json({ message: 'backup started' });
   }
 }
 
-export default new BackupController() as unknown as Icontroller;
+export default new BackupController() as unknown as BackupController & Icontroller;
