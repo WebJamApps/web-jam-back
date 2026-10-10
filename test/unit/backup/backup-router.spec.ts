@@ -7,6 +7,15 @@ import path from 'path';
 import type { AuthRequest } from '#src/auth/authUtils.js';
 import type { BackupManifest, DbLike, RunBackupOptions } from '#src/lib/backup-export.js';
 import type { DropboxClientLike } from '#src/model/backup/backup-controller.js';
+import mongoose from 'mongoose';
+import type { RestoreProductionOptions } from '#src/model/backup/backup-restore.js';
+
+// The restore module is covered by backup-restore.spec.ts; here only the route is under test.
+const mocks = vi.hoisted(() => ({ restoreProduction: vi.fn() }));
+vi.mock('#src/model/backup/backup-restore.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#src/model/backup/backup-restore.js')>()),
+  restoreProduction: mocks.restoreProduction,
+}));
 
 vi.mock('#src/lib/utils.js', () => ({
   default: { mongoConnect: vi.fn(() => Promise.resolve()) },
@@ -523,5 +532,206 @@ describe('/admin/backup router', () => {
         }
       }
     });
+  });
+});
+
+describe('POST /admin/backup/runs/:name/restore', () => {
+  const RUN = '2026-10-08T12-00-00-000Z';
+  const devToken = authUtils.createJWT({ _id: 'dev-user-id' });
+  const otherToken = authUtils.createJWT({ _id: 'other-user-id' });
+  const restoreUrl = `/admin/backup/runs/${RUN}/restore`;
+  const restoreResult = {
+    collections: [{ collection: 'song', restored: 3, manifest: 3 }],
+    missingIndexes: [{ collection: 'song', index: 'by_hand_1' }],
+  };
+  const connection = mongoose.connection as unknown as { db?: unknown };
+  const originalDb = connection.db;
+
+  const mockUserRole = (userType: string) => {
+    vi.spyOn(userModel, 'findById').mockReturnValue({
+      lean: () => ({ exec: () => Promise.resolve({ userType }) }),
+    } as never);
+  };
+
+  const waitForOperation = async (name: string, status: string) => {
+    let body: Record<string, unknown> = {};
+    await vi.waitFor(async () => {
+      const r = await request(app).get(`/admin/backup/operations/${name}`).set('Authorization', `Bearer ${devToken}`);
+      body = r.body as Record<string, unknown>;
+      expect(body.status).toBe(status);
+    });
+    return body;
+  };
+
+  beforeEach(() => {
+    authUtils.ensureAuthenticated = originalEnsureAuthenticated;
+    resetActiveBackup();
+    resetOperations();
+    runFullBackup.mockClear();
+    dropboxConfigured.mockReturnValue(true);
+    mocks.restoreProduction.mockResolvedValue(restoreResult);
+    connection.db = {};
+    mockUserRole('Developer');
+  });
+
+  afterEach(() => {
+    connection.db = originalDb;
+    resetActiveBackup();
+    resetOperations();
+    vi.restoreAllMocks();
+  });
+
+  it('serves the Developer role: answers at once (202) with the operation name, then reports the result', async () => {
+    const r = await request(app).post(restoreUrl)
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({ date: '2026-10-08' });
+    expect(r.status).toBe(202);
+    expect(r.body.name).toMatch(/^restore-/);
+    expect(r.body.message).toMatch(/restore started/i);
+
+    const op = await waitForOperation(r.body.name as string, 'completed');
+    expect(op).toMatchObject({ type: 'restore', progress: 'complete', result: restoreResult });
+    expect(mocks.restoreProduction).toHaveBeenCalledWith(expect.objectContaining({
+      runName: RUN,
+      typedDate: '2026-10-08',
+      freshBackupLabel: (r.body.name as string).replace(/^restore-/, ''),
+    }));
+  });
+
+  it('records a refusal as a failed operation that says which guard refused', async () => {
+    const { RestoreRefusal } = await vi.importActual<typeof import('#src/model/backup/backup-restore.js')>('#src/model/backup/backup-restore.js');
+    mocks.restoreProduction.mockRejectedValue(new RestoreRefusal('date', 'the typed date does not match'));
+    const r = await request(app).post(restoreUrl)
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({ date: '1999-01-01' });
+    expect(r.status).toBe(202);
+    const op = await waitForOperation(r.body.name as string, 'failed');
+    expect(op).toMatchObject({ progress: 'failed', error: 'the typed date does not match' });
+  });
+
+  it('reports each step through the operations route while the restore runs', async () => {
+    let finish: () => void = () => undefined;
+    mocks.restoreProduction.mockImplementation((o: RestoreProductionOptions) => {
+      o.onProgress?.('taking a fresh backup of production');
+      return new Promise((resolve) => { finish = () => resolve(restoreResult); });
+    });
+    const r = await request(app).post(restoreUrl)
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({ date: '2026-10-08' });
+    await vi.waitFor(async () => {
+      const op = await request(app).get(`/admin/backup/operations/${r.body.name}`).set('Authorization', `Bearer ${devToken}`);
+      expect(op.body).toMatchObject({ status: 'in_progress', progress: 'taking a fresh backup of production' });
+    });
+    finish();
+    await waitForOperation(r.body.name as string, 'completed');
+  });
+
+  it('takes the fresh backup through performBackup, triggered as a restore and attributed to the caller', async () => {
+    mocks.restoreProduction.mockImplementation(async (o: RestoreProductionOptions) => {
+      await o.takeFreshBackup();
+      return restoreResult;
+    });
+    const r = await request(app).post(restoreUrl)
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({ date: '2026-10-08' });
+    await waitForOperation(r.body.name as string, 'completed');
+    expect(runFullBackup).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ trigger: 'restore' }));
+  });
+
+  it('rebuilds indexes through the declared models for the restored collections', async () => {
+    const rebuilt: string[][] = [];
+    mocks.restoreProduction.mockImplementation(async (o: RestoreProductionOptions) => {
+      // Nothing is registered under these names, so the default rebuilder has nothing to build.
+      await o.rebuildIndexes?.(['no-such-collection']);
+      rebuilt.push(['called']);
+      return restoreResult;
+    });
+    const r = await request(app).post(restoreUrl)
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({ date: '2026-10-08' });
+    await waitForOperation(r.body.name as string, 'completed');
+    expect(rebuilt).toEqual([['called']]);
+  });
+
+  it('refuses a caller whose account holds another role (401), and restores nothing', async () => {
+    mockUserRole('JaM-admin');
+    const r = await request(app).post(restoreUrl)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .send({ date: '2026-10-08' });
+    expect(r.status).toBe(401);
+    await flush();
+    expect(mocks.restoreProduction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a caller who is not logged in (401), and restores nothing', async () => {
+    const r = await request(app).post(restoreUrl).send({ date: '2026-10-08' });
+    expect(r.status).toBe(401);
+    await flush();
+    expect(mocks.restoreProduction).not.toHaveBeenCalled();
+  });
+
+  it('refuses with 500 when the account lookup throws, and restores nothing', async () => {
+    vi.spyOn(userModel, 'findById').mockReturnValue({
+      lean: () => ({ exec: () => Promise.reject(new Error('DB failure')) }),
+    } as never);
+    const r = await request(app).post(restoreUrl)
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({ date: '2026-10-08' });
+    expect(r.status).toBe(500);
+    await flush();
+    expect(mocks.restoreProduction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a request with no typed date (400)', async () => {
+    const r = await request(app).post(restoreUrl).set('Authorization', `Bearer ${devToken}`).send({});
+    expect(r.status).toBe(400);
+    expect(mocks.restoreProduction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a run name that could change the Dropbox path (400)', async () => {
+    const r = await request(app).post('/admin/backup/runs/..%2Fescape/restore')
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({ date: '2026-10-08' });
+    expect(r.status).toBe(400);
+    expect(mocks.restoreProduction).not.toHaveBeenCalled();
+  });
+
+  it('refuses with 500 when Dropbox settings are absent', async () => {
+    dropboxConfigured.mockReturnValue(false);
+    const r = await request(app).post(restoreUrl).set('Authorization', `Bearer ${devToken}`).send({ date: '2026-10-08' });
+    expect(r.status).toBe(500);
+    expect(r.body.message).toMatch(/Dropbox backup settings absent/i);
+    expect(mocks.restoreProduction).not.toHaveBeenCalled();
+  });
+
+  it('refuses with 409 while a backup is in progress', async () => {
+    let resolveExport: (val: unknown) => void = () => {};
+    const exportPending = new Promise((resolve) => {
+      resolveExport = resolve;
+    });
+    runFullBackup.mockImplementationOnce(() => exportPending as Promise<never>);
+    const backup = await request(app).post('/admin/backup/runs').set('Authorization', `Bearer ${devToken}`);
+    expect(backup.status).toBe(202);
+
+    const r = await request(app).post(restoreUrl).set('Authorization', `Bearer ${devToken}`).send({ date: '2026-10-08' });
+    expect(r.status).toBe(409);
+    expect(mocks.restoreProduction).not.toHaveBeenCalled();
+
+    resolveExport({
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+      trigger: 'backup button',
+      databases: { webjamsalem: { ok: true, collections: {} } },
+    });
+    await flush();
+    await flush();
+  });
+
+  it('refuses with 500 when the database connection is not available', async () => {
+    connection.db = undefined;
+    const r = await request(app).post(restoreUrl).set('Authorization', `Bearer ${devToken}`).send({ date: '2026-10-08' });
+    expect(r.status).toBe(500);
+    expect(r.body.message).toMatch(/database connection/i);
+    expect(mocks.restoreProduction).not.toHaveBeenCalled();
   });
 });
