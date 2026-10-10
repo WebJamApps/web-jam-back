@@ -312,6 +312,31 @@ describe('backup-scheduler.ts', () => {
       expect(sendMailFn).not.toHaveBeenCalled();
     });
 
+    it('sets lastRunFailed to true and sends email when export fails even if message mentions in progress', async () => {
+      const client = createMockDropboxClient({
+        listSubfolders: vi.fn(() => Promise.resolve([])),
+      });
+
+      const performBackupFn = vi.fn(() => Promise.reject(new Error('export failed: database operation in progress')));
+      const sendMailFn = vi.fn<(_input: MailInput) => Promise<{ messageId: string }>>(() => Promise.resolve({ messageId: 'msg-1' }));
+      const findAdminUsers = vi.fn(() => Promise.resolve([
+        { email: 'josh@example.com' },
+      ]));
+
+      const now = new Date('2026-10-10T12:00:00.000Z');
+      const status = await runBackupCheck({
+        dropboxClient: client,
+        performBackupFn,
+        sendMailFn,
+        findAdminUsers,
+        now,
+      });
+
+      expect(status.lastRunFailed).toBe(true);
+      expect(sendMailFn).toHaveBeenCalledTimes(1);
+      expect(sendMailFn.mock.calls[0]?.[0]?.text).toContain('database operation in progress');
+    });
+
     it('escapes HTML special characters in error message and step', async () => {
       const sendMailFn = vi.fn<(_input: MailInput) => Promise<{ messageId: string }>>(() => Promise.resolve({ messageId: 'msg-test' }));
       await sendFailureEmail(

@@ -226,7 +226,7 @@ export async function runBackupCheck(opts: BackupSchedulerOptions = {}): Promise
       lastRunFailed = false;
     } catch (err) {
       const errMsg = (err as Error).message || '';
-      if (/in progress/i.test(errMsg)) {
+      if (/^backup run in progress/i.test(errMsg)) {
         debug('backup check found backup due but run refused because another run is in progress: %s', errMsg);
       } else {
         lastRunFailed = true;
