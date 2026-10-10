@@ -9,6 +9,7 @@ vi.mock('#src/lib/utils.js', () => ({
 const { default: app } = await import('#src/index.js');
 const { default: authUtils } = await import('#src/auth/authUtils.js');
 const { default: userModel } = await import('#src/model/user/user-schema.js');
+const { resolveSystemMapPath, default: backupController } = await import('#src/model/backup/backup-controller.js');
 const { default: request } = await import('../../helpers/api.js');
 
 process.env.HashString ||= 'test-jwt-secret';
@@ -139,23 +140,42 @@ describe('/admin/backup/diagram routes', () => {
 
     it('if docs/system-map.mmd cannot be read, refuses with 500 error and returns no content', async () => {
       mockUserRole('Developer');
-      const prevPath = process.env.SYSTEM_MAP_PATH;
-      try {
-        process.env.SYSTEM_MAP_PATH = '/path/to/nonexistent/system-map.mmd';
-        const res = await request(app)
-          .get('/admin/backup/diagram/system')
-          .set('Authorization', `Bearer ${devToken}`);
+      vi.spyOn(fs.promises, 'readFile').mockRejectedValueOnce(new Error('ENOENT: no such file'));
+      const res = await request(app)
+        .get('/admin/backup/diagram/system')
+        .set('Authorization', `Bearer ${devToken}`);
 
-        expect(res.status).toBe(500);
-        expect(res.body.message).toBe('failed to read system map');
-        expect(typeof res.body === 'string' ? res.body : '').not.toContain('flowchart');
-      } finally {
-        if (prevPath) {
-          process.env.SYSTEM_MAP_PATH = prevPath;
-        } else {
-          delete process.env.SYSTEM_MAP_PATH;
-        }
-      }
+      expect(res.status).toBe(500);
+      expect(res.body.message).toBe('failed to read system map');
+      expect(typeof res.body === 'string' ? res.body : '').not.toContain('flowchart');
+    });
+
+    it('returns 500 when controller is invoked directly with a nonexistent map path', async () => {
+      const mockRes = {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+        setHeader: vi.fn(),
+        send: vi.fn(),
+      };
+      await backupController.getSystemDiagram({} as never, mockRes as never, '/path/to/nonexistent/system-map.mmd');
+      expect(mockRes.status).toHaveBeenCalledWith(500);
+      expect(mockRes.json).toHaveBeenCalledWith({ message: 'failed to read system map' });
+    });
+  });
+
+  describe('system-map path resolution for src and build layouts', () => {
+    it('resolves system map from src/ layout directory', () => {
+      const srcDir = path.resolve(import.meta.dirname, '../../../src/model/backup');
+      const resolved = resolveSystemMapPath(undefined, srcDir);
+      expect(fs.existsSync(resolved)).toBe(true);
+      expect(resolved.endsWith('docs/system-map.mmd')).toBe(true);
+    });
+
+    it('resolves system map from compiled layout directory (build/src/model/backup)', () => {
+      const compiledDir = path.resolve(import.meta.dirname, '../../../build/src/model/backup');
+      const resolved = resolveSystemMapPath(undefined, compiledDir);
+      expect(fs.existsSync(resolved)).toBe(true);
+      expect(resolved.endsWith('docs/system-map.mmd')).toBe(true);
     });
   });
 
@@ -176,6 +196,9 @@ describe('/admin/backup/diagram routes', () => {
       // No web URL addresses / schemes
       expect(content).not.toMatch(/https?:\/\//i);
 
+      // No hostname or domain addresses (e.g. web-jam.com, example.com)
+      expect(content).not.toMatch(/\b[a-zA-Z0-9-]+\.(com|org|net|io|edu|gov|dev|invalid)\b/i);
+
       // No secrets, tokens, or credentials (verified on body lines, since rule comment quotes them)
       expect(content).not.toMatch(/password/i);
       const nonCommentLines = lines.slice(1).join('\n');
@@ -184,8 +207,9 @@ describe('/admin/backup/diagram routes', () => {
       expect(nonCommentLines).not.toMatch(/token/i);
       expect(nonCommentLines).not.toMatch(/credential/i);
 
-      // Names the required services
+      // Names the required services without addresses/domains
       expect(content).toContain('Website');
+      expect(content).not.toContain('web-jam.com');
       expect(content).toContain('Production Backend (web-jam-back)');
       expect(content).toContain('Socket Server (WebJamSocketCluster)');
       expect(content).toContain('MongoDB Atlas');

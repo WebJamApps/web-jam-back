@@ -248,6 +248,22 @@ export async function performBackup(opts: PerformBackupOptions = {}): Promise<Ba
   }
 }
 
+export function resolveSystemMapPath(customPath?: string, dir: string = import.meta.dirname): string {
+  if (customPath) return customPath;
+  const candidates = [
+    path.resolve(process.cwd(), 'docs/system-map.mmd'),
+    path.resolve(process.cwd(), 'build/docs/system-map.mmd'),
+    path.resolve(dir, '../../../docs/system-map.mmd'),
+    path.resolve(dir, '../../../../docs/system-map.mmd'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[0];
+}
+
 export class BackupController {
   // eslint-disable-next-line class-methods-use-this
   async listRuns(_req: AuthRequest, res: Response): Promise<unknown> {
@@ -539,9 +555,8 @@ export class BackupController {
   }
 
   // eslint-disable-next-line class-methods-use-this
-  async getSystemDiagram(_req: AuthRequest, res: Response): Promise<unknown> {
-    const systemMapPath = process.env.SYSTEM_MAP_PATH
-      || path.resolve(import.meta.dirname, '../../../docs/system-map.mmd');
+  async getSystemDiagram(_req: AuthRequest, res: Response, mapPath?: string): Promise<unknown> {
+    const systemMapPath = resolveSystemMapPath(mapPath);
     try {
       const content = await fs.promises.readFile(systemMapPath, 'utf8');
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
