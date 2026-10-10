@@ -142,5 +142,43 @@ describe('backup-export.ts', () => {
 
       expect(manifest.databases.webjamsalem).toEqual({ ok: false, reason: 'bad auth', collections: {} });
     });
+
+    it('records start, finish, trigger, and who in the manifest', async () => {
+      const primaryDb = fakeDb({ user: [{ name: 'josh' }] });
+      const outDir = path.join(tmpDir, 'run-custom-manifest');
+
+      const manifest = await runFullBackup(outDir, {
+        primaryUri: 'mongodb://primary',
+        connect: fakeConnect({ 'mongodb://primary': primaryDb }),
+        startedAt: '2026-10-07T12:00:00.000Z',
+        trigger: 'daily check',
+        who: 'josh',
+      });
+
+      expect(manifest.startedAt).toBe('2026-10-07T12:00:00.000Z');
+      expect(typeof manifest.finishedAt).toBe('string');
+      expect(manifest.trigger).toBe('daily check');
+      expect(manifest.who).toBe('josh');
+
+      const onDisk = JSON.parse(fs.readFileSync(path.join(outDir, 'manifest.json'), 'utf8')) as Record<string, unknown>;
+      expect(onDisk.startedAt).toBe('2026-10-07T12:00:00.000Z');
+      expect(onDisk.trigger).toBe('daily check');
+      expect(onDisk.who).toBe('josh');
+    });
+
+    it('defaults trigger to backup button and omits who when not provided', async () => {
+      const primaryDb = fakeDb({ user: [{ name: 'josh' }] });
+      const outDir = path.join(tmpDir, 'run-default-manifest');
+
+      const manifest = await runFullBackup(outDir, {
+        primaryUri: 'mongodb://primary',
+        connect: fakeConnect({ 'mongodb://primary': primaryDb }),
+      });
+
+      expect(typeof manifest.startedAt).toBe('string');
+      expect(typeof manifest.finishedAt).toBe('string');
+      expect(manifest.trigger).toBe('backup button');
+      expect(manifest.who).toBeUndefined();
+    });
   });
 });
