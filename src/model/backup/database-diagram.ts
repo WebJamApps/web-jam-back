@@ -93,21 +93,38 @@ export function getRefTarget(schemaType: SchemaTypeLike): string | null {
   return null;
 }
 
-function extractModelEntityAndRefs(
+export interface RawFieldDef {
+  sanitizedField: string;
+  line: string;
+}
+
+export function collectSchemaFieldsAndRefs(
   modelName: string,
-): { entity: EntityDef; relationships: RelationshipDef[]; collectionName: string } {
-  const model = mongoose.model(modelName);
-  const fields: string[] = [];
+  schema: mongoose.Schema,
+  prefix = '',
+  ancestors: Set<mongoose.Schema> = new Set(),
+): { rawFields: RawFieldDef[]; relationships: RelationshipDef[] } {
+  if (ancestors.has(schema)) {
+    return { rawFields: [], relationships: [] };
+  }
+  const nextAncestors = new Set(ancestors);
+  nextAncestors.add(schema);
+
+  const rawFields: RawFieldDef[] = [];
   const relationships: RelationshipDef[] = [];
-  const schemaPaths = model.schema.paths as Record<string, SchemaTypeLike>;
+  const schemaPaths = schema.paths as Record<string, SchemaTypeLike>;
   const pathKeys = Object.keys(schemaPaths).sort();
 
   for (const pathKey of pathKeys) {
     const schemaType = schemaPaths[pathKey];
+    const fullPath = prefix ? `${prefix}.${pathKey}` : pathKey;
+    const sanitizedField = fullPath.replace(/\./g, '_');
     const typeStr = mapMongooseType(schemaType.instance);
-    const sanitizedField = pathKey.replace(/\./g, '_');
     const uniqueMark = isFieldUnique(schemaType) ? ' UK' : '';
-    fields.push(`        ${typeStr} ${sanitizedField}${uniqueMark}`);
+    rawFields.push({
+      sanitizedField,
+      line: `        ${typeStr} ${sanitizedField}${uniqueMark}`,
+    });
 
     const refTarget = getRefTarget(schemaType);
     if (refTarget) {
@@ -121,18 +138,23 @@ function extractModelEntityAndRefs(
     const subSchema = (schemaType as { schema?: mongoose.Schema; caster?: { schema?: mongoose.Schema } }).schema
       || (schemaType as { schema?: mongoose.Schema; caster?: { schema?: mongoose.Schema } }).caster?.schema;
     if (subSchema && subSchema.paths) {
-      for (const [subKey, subtype] of Object.entries(subSchema.paths as Record<string, SchemaTypeLike>)) {
-        const subRef = getRefTarget(subtype);
-        if (subRef) {
-          relationships.push({
-            source: modelName,
-            target: subRef,
-            field: `${sanitizedField}_${subKey}`,
-          });
-        }
-      }
+      const sub = collectSchemaFieldsAndRefs(modelName, subSchema, fullPath, nextAncestors);
+      rawFields.push(...sub.rawFields);
+      relationships.push(...sub.relationships);
     }
   }
+
+  return { rawFields, relationships };
+}
+
+function extractModelEntityAndRefs(
+  modelName: string,
+): { entity: EntityDef; relationships: RelationshipDef[]; collectionName: string } {
+  const model = mongoose.model(modelName);
+  const { rawFields, relationships } = collectSchemaFieldsAndRefs(modelName, model.schema);
+
+  rawFields.sort((a, b) => a.sanitizedField.localeCompare(b.sanitizedField));
+  const fields = rawFields.map((f) => f.line);
 
   return {
     entity: { name: modelName, fields },
@@ -239,4 +261,5 @@ export default {
   mapMongooseType,
   isFieldUnique,
   getRefTarget,
+  collectSchemaFieldsAndRefs,
 };

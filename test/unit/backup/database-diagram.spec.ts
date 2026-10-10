@@ -5,6 +5,7 @@ import {
   mapMongooseType,
   isFieldUnique,
   getRefTarget,
+  collectSchemaFieldsAndRefs,
   type SchemaTypeLike,
 } from '#src/model/backup/database-diagram.js';
 
@@ -44,6 +45,24 @@ describe('database-diagram', () => {
       expect(getRefTarget({ options: {} })).toBeNull();
       expect(getRefTarget({})).toBeNull();
     });
+
+    it('recursively collects embedded schema fields and relationships across nested schemas', () => {
+      const setlistModel = mongoose.model('Setlist');
+      const { rawFields, relationships } = collectSchemaFieldsAndRefs('Setlist', setlistModel.schema);
+      const fieldNames = rawFields.map((f) => f.sanitizedField);
+
+      expect(fieldNames).toContain('items');
+      expect(fieldNames).toContain('items_order');
+      expect(fieldNames).toContain('items_songId');
+      expect(fieldNames).toContain('items_title');
+      expect(fieldNames).toContain('items_artist');
+      expect(fieldNames).toContain('items_playLink');
+      expect(fieldNames).toContain('items_notes');
+
+      const songRel = relationships.find((r) => r.source === 'Setlist' && r.target === 'Song');
+      expect(songRel).toBeDefined();
+      expect(songRel?.field).toBe('items_songId');
+    });
   });
 
   describe('generateDatabaseDiagram', () => {
@@ -80,17 +99,49 @@ describe('database-diagram', () => {
         expect(diagram).toContain(`    ${modelName} {`);
       }
 
-      // 4. Asserts each field line within its entity block
-      for (const modelName of registeredModels) {
-        const model = mongoose.model(modelName);
-        const schemaPaths = model.schema.paths as Record<string, SchemaTypeLike>;
+      // Helper to extract an entity block from the Mermaid diagram text
+      const getEntityBlock = (diagramText: string, entityName: string): string => {
+        const match = diagramText.match(new RegExp(` {4}${entityName} \\{([\\s\\S]*?)^ {4}\\}`, 'm'));
+        expect(match, `Entity block for ${entityName} should exist`).not.toBeNull();
+        return match ? match[1] : '';
+      };
 
+      // Recursive helper to collect all expected field lines across parent and embedded schemas
+      function collectAllExpectedFieldLines(
+        schema: mongoose.Schema,
+        prefix = '',
+        ancestors: Set<mongoose.Schema> = new Set(),
+      ): string[] {
+        if (ancestors.has(schema)) return [];
+        const nextAncestors = new Set(ancestors);
+        nextAncestors.add(schema);
+
+        const lines: string[] = [];
+        const schemaPaths = schema.paths as Record<string, SchemaTypeLike>;
         for (const [pathKey, schemaType] of Object.entries(schemaPaths)) {
-          const sanitizedField = pathKey.replace(/\./g, '_');
+          const fullPath = prefix ? `${prefix}.${pathKey}` : pathKey;
+          const sanitizedField = fullPath.replace(/\./g, '_');
           const typeStr = mapMongooseType(schemaType.instance);
           const isUnique = isFieldUnique(schemaType);
-          const expectedFieldLine = `        ${typeStr} ${sanitizedField}${isUnique ? ' UK' : ''}`;
-          expect(diagram).toContain(expectedFieldLine);
+          lines.push(`        ${typeStr} ${sanitizedField}${isUnique ? ' UK' : ''}`);
+
+          const subSchema = (schemaType as { schema?: mongoose.Schema; caster?: { schema?: mongoose.Schema } }).schema
+            || (schemaType as { schema?: mongoose.Schema; caster?: { schema?: mongoose.Schema } }).caster?.schema;
+          if (subSchema && subSchema.paths) {
+            lines.push(...collectAllExpectedFieldLines(subSchema, fullPath, nextAncestors));
+          }
+        }
+        return lines;
+      }
+
+      // 4. Asserts all field lines (including recursive embedded fields) within their entity block
+      for (const modelName of registeredModels) {
+        const model = mongoose.model(modelName);
+        const entityBlock = getEntityBlock(diagram, modelName);
+        const expectedFieldLines = collectAllExpectedFieldLines(model.schema);
+
+        for (const expectedLine of expectedFieldLines) {
+          expect(entityBlock).toContain(expectedLine.trim());
         }
       }
 
@@ -100,7 +151,7 @@ describe('database-diagram', () => {
       expect(diagram).toContain('        string weekend UK');
       expect(diagram).toContain('        string pageId UK');
 
-      // 6. Asserts relationship lines for fields pointing at other collections
+      // 6. Asserts relationship lines for fields pointing at other collections (direct and embedded)
       expect(diagram).toContain('    Gig }o--|| Venue : venueId');
       expect(diagram).toContain('    Outreach }o--|| Venue : venueId');
       expect(diagram).toContain('    OutreachDispatch }o--|| Venue : venueIds');
@@ -108,8 +159,70 @@ describe('database-diagram', () => {
       expect(diagram).toContain('    OutreachDispatch }o--|| OutreachVenueApproval : venueApprovalId');
       expect(diagram).toContain('    OutreachDispatch }o--|| OutreachDraftApproval : draftApprovalId');
       expect(diagram).toContain('    OutreachVenueApproval }o--|| Venue : venueIds');
+      expect(diagram).toContain('    Setlist }o--|| Song : items_songId');
+      expect(diagram).toContain('    Venue }o--|| Outreach : touches_outreachId');
+      expect(diagram).toContain('    OutreachDraftApproval }o--|| Venue : draftFingerprints_venueId');
 
-      // 7. A collection that has no record definition appears as an entity with no fields
+      // 7. Independent assertions for real nested fields inside their respective entity blocks
+      const setlistBlock = getEntityBlock(diagram, 'Setlist');
+      expect(setlistBlock).toContain('array items');
+      expect(setlistBlock).toContain('number items_order');
+      expect(setlistBlock).toContain('objectId items_songId');
+      expect(setlistBlock).toContain('string items_title');
+      expect(setlistBlock).toContain('string items_artist');
+      expect(setlistBlock).toContain('string items_playLink');
+      expect(setlistBlock).toContain('string items_notes');
+      expect(setlistBlock).toContain('objectId items__id');
+
+      const venueBlock = getEntityBlock(diagram, 'Venue');
+      expect(venueBlock).toContain('array touches');
+      expect(venueBlock).toContain('date touches_date');
+      expect(venueBlock).toContain('string touches_type');
+      expect(venueBlock).toContain('string touches_note');
+      expect(venueBlock).toContain('string touches_templateType');
+      expect(venueBlock).toContain('object touches_targetWeekend');
+      expect(venueBlock).toContain('date touches_targetWeekend_start');
+      expect(venueBlock).toContain('date touches_targetWeekend_end');
+      expect(venueBlock).toContain('string touches_outcome');
+      expect(venueBlock).toContain('date touches_bookedDate');
+      expect(venueBlock).toContain('objectId touches_outreachId');
+      expect(venueBlock).toContain('string touches_actor');
+
+      const draftApprovalBlock = getEntityBlock(diagram, 'OutreachDraftApproval');
+      expect(draftApprovalBlock).toContain('array draftFingerprints');
+      expect(draftApprovalBlock).toContain('objectId draftFingerprints_venueId');
+      expect(draftApprovalBlock).toContain('string draftFingerprints_fingerprint');
+      expect(draftApprovalBlock).toContain('string draftFingerprints_subject');
+      expect(draftApprovalBlock).toContain('object targetWeekend');
+      expect(draftApprovalBlock).toContain('date targetWeekend_start');
+      expect(draftApprovalBlock).toContain('date targetWeekend_end');
+
+      const outreachBlock = getEntityBlock(diagram, 'Outreach');
+      expect(outreachBlock).toContain('object targetWeekend');
+      expect(outreachBlock).toContain('date targetWeekend_start');
+      expect(outreachBlock).toContain('date targetWeekend_end');
+      expect(outreachBlock).toContain('object suggestion');
+      expect(outreachBlock).toContain('string suggestion_sentiment');
+      expect(outreachBlock).toContain('string suggestion_proposedBookingStatus');
+      expect(outreachBlock).toContain('boolean suggestion_proposedInterested');
+      expect(outreachBlock).toContain('string suggestion_rationale');
+      expect(outreachBlock).toContain('string suggestion_model');
+      expect(outreachBlock).toContain('boolean suggestion_reviewed');
+      expect(outreachBlock).toContain('array followUps');
+      expect(outreachBlock).toContain('date followUps_sentAt');
+      expect(outreachBlock).toContain('string followUps_type');
+      expect(outreachBlock).toContain('string followUps_messageId');
+      expect(outreachBlock).toContain('string followUps_eventId');
+      expect(outreachBlock).toContain('number followUps_step');
+
+      const sweepBlock = getEntityBlock(diagram, 'VenueMiningSweep');
+      expect(sweepBlock).toContain('object publication');
+      expect(sweepBlock).toContain('string publication_name');
+      expect(sweepBlock).toContain('string publication_url');
+      expect(sweepBlock).toContain('string publication_api');
+      expect(sweepBlock).toContain('string publication_type');
+
+      // 8. A collection that has no record definition appears as an entity with no fields
       const jamPicsBlock = '    jamPics {\n    }';
       expect(diagram).toContain(jamPicsBlock);
     });

@@ -53,6 +53,9 @@ describe('/admin/backup/diagram routes', () => {
       expect((res.body as string).startsWith('erDiagram')).toBe(true);
       expect(res.body).toContain('User {');
       expect(res.body).toContain('Gig {');
+      expect(res.body).toContain('items_songId');
+      expect(res.body).toContain('touches_outreachId');
+      expect(res.body).toContain('draftFingerprints_venueId');
     });
 
     it('refuses a caller with any other role (401)', async () => {
@@ -197,7 +200,7 @@ describe('/admin/backup/diagram routes', () => {
       expect(content).not.toMatch(/https?:\/\//i);
 
       // No hostname or domain addresses (e.g. web-jam.com, example.com)
-      expect(content).not.toMatch(/\b[a-zA-Z0-9-]+\.(com|org|net|io|edu|gov|dev|invalid)\b/i);
+      expect(content).not.toMatch(/\b[a-z0-9-]+\.(com|org|net|io|edu|gov|dev|invalid)\b/i);
 
       // No secrets, tokens, or credentials (verified on body lines, since rule comment quotes them)
       expect(content).not.toMatch(/password/i);
