@@ -127,8 +127,9 @@ export async function verifyFolderCounts(folder: string, manifestCounts: Record<
   }
 }
 
-// Every record in every file must parse before any collection is dropped; a record that
-// cannot be parsed refuses the restore with nothing changed.
+// Every record in every file must parse, and parse to a document, before any collection is
+// dropped; anything else (malformed JSON, null, a scalar, an array) refuses the restore with
+// nothing changed.
 async function validateRecords(folder: string, files: string[]): Promise<void> {
   for (const file of files) {
     let lineNumber = 0;
@@ -136,10 +137,13 @@ async function validateRecords(folder: string, files: string[]): Promise<void> {
       // eslint-disable-next-line no-await-in-loop
       for await (const line of readLines(path.join(folder, file))) {
         lineNumber += 1;
-        EJSON.parse(line);
+        const parsed: unknown = EJSON.parse(line);
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          throw new TypeError('the record is not a document');
+        }
       }
     } catch (e) {
-      throw new RestoreRefusal('files', `${file} holds a record that cannot be parsed (record ${lineNumber}): ${(e as Error).message}`);
+      throw new RestoreRefusal('files', `${file} holds a record that is not a valid document (record ${lineNumber}): ${(e as Error).message}`);
     }
   }
 }

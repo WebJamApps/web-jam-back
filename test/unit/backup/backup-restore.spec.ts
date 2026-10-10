@@ -520,6 +520,33 @@ describe('backup-restore.ts: replaceFromFolder and restoreFromFolder', () => {
     expect(db.data.song).toEqual([{ title: 'live' }]);
   });
 
+  it.each(['null', '42', '"text"', '[1,2]', 'true'])('refuses a later record that is %s, not a document, before dropping anything', async (record) => {
+    fs.writeFileSync(path.join(folder, 'song.ndjson'), `${serializeDoc({ title: 'ok' })}\n${record}\n`);
+    const db = new FakeDb({ song: [{ title: 'live' }] });
+    const err = await refusal(replaceFromFolder({ db, folder, manifestCounts: { song: 2 } }));
+    expect(err.guard).toBe('files');
+    expect(err.message).toMatch(/song\.ndjson.*record 2.*not a document/);
+    expect(db.changes()).toEqual([]);
+    expect(db.data.song).toEqual([{ title: 'live' }]);
+  });
+
+  it('refuses a file holding only null', async () => {
+    fs.writeFileSync(path.join(folder, 'song.ndjson'), 'null\n');
+    const db = new FakeDb({ song: [{ title: 'live' }] });
+    expect((await refusal(replaceFromFolder({ db, folder }))).guard).toBe('files');
+    expect(db.changes()).toEqual([]);
+  });
+
+  it('refuses a non-document record in a later collection before replacing an earlier one', async () => {
+    write('song', SONGS);
+    fs.writeFileSync(path.join(folder, 'user.ndjson'), `${serializeDoc({ name: 'ok' })}\nnull\n`);
+    const db = new FakeDb({ song: [{ title: 'live' }], user: [{ name: 'live' }] });
+    expect((await refusal(replaceFromFolder({ db, folder }))).guard).toBe('files');
+    expect(db.changes()).toEqual([]);
+    expect(db.data.song).toEqual([{ title: 'live' }]);
+    expect(db.data.user).toEqual([{ name: 'live' }]);
+  });
+
   it('inserts an ordinary document with doc and collection fields whole, into its own collection', async () => {
     const odd = { doc: { a: 1 }, collection: 'untouched', note: 'ordinary' };
     write('source', [odd]);
