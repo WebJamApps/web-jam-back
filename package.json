@@ -16,7 +16,7 @@
     "#lib/*": "./build/src/lib/*"
   },
   "overrides": {
-    "shell-quote": "^1.10.0"
+    "shell-quote": "^1.12.0"
   },
   "scripts": {
     "rmrf": "rimraf build && rimraf JaMmusic && rimraf coverage",
