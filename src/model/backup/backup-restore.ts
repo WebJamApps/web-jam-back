@@ -19,7 +19,7 @@ const debug = Debug('web-jam-back:backup-restore');
 // mongoose re-exports the driver's BSON module, so EJSON needs no new dependency.
 const { EJSON } = mongoose.mongo.BSON;
 
-const DATABASE = 'webjamsalem';
+export const DATABASE = 'webjamsalem';
 const BATCH_SIZE = 1000;
 
 // A guard refused the restore. Thrown only before anything is changed.
@@ -372,12 +372,12 @@ export interface RestoreProductionOptions {
   onProgress?: (step: string) => void;
 }
 
-async function accessTokenOf(client: RestoreDropboxLike): Promise<string> {
+export async function accessTokenOf(client: RestoreDropboxLike): Promise<string> {
   return client.getAccessToken ? client.getAccessToken() : dropbox.getAccessToken();
 }
 
 // Guard 1: only a good run can be chosen.
-async function checkChosenRun(client: RestoreDropboxLike, token: string, runName: string): Promise<BackupManifest> {
+export async function checkChosenRun(client: RestoreDropboxLike, token: string, runName: string): Promise<BackupManifest> {
   let manifest: BackupManifest | null;
   try {
     manifest = await client.readManifest(token, runName);
@@ -421,7 +421,7 @@ async function checkFreshBackup(
 }
 
 // Guard 4: download the chosen run's files and compare each count with the manifest.
-async function downloadAndVerify(
+export async function downloadAndVerify(
   client: RestoreDropboxLike,
   token: string,
   runName: string,

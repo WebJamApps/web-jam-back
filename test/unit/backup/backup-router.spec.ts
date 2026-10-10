@@ -12,6 +12,8 @@ import type { RestoreProductionOptions } from '#src/model/backup/backup-restore.
 
 // The restore module is covered by backup-restore.spec.ts; here only the route is under test.
 const mocks = vi.hoisted(() => ({
+  copyToDev: vi.fn(),
+  copyActive: false,
   restoreProduction: vi.fn(),
   restoreActive: false,
   rebuild: undefined as undefined | ((collections: string[]) => Promise<unknown>),
@@ -23,6 +25,15 @@ vi.mock('#src/model/backup/backup-restore.js', async (importOriginal) => {
     restoreProduction: mocks.restoreProduction,
     isRestoreActive: () => mocks.restoreActive || original.isRestoreActive(),
     mongooseIndexRebuilder: (conn: Parameters<typeof original.mongooseIndexRebuilder>[0]) => mocks.rebuild || original.mongooseIndexRebuilder(conn),
+  };
+});
+
+vi.mock('#src/model/backup/copy-to-dev.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('#src/model/backup/copy-to-dev.js')>();
+  return {
+    ...original,
+    copyToDev: mocks.copyToDev,
+    isCopyActive: () => mocks.copyActive || original.isCopyActive(),
   };
 });
 
@@ -785,5 +796,148 @@ describe('POST /admin/backup/runs/:name/restore', () => {
     expect(r.status).toBe(500);
     expect(r.body.message).toMatch(/database connection/i);
     expect(mocks.restoreProduction).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /admin/backup/runs/:name/copy-to-dev', () => {
+  const RUN = '2026-10-08T12-00-00-000Z';
+  const devToken = authUtils.createJWT({ _id: 'dev-user-id' });
+  const otherToken = authUtils.createJWT({ _id: 'other-user-id' });
+  const copyUrl = `/admin/backup/runs/${RUN}/copy-to-dev`;
+  const copyResult = {
+    collections: [{
+      collection: 'users', copied: 2, manifest: 2, addressesReplaced: 3,
+    }],
+    readBack: { status: 'none', remaining: 0, message: 'no real email address found in DEV' },
+    clean: true,
+  };
+  const saved = { dev: process.env.DEV_MONGO_DB_URI, prod: process.env.MONGO_DB_URI };
+
+  const mockUserRole = (userType: string) => {
+    vi.spyOn(userModel, 'findById').mockReturnValue({
+      lean: () => ({ exec: () => Promise.resolve({ userType }) }),
+    } as never);
+  };
+
+  const waitForOperation = async (name: string, status: string) => {
+    let body: Record<string, unknown> = {};
+    await vi.waitFor(async () => {
+      const r = await request(app).get(`/admin/backup/operations/${name}`).set('Authorization', `Bearer ${devToken}`);
+      body = r.body as Record<string, unknown>;
+      expect(body.status).toBe(status);
+    });
+    return body;
+  };
+
+  beforeEach(() => {
+    authUtils.ensureAuthenticated = originalEnsureAuthenticated;
+    resetOperations();
+    dropboxConfigured.mockReturnValue(true);
+    mocks.copyActive = false;
+    process.env.DEV_MONGO_DB_URI = 'mongodb+srv://dev-cluster.mongodb.net/web-jam-dev';
+    process.env.MONGO_DB_URI = 'mongodb+srv://prod-cluster.mongodb.net/webjamsalem';
+    mocks.copyToDev.mockResolvedValue(copyResult);
+    mockUserRole('Developer');
+  });
+
+  afterEach(() => {
+    if (saved.dev === undefined) delete process.env.DEV_MONGO_DB_URI; else process.env.DEV_MONGO_DB_URI = saved.dev;
+    if (saved.prod === undefined) delete process.env.MONGO_DB_URI; else process.env.MONGO_DB_URI = saved.prod;
+    resetOperations();
+    vi.restoreAllMocks();
+  });
+
+  it('serves the Developer role: answers at once (202), then reports counts, replacements and the read-back', async () => {
+    const r = await request(app).post(copyUrl).set('Authorization', `Bearer ${devToken}`);
+    expect(r.status).toBe(202);
+    expect(r.body.name).toMatch(/^copy-to-dev-/);
+    const op = await waitForOperation(r.body.name as string, 'completed');
+    expect(op).toMatchObject({ type: 'copy-to-dev', progress: 'complete', result: copyResult });
+    expect(mocks.copyToDev).toHaveBeenCalledWith(expect.objectContaining({ runName: RUN }));
+  });
+
+  it('records a refusal as a failed operation that carries the reason', async () => {
+    mocks.copyToDev.mockRejectedValue(new Error('the DEV database is asleep or cannot be reached; Resume'));
+    const r = await request(app).post(copyUrl).set('Authorization', `Bearer ${devToken}`);
+    expect(r.status).toBe(202);
+    const op = await waitForOperation(r.body.name as string, 'failed');
+    expect(op).toMatchObject({ progress: 'failed', error: expect.stringMatching(/asleep/) });
+  });
+
+  it('reports each step through the operations route while the copy runs', async () => {
+    let finish: () => void = () => undefined;
+    mocks.copyToDev.mockImplementation((o: { onProgress?: (step: string) => void }) => {
+      o.onProgress?.('reading DEV back');
+      return new Promise((resolve) => { finish = () => resolve(copyResult); });
+    });
+    const r = await request(app).post(copyUrl).set('Authorization', `Bearer ${devToken}`);
+    await vi.waitFor(async () => {
+      const op = await request(app).get(`/admin/backup/operations/${r.body.name}`).set('Authorization', `Bearer ${devToken}`);
+      expect(op.body).toMatchObject({ status: 'in_progress', progress: 'reading DEV back' });
+    });
+    finish();
+    await waitForOperation(r.body.name as string, 'completed');
+  });
+
+  it('refuses a caller whose account holds another role (401), and copies nothing', async () => {
+    mockUserRole('JaM-admin');
+    const r = await request(app).post(copyUrl).set('Authorization', `Bearer ${otherToken}`);
+    expect(r.status).toBe(401);
+    await flush();
+    expect(mocks.copyToDev).not.toHaveBeenCalled();
+  });
+
+  it('refuses a caller who is not logged in (401), and copies nothing', async () => {
+    const r = await request(app).post(copyUrl);
+    expect(r.status).toBe(401);
+    await flush();
+    expect(mocks.copyToDev).not.toHaveBeenCalled();
+  });
+
+  it('refuses with 500 when the account lookup throws, and copies nothing', async () => {
+    vi.spyOn(userModel, 'findById').mockReturnValue({
+      lean: () => ({ exec: () => Promise.reject(new Error('DB failure')) }),
+    } as never);
+    const r = await request(app).post(copyUrl).set('Authorization', `Bearer ${devToken}`);
+    expect(r.status).toBe(500);
+    await flush();
+    expect(mocks.copyToDev).not.toHaveBeenCalled();
+  });
+
+  it('refuses a run name that could change the Dropbox path (400)', async () => {
+    const r = await request(app).post('/admin/backup/runs/..%2Fescape/copy-to-dev').set('Authorization', `Bearer ${devToken}`);
+    expect(r.status).toBe(400);
+    expect(mocks.copyToDev).not.toHaveBeenCalled();
+  });
+
+  it('refuses with 500 when Dropbox settings are absent', async () => {
+    dropboxConfigured.mockReturnValue(false);
+    const r = await request(app).post(copyUrl).set('Authorization', `Bearer ${devToken}`);
+    expect(r.status).toBe(500);
+    expect(r.body.message).toMatch(/Dropbox backup settings absent/i);
+    expect(mocks.copyToDev).not.toHaveBeenCalled();
+  });
+
+  it('refuses with 500 naming DEV_MONGO_DB_URI when it is absent', async () => {
+    delete process.env.DEV_MONGO_DB_URI;
+    const r = await request(app).post(copyUrl).set('Authorization', `Bearer ${devToken}`);
+    expect(r.status).toBe(500);
+    expect(r.body.message).toMatch(/DEV_MONGO_DB_URI/);
+    expect(mocks.copyToDev).not.toHaveBeenCalled();
+  });
+
+  it("refuses with 500 when the setting's host is production's", async () => {
+    process.env.DEV_MONGO_DB_URI = 'mongodb+srv://prod-cluster.mongodb.net/web-jam-dev';
+    const r = await request(app).post(copyUrl).set('Authorization', `Bearer ${devToken}`);
+    expect(r.status).toBe(500);
+    expect(r.body.message).toMatch(/production's host/);
+    expect(mocks.copyToDev).not.toHaveBeenCalled();
+  });
+
+  it('refuses with 409 while a copy is running', async () => {
+    mocks.copyActive = true;
+    const r = await request(app).post(copyUrl).set('Authorization', `Bearer ${devToken}`);
+    expect(r.status).toBe(409);
+    expect(mocks.copyToDev).not.toHaveBeenCalled();
   });
 });

@@ -16,6 +16,9 @@ import {
   restoreProduction, isRestoreActive, registerDeclaredModels, mongooseIndexRebuilder,
   type RestoreDbLike,
 } from './backup-restore.js';
+import {
+  copyToDev, checkDevTarget, isCopyActive, DEV_SETTING,
+} from './copy-to-dev.js';
 
 // POST /admin/backup — Mongo backup (web-jam-tools#116, web-jam-back#1141).
 // Exports every collection of this app's own database as EJSON
@@ -389,6 +392,62 @@ export class BackupController {
         });
       });
     return res.status(202).json({ name, message: 'restore started' });
+  }
+
+  // POST /admin/backup/runs/:name/copy-to-dev — copies a chosen good run into the DEV database
+  // with every email address replaced (web-jam-back#1146). The settings are checked before the
+  // 202; the DEV cluster, the run and its files are checked in the background, and the result
+  // (or the refusal) is reported through the operations route.
+  // eslint-disable-next-line class-methods-use-this
+  async startCopyToDev(req: AuthRequest, res: Response): Promise<unknown> {
+    const rawName = req.params?.name;
+    const runName = Array.isArray(rawName) ? rawName[0] : rawName;
+    if (!runName || typeof runName !== 'string' || !isSafeRunName(runName)) {
+      return res.status(400).json({ message: 'a valid run name is required' });
+    }
+    if (!dropbox.dropboxConfigured()) {
+      return res.status(500).json({ message: 'Dropbox backup settings absent' });
+    }
+    try {
+      checkDevTarget(process.env[DEV_SETTING], process.env.MONGO_DB_URI);
+    } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    if (isCopyActive()) {
+      return res.status(409).json({ message: 'a copy to DEV is in progress' });
+    }
+
+    const now = new Date();
+    const name = `copy-to-dev-${runLabel(now)}`;
+    recordOperation({
+      name,
+      type: 'copy-to-dev',
+      status: 'in_progress',
+      startedAt: now.toISOString(),
+      progress: 'starting',
+    });
+    copyToDev({
+      runName,
+      onProgress: (progress) => { updateOperation(name, { progress }); },
+    })
+      .then((result) => {
+        updateOperation(name, {
+          status: 'completed',
+          finishedAt: new Date().toISOString(),
+          progress: 'complete',
+          result,
+        });
+      })
+      .catch((e) => {
+        console.error('[copy-to-dev] failed:', (e as Error).message); // eslint-disable-line no-console
+        updateOperation(name, {
+          status: 'failed',
+          finishedAt: new Date().toISOString(),
+          progress: 'failed',
+          error: (e as Error).message,
+        });
+      });
+    return res.status(202).json({ name, message: 'copy to DEV started' });
   }
 
   // eslint-disable-next-line class-methods-use-this
