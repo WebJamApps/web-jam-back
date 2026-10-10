@@ -16,6 +16,7 @@ import songData from './model/song/reset-song.js';
 import songController from './model/song/song-controller.js';
 import Controller from './lib/controller.js';
 import { startFacebookRefresh } from './model/facebook/FacebookController.js';
+import { startBackupScheduler } from './model/backup/backup-scheduler.js';
 
 dotenv.config({ quiet: true });
 
@@ -70,6 +71,7 @@ routes(app);
 // Prime the CollegeLutheran Facebook feed cache and start the hourly refresh.
 // No-ops under NODE_ENV=test (so unit tests don't hit the network).
 startFacebookRefresh();
+startBackupScheduler();
 app.get('/*splat', (_req: Request, res: Response) => {
   res.sendFile(path.normalize(path.join(import.meta.dirname, '../../JaMmusic/dist/index.html')));
 });
