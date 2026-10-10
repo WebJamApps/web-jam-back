@@ -13,3 +13,14 @@ if (fs.existsSync(src)) {
   // eslint-disable-next-line no-console
   console.log(`copied ${src} -> ${dest}`);
 }
+
+const mapSrc = 'docs/system-map.mmd';
+const mapDest = 'build/docs/system-map.mmd';
+
+if (fs.existsSync(mapSrc)) {
+  fs.mkdirSync('build/docs', { recursive: true });
+  fs.cpSync(mapSrc, mapDest);
+  // eslint-disable-next-line no-console
+  console.log(`copied ${mapSrc} -> ${mapDest}`);
+}
+

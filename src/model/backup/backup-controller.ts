@@ -19,6 +19,7 @@ import {
 import {
   copyToDev, checkDevTarget, isCopyActive, DEV_SETTING,
 } from './copy-to-dev.js';
+import { generateDatabaseDiagram } from './database-diagram.js';
 
 // POST /admin/backup — Mongo backup (web-jam-tools#116, web-jam-back#1141).
 // Exports every collection of this app's own database as EJSON
@@ -245,6 +246,22 @@ export async function performBackup(opts: PerformBackupOptions = {}): Promise<Ba
   } finally {
     activeBackup = null;
   }
+}
+
+export function resolveSystemMapPath(customPath?: string, dir: string = import.meta.dirname): string {
+  if (customPath) return customPath;
+  const candidates = [
+    path.resolve(process.cwd(), 'docs/system-map.mmd'),
+    path.resolve(process.cwd(), 'build/docs/system-map.mmd'),
+    path.resolve(dir, '../../../docs/system-map.mmd'),
+    path.resolve(dir, '../../../../docs/system-map.mmd'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return candidates[0];
 }
 
 export class BackupController {
@@ -523,6 +540,31 @@ export class BackupController {
         });
       });
     return res.status(202).json({ message: 'backup started' });
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  async getDatabaseDiagram(_req: AuthRequest, res: Response): Promise<unknown> {
+    try {
+      const diagram = await generateDatabaseDiagram();
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.status(200).send(diagram);
+    } catch (err) {
+      debug('failed to generate database diagram: %s', (err as Error).message);
+      return res.status(500).json({ message: (err as Error).message });
+    }
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  async getSystemDiagram(_req: AuthRequest, res: Response, mapPath?: string): Promise<unknown> {
+    const systemMapPath = resolveSystemMapPath(mapPath);
+    try {
+      const content = await fs.promises.readFile(systemMapPath, 'utf8');
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.status(200).send(content);
+    } catch (err) {
+      debug('failed to read system map at %s: %s', systemMapPath, (err as Error).message);
+      return res.status(500).json({ message: 'failed to read system map' });
+    }
   }
 }
 
