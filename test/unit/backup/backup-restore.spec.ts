@@ -501,6 +501,35 @@ describe('backup-restore.ts: replaceFromFolder and restoreFromFolder', () => {
     expect(result.collections.map((c) => c.collection).sort()).toEqual(['gigs', 'jamPics']);
   });
 
+  it('refuses a malformed later record before dropping anything', async () => {
+    fs.writeFileSync(path.join(folder, 'song.ndjson'), `${serializeDoc({ title: 'ok' })}\n{not json\n`);
+    const db = new FakeDb({ song: [{ title: 'live' }] });
+    const err = await refusal(replaceFromFolder({ db, folder }));
+    expect(err.guard).toBe('files');
+    expect(err.message).toMatch(/song\.ndjson.*record 2/);
+    expect(db.changes()).toEqual([]);
+    expect(db.data.song).toEqual([{ title: 'live' }]);
+  });
+
+  it('refuses a malformed record in a later collection before replacing an earlier one', async () => {
+    write('song', SONGS);
+    fs.writeFileSync(path.join(folder, 'user.ndjson'), '{not json\n');
+    const db = new FakeDb({ song: [{ title: 'live' }], user: [{ name: 'live' }] });
+    expect((await refusal(replaceFromFolder({ db, folder }))).guard).toBe('files');
+    expect(db.changes()).toEqual([]);
+    expect(db.data.song).toEqual([{ title: 'live' }]);
+  });
+
+  it('inserts an ordinary document with doc and collection fields whole, into its own collection', async () => {
+    const odd = { doc: { a: 1 }, collection: 'untouched', note: 'ordinary' };
+    write('source', [odd]);
+    const db = new FakeDb({ untouched: [{ keep: true }] });
+    const result = await replaceFromFolder({ db, folder, manifestCounts: { source: 1 } });
+    expect(db.data.source).toEqual([odd]);
+    expect(db.data.untouched).toEqual([{ keep: true }]);
+    expect(result.collections).toEqual([{ collection: 'source', restored: 1, manifest: 1 }]);
+  });
+
   it('does not turn a failed drop into a merge', async () => {
     write('song', SONGS);
     const db = new FakeDb({ song: [{ title: 'live' }] });

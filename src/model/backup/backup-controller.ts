@@ -56,6 +56,8 @@ export interface PerformBackupOptions {
   trigger?: string;
   who?: string;
   now?: Date;
+  // Set only by a restore's own fresh backup, which may run while the restore holds the database.
+  duringRestore?: boolean;
 }
 
 async function checkInProgress(
@@ -162,6 +164,11 @@ export async function performBackup(opts: PerformBackupOptions = {}): Promise<Ba
   if (activeBackup) {
     debug('backup run in progress: an export/upload is already active (%s)', activeBackup.label);
     throw new Error(`backup run in progress: active backup already running (${activeBackup.label})`);
+  }
+
+  if (isRestoreActive() && !opts.duringRestore) {
+    debug('restore in progress: refusing backup');
+    throw new Error('restore in progress: backup refused until the restore finishes');
   }
 
   const now = opts.now || new Date();
@@ -283,7 +290,7 @@ export class BackupController {
       debug('Dropbox backup settings absent — refusing HTTP backup request');
       return res.status(500).json({ message: 'Dropbox backup settings absent' });
     }
-    if (isBackupActive()) {
+    if (isBackupActive() || isRestoreActive()) {
       debug('backup run in progress — refusing concurrent HTTP backup request');
       return res.status(409).json({ message: 'backup run in progress' });
     }
@@ -356,11 +363,11 @@ export class BackupController {
       runName,
       typedDate,
       db: db as unknown as RestoreDbLike,
-      takeFreshBackup: () => performBackup({ trigger: 'restore', who: req.user, now }),
+      takeFreshBackup: () => performBackup({ trigger: 'restore', who: req.user, now, duringRestore: true }),
       freshBackupLabel,
       rebuildIndexes: async (collections) => {
         await registerDeclaredModels(modelRoot);
-        await rebuild(collections);
+        return rebuild(collections);
       },
       onProgress: (progress) => { updateOperation(name, { progress }); },
     })
@@ -425,7 +432,7 @@ export class BackupController {
       debug('Dropbox backup settings absent — refusing HTTP backup request');
       return res.status(500).json({ message: 'Dropbox backup settings absent' });
     }
-    if (isBackupActive()) {
+    if (isBackupActive() || isRestoreActive()) {
       debug('backup run in progress — refusing concurrent HTTP backup request');
       return res.status(409).json({ message: 'backup run in progress' });
     }

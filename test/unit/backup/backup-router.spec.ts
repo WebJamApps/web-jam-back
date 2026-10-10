@@ -11,11 +11,20 @@ import mongoose from 'mongoose';
 import type { RestoreProductionOptions } from '#src/model/backup/backup-restore.js';
 
 // The restore module is covered by backup-restore.spec.ts; here only the route is under test.
-const mocks = vi.hoisted(() => ({ restoreProduction: vi.fn() }));
-vi.mock('#src/model/backup/backup-restore.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('#src/model/backup/backup-restore.js')>()),
-  restoreProduction: mocks.restoreProduction,
+const mocks = vi.hoisted(() => ({
+  restoreProduction: vi.fn(),
+  restoreActive: false,
+  rebuild: undefined as undefined | ((collections: string[]) => Promise<unknown>),
 }));
+vi.mock('#src/model/backup/backup-restore.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('#src/model/backup/backup-restore.js')>();
+  return {
+    ...original,
+    restoreProduction: mocks.restoreProduction,
+    isRestoreActive: () => mocks.restoreActive || original.isRestoreActive(),
+    mongooseIndexRebuilder: (conn: Parameters<typeof original.mongooseIndexRebuilder>[0]) => mocks.rebuild || original.mongooseIndexRebuilder(conn),
+  };
+});
 
 vi.mock('#src/lib/utils.js', () => ({
   default: { mongoConnect: vi.fn(() => Promise.resolve()) },
@@ -83,7 +92,7 @@ vi.mock('#src/lib/dropbox.js', () => ({
 
 const { default: app } = await import('#src/index.js');
 const { default: authUtils } = await import('#src/auth/authUtils.js');
-const { resetActiveBackup, isBackupActive } = await import('#src/model/backup/backup-controller.js');
+const { resetActiveBackup, isBackupActive, performBackup } = await import('#src/model/backup/backup-controller.js');
 const { default: userModel } = await import('#src/model/user/user-schema.js');
 const { resetOperations, recordOperation } = await import('#src/model/backup/backup-operations.js');
 const { default: request } = await import('../../helpers/api.js');
@@ -569,6 +578,8 @@ describe('POST /admin/backup/runs/:name/restore', () => {
     resetOperations();
     runFullBackup.mockClear();
     dropboxConfigured.mockReturnValue(true);
+    mocks.restoreActive = false;
+    mocks.rebuild = undefined;
     mocks.restoreProduction.mockResolvedValue(restoreResult);
     connection.db = {};
     mockUserRole('Developer');
@@ -651,6 +662,47 @@ describe('POST /admin/backup/runs/:name/restore', () => {
       .send({ date: '2026-10-08' });
     await waitForOperation(r.body.name as string, 'completed');
     expect(rebuilt).toEqual([['called']]);
+  });
+
+  it('returns the index failures the rebuilder reports, so the result can show them', async () => {
+    const failure = { collection: 'user', message: 'E11000 duplicate key' };
+    mocks.rebuild = () => Promise.resolve([failure]);
+    let returned: unknown;
+    mocks.restoreProduction.mockImplementation(async (o: RestoreProductionOptions) => {
+      returned = await o.rebuildIndexes?.(['user']);
+      return restoreResult;
+    });
+    const r = await request(app).post(restoreUrl)
+      .set('Authorization', `Bearer ${devToken}`)
+      .send({ date: '2026-10-08' });
+    await waitForOperation(r.body.name as string, 'completed');
+    expect(returned).toEqual([failure]);
+  });
+
+  describe('while a restore holds the database', () => {
+    beforeEach(() => { mocks.restoreActive = true; });
+
+    it('refuses POST /admin/backup/runs (409) and starts no export', async () => {
+      const r = await request(app).post('/admin/backup/runs').set('Authorization', `Bearer ${devToken}`);
+      expect(r.status).toBe(409);
+      expect(runFullBackup).not.toHaveBeenCalled();
+    });
+
+    it('refuses POST /admin/backup (409) and starts no export', async () => {
+      const r = await request(app).post('/admin/backup').set('Authorization', `Bearer ${devToken}`);
+      expect(r.status).toBe(409);
+      expect(runFullBackup).not.toHaveBeenCalled();
+    });
+
+    it('refuses a direct performBackup call (the scheduler path) and exports nothing', async () => {
+      await expect(performBackup({})).rejects.toThrow(/restore in progress/);
+      expect(runFullBackup).not.toHaveBeenCalled();
+    });
+
+    it("lets the restore's own fresh backup run", async () => {
+      await expect(performBackup({ duringRestore: true })).resolves.toBeDefined();
+      expect(runFullBackup).toHaveBeenCalled();
+    });
   });
 
   it('refuses a caller whose account holds another role (401), and restores nothing', async () => {

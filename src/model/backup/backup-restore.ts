@@ -127,6 +127,23 @@ export async function verifyFolderCounts(folder: string, manifestCounts: Record<
   }
 }
 
+// Every record in every file must parse before any collection is dropped; a record that
+// cannot be parsed refuses the restore with nothing changed.
+async function validateRecords(folder: string, files: string[]): Promise<void> {
+  for (const file of files) {
+    let lineNumber = 0;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      for await (const line of readLines(path.join(folder, file))) {
+        lineNumber += 1;
+        EJSON.parse(line);
+      }
+    } catch (e) {
+      throw new RestoreRefusal('files', `${file} holds a record that cannot be parsed (record ${lineNumber}): ${(e as Error).message}`);
+    }
+  }
+}
+
 // ── Indexes ──────────────────────────────────────────────────────────────────
 
 async function snapshotIndexes(db: RestoreDbLike, collections: string[]): Promise<Record<string, string[]>> {
@@ -199,8 +216,10 @@ async function dropIfPresent(db: RestoreDbLike, name: string): Promise<void> {
   }
 }
 
-function destinationOf(result: unknown, source: string): { name: string; doc: Doc } {
-  const redirect = typeof result === 'object' && result !== null && !Array.isArray(result)
+// Only the return value of an explicitly supplied transform may redirect a document;
+// a stored document that happens to have `doc` and `collection` fields is just a document.
+function destinationOf(result: unknown, source: string, transformed: boolean): { name: string; doc: Doc } {
+  const redirect = transformed && typeof result === 'object' && result !== null && !Array.isArray(result)
     && 'doc' in result && 'collection' in result;
   if (redirect) {
     const r = result as { collection: string; doc: Doc };
@@ -243,7 +262,7 @@ async function restoreOneFile(ctx: RestoreContext, folder: string, file: string)
     const doc = EJSON.parse(line) as Doc;
     const result = ctx.transform ? ctx.transform(doc, source) : doc;
     if (result !== null && result !== undefined) {
-      const target = destinationOf(result, source);
+      const target = destinationOf(result, source, !!ctx.transform);
       // eslint-disable-next-line no-await-in-loop
       await touch(ctx, target.name);
       batch.set(target.name, [...(batch.get(target.name) || []), target.doc]);
@@ -287,6 +306,8 @@ export async function replaceFromFolder(opts: ReplaceOptions): Promise<RestoreRe
   const { db, folder, manifestCounts, transform } = opts;
   const progress = opts.onProgress || (() => undefined);
   const files = fs.readdirSync(folder).filter((f) => f.endsWith('.ndjson')).sort();
+
+  await validateRecords(folder, files);
 
   const before = await snapshotIndexes(db, (await db.listCollections().toArray()).map((c) => c.name));
 
