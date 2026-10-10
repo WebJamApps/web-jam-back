@@ -160,13 +160,9 @@ describe('/admin/backup router', () => {
           }
           return Promise.resolve();
         });
-        authUtils.ensureAuthenticated = vi.fn((req: AuthRequest) => {
-          req.user = callerId;
-          return Promise.resolve();
-        });
-
+        const callerToken = authUtils.createJWT({ _id: callerId });
         const response = await request(app).post('/admin/backup')
-          .set('Authorization', 'fixture-request')
+          .set('Authorization', `Bearer ${callerToken}`)
           .send({ who: 'spoofed-body-user' });
         expect(response.status).toBe(202);
         await vi.waitFor(() => expect(isBackupActive()).toBe(false));
@@ -190,13 +186,9 @@ describe('/admin/backup router', () => {
       expect(runFullBackup).not.toHaveBeenCalled();
     });
 
-    it('rejects a request whose token fails ensureAuthenticated (401), and never starts an export', async () => {
-      (authUtils as unknown as { ensureAuthenticated: ReturnType<typeof vi.fn> }).ensureAuthenticated = vi.fn(
-        () => Promise.reject(new Error('The user does not have the permission')),
-      );
+    it('rejects a request whose token is invalid (401), and never starts an export', async () => {
       const r = await request(app).post('/admin/backup').set('Authorization', 'Bearer not-a-real-token');
       expect(r.status).toBe(401);
-      expect(r.body.message).toContain('permission');
       await flush();
       expect(runFullBackup).not.toHaveBeenCalled();
     });
@@ -470,6 +462,66 @@ describe('/admin/backup router', () => {
         .set('Authorization', `Bearer ${devToken}`);
       expect(r.status).toBe(404);
       expect(r.body.message).toMatch(/not found/i);
+    });
+
+    it('refuses path traversal characters in operation name with 400', async () => {
+      const r = await request(app)
+        .get('/admin/backup/operations/..%2fevil')
+        .set('Authorization', `Bearer ${devToken}`);
+      expect(r.status).toBe(400);
+      expect(r.body.message).toMatch(/invalid operation name/i);
+    });
+
+    it('returns 500 when dropbox readManifest throws an error', async () => {
+      readManifest.mockRejectedValueOnce(new Error('Dropbox network timeout'));
+      const r = await request(app)
+        .get('/admin/backup/operations/2026-10-07T12-00-00-000Z')
+        .set('Authorization', `Bearer ${devToken}`);
+      expect(r.status).toBe(500);
+      expect(r.body.message).toMatch(/Dropbox network timeout/i);
+    });
+  });
+
+  describe('AUTH_ROLES independence', () => {
+    it('serves Developer and refuses JaM-admin across all routes even when AUTH_ROLES.admin excludes Developer', async () => {
+      const originalAuthRoles = process.env.AUTH_ROLES;
+      try {
+        process.env.AUTH_ROLES = JSON.stringify({ admin: ['Staff', 'Finance'] });
+
+        // 1. GET /admin/backup/runs serves Developer
+        mockUserRole('Developer');
+        listSubfolders.mockResolvedValueOnce(['2026-10-07T20-00-00-000Z']);
+        readManifest.mockResolvedValueOnce({
+          generatedAt: '2026-10-07T20:00:00.000Z',
+          databases: { webjamsalem: { ok: true, collections: {} } },
+        });
+        const rDevRuns = await request(app).get('/admin/backup/runs').set('Authorization', `Bearer ${devToken}`);
+        expect(rDevRuns.status).toBe(200);
+
+        // 2. POST /admin/backup serves Developer
+        const rDevPost = await request(app).post('/admin/backup').set('Authorization', `Bearer ${devToken}`);
+        expect(rDevPost.status).toBe(202);
+
+        // 3. POST /admin/backup/runs serves Developer
+        resetActiveBackup();
+        const rDevPostRuns = await request(app).post('/admin/backup/runs').set('Authorization', `Bearer ${devToken}`);
+        expect(rDevPostRuns.status).toBe(202);
+
+        // 4. GET /admin/backup/runs refuses JaM-admin
+        mockUserRole('JaM-admin');
+        const rOtherRuns = await request(app).get('/admin/backup/runs').set('Authorization', `Bearer ${otherToken}`);
+        expect(rOtherRuns.status).toBe(401);
+
+        // 5. POST /admin/backup refuses JaM-admin
+        const rOtherPost = await request(app).post('/admin/backup').set('Authorization', `Bearer ${otherToken}`);
+        expect(rOtherPost.status).toBe(401);
+      } finally {
+        if (originalAuthRoles !== undefined) {
+          process.env.AUTH_ROLES = originalAuthRoles;
+        } else {
+          delete process.env.AUTH_ROLES;
+        }
+      }
     });
   });
 });

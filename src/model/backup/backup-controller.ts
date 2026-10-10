@@ -35,7 +35,7 @@ export interface DropboxClientLike {
   readManifest(accessToken: string, runLabel: string): Promise<BackupManifest | null>;
   uploadFile(accessToken: string, dropboxPath: string, contents: Buffer): Promise<void>;
   deletePath(accessToken: string, targetPath: string): Promise<void>;
-  getFolderSize?(accessToken: string, folderPath: string): Promise<number>;
+  getFolderSize?(accessToken: string, folderPath: string): Promise<number | null>;
 }
 
 export interface PerformBackupOptions {
@@ -247,14 +247,14 @@ export class BackupController {
       for (const name of sorted) {
         // eslint-disable-next-line no-await-in-loop
         const manifest = await dropbox.readManifest(accessToken, name);
-        let size = 0;
+        let size: number | null = null;
         const getFolderSizeFn = (dropbox as unknown as DropboxClientLike).getFolderSize;
         if (typeof getFolderSizeFn === 'function') {
           try {
             // eslint-disable-next-line no-await-in-loop
             size = await getFolderSizeFn(accessToken, `${BACKUP_ROOT}/${name}`);
           } catch {
-            size = 0;
+            size = null;
           }
         }
         runs.push(buildRunSummary(name, manifest, size));
@@ -311,6 +311,9 @@ export class BackupController {
     const rawName = req.params?.name;
     const name = Array.isArray(rawName) ? rawName[0] : rawName;
     if (!name || typeof name !== 'string') return res.status(400).json({ message: 'operation name is required' });
+    if (name.includes('..') || name.includes('/') || name.includes('\\')) {
+      return res.status(400).json({ message: 'invalid operation name' });
+    }
     const op = getOperation(name);
     if (op) {
       return res.status(200).json(op);
@@ -331,8 +334,8 @@ export class BackupController {
           };
           return res.status(200).json(fallbackOp);
         }
-      } catch {
-        // ignore
+      } catch (err) {
+        return res.status(500).json({ message: (err as Error).message });
       }
     }
     return res.status(404).json({ message: `operation '${name}' not found` });

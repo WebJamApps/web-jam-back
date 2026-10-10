@@ -11,6 +11,7 @@ const TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
 const UPLOAD_URL = 'https://content.dropboxapi.com/2/files/upload';
 const DOWNLOAD_URL = 'https://content.dropboxapi.com/2/files/download';
 const LIST_FOLDER_URL = 'https://api.dropboxapi.com/2/files/list_folder';
+const LIST_FOLDER_CONTINUE_URL = 'https://api.dropboxapi.com/2/files/list_folder/continue';
 const DELETE_URL = 'https://api.dropboxapi.com/2/files/delete_v2';
 
 // All backup runs live under this folder, one subfolder per run (named with the
@@ -196,17 +197,49 @@ export async function listSubfolders(accessToken: string, folderPath: string): P
   return (body.entries || []).filter((e) => e['.tag'] === 'folder').map((e) => e.name);
 }
 
-// Sums the size of all files in folderPath. Returns 0 if folder does not exist.
-export async function getFolderSize(accessToken: string, folderPath: string): Promise<number> {
-  const res = await fetch(LIST_FOLDER_URL, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: folderPath, recursive: true }),
-  });
+// Sums the size of all files in folderPath, following pagination cursors. Returns 0 if folder does not exist, or null on read failure.
+export async function getFolderSize(accessToken: string, folderPath: string): Promise<number | null> {
+  let res: Response;
+  try {
+    res = await fetch(LIST_FOLDER_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: folderPath, recursive: true }),
+    });
+  } catch {
+    return null;
+  }
   if (res.status === 409) return 0;
-  if (!res.ok) throw new Error(`dropbox list_folder failed: ${res.status} ${res.statusText}`);
-  const body = await res.json() as { entries?: Array<{ '.tag': string; size?: number }> };
-  return (body.entries || []).reduce((acc, e) => acc + (e['.tag'] === 'file' ? (e.size || 0) : 0), 0);
+  if (!res.ok) return null;
+  let body: {
+    entries?: Array<{ '.tag': string; size?: number }>;
+    cursor?: string;
+    has_more?: boolean;
+  };
+  try {
+    body = (await res.json()) as typeof body;
+  } catch {
+    return null;
+  }
+  let totalSize = (body.entries || []).reduce((acc, e) => acc + (e['.tag'] === 'file' ? (e.size || 0) : 0), 0);
+
+  while (body.has_more && body.cursor) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      res = await fetch(LIST_FOLDER_CONTINUE_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cursor: body.cursor }),
+      });
+      if (!res.ok) return null;
+      // eslint-disable-next-line no-await-in-loop
+      body = (await res.json()) as typeof body;
+      totalSize += (body.entries || []).reduce((acc, e) => acc + (e['.tag'] === 'file' ? (e.size || 0) : 0), 0);
+    } catch {
+      return null;
+    }
+  }
+  return totalSize;
 }
 
 export async function deletePath(accessToken: string, targetPath: string): Promise<void> {

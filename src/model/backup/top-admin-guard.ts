@@ -1,8 +1,15 @@
 import type { Request, Response, NextFunction } from 'express';
+import jwt from 'jwt-simple';
 import userModel from '../user/user-schema.js';
-import authUtils, { type AuthRequest } from '../../auth/authUtils.js';
+import type { AuthRequest } from '../../auth/authUtils.js';
 
 export const TOP_ADMIN_ROLE = 'Developer';
+
+interface JwtPayload {
+  sub: string;
+  iat: number;
+  exp?: number;
+}
 
 async function resolveUserDoc(userId: string): Promise<{ userType?: string } | null> {
   const query = userModel.findById(userId);
@@ -19,21 +26,26 @@ async function resolveUserDoc(userId: string): Promise<{ userType?: string } | n
 export async function topAdminGuard(req: Request, res: Response, next: NextFunction): Promise<unknown> {
   const authReq = req as AuthRequest;
 
-  // 1. Authenticate token if caller identity not already populated on req
+  // 1. Authenticate token without going through authUtils.ensureAuthenticated / AUTH_ROLES.
+  // The top-level admin role (Developer) is the sole gate for /admin/backup.
   if (!authReq.user) {
-    try {
-      await authUtils.ensureAuthenticated(authReq);
-    } catch (err) {
-      const msg = (err as Error).message || '';
-      if (msg.includes('token does not match any existing user') || msg.includes('user lookup')) {
-        return res.status(500).json({ message: msg });
-      }
-      return res.status(401).json({ message: msg });
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (!authHeader) {
+      return res.status(401).json({ message: 'The request does not have an Authorization header' });
     }
-  }
+    const tokenStr = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+    const parts = tokenStr.split(' ');
+    const token = parts.length > 1 ? parts[1] : parts[0];
 
-  if (!authReq.user) {
-    return res.status(401).json({ message: 'The user does not have the permission' });
+    try {
+      const payload = jwt.decode(token, process.env.HashString || '') as JwtPayload;
+      if (!payload || !payload.sub) {
+        return res.status(401).json({ message: 'Invalid token' });
+      }
+      authReq.user = payload.sub;
+    } catch (err) {
+      return res.status(401).json({ message: (err as Error).message });
+    }
   }
 
   // 2. Read caller's account through user-schema to verify top-level admin role

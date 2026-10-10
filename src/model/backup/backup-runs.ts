@@ -28,7 +28,7 @@ export interface BackupRunSummary {
   startedAt: string | null;
   trigger: string | null;
   state: RunState;
-  size: number;
+  size: number | null;
   dropboxPath: string;
   path: string;
   collections: Record<string, Record<string, number>>;
@@ -38,7 +38,7 @@ export interface BackupRunSummary {
 export function buildRunSummary(
   folderName: string,
   manifest: BackupManifest | null | undefined,
-  size = 0,
+  size: number | null = null,
 ): BackupRunSummary {
   const state = classifyManifest(manifest);
   const collections: Record<string, Record<string, number>> = {};
