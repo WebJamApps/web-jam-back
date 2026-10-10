@@ -196,6 +196,19 @@ export async function listSubfolders(accessToken: string, folderPath: string): P
   return (body.entries || []).filter((e) => e['.tag'] === 'folder').map((e) => e.name);
 }
 
+// Sums the size of all files in folderPath. Returns 0 if folder does not exist.
+export async function getFolderSize(accessToken: string, folderPath: string): Promise<number> {
+  const res = await fetch(LIST_FOLDER_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: folderPath, recursive: true }),
+  });
+  if (res.status === 409) return 0;
+  if (!res.ok) throw new Error(`dropbox list_folder failed: ${res.status} ${res.statusText}`);
+  const body = await res.json() as { entries?: Array<{ '.tag': string; size?: number }> };
+  return (body.entries || []).reduce((acc, e) => acc + (e['.tag'] === 'file' ? (e.size || 0) : 0), 0);
+}
+
 export async function deletePath(accessToken: string, targetPath: string): Promise<void> {
   const res = await fetch(DELETE_URL, {
     method: 'POST',
@@ -319,6 +332,7 @@ export default {
   downloadFile,
   readManifest,
   listSubfolders,
+  getFolderSize,
   deletePath,
   foldersToPrune,
   isGoodRun,
