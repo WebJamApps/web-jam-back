@@ -55,18 +55,19 @@ export type ConnectDev = (uri: string) => Promise<DevConnection>;
 
 // ── The refusals that need nothing but the two settings ──────────────────────
 
+// The effective destination of a connection string, read the way the MongoDB driver reads it
+// (percent-decoded hosts, normalized path), so what is checked is what would be connected to.
+// Constructing a client opens no connection.
 function parseMongoUri(uri: string): { hosts: string[]; database: string } | null {
-  const match = /^mongodb(?:\+srv)?:\/\/(?:[^/]*@)?([^/?@]+)(?:\/([^?]*))?/i.exec(uri.trim());
-  if (!match) return null;
-  const hosts = match[1].split(',').map((h) => h.replace(/:\d+$/, '').toLowerCase()).filter(Boolean);
-  if (hosts.length === 0) return null;
-  let database = '';
   try {
-    database = decodeURIComponent(match[2] || '');
+    const { options } = new mongoose.mongo.MongoClient(uri.trim());
+    const hosts = options.srvHost
+      ? [options.srvHost.toLowerCase()]
+      : options.hosts.map((h) => (h.host ?? '').toLowerCase()).filter(Boolean);
+    return hosts.length === 0 ? null : { hosts, database: String(options.dbName ?? '').trim() };
   } catch {
     return null;
   }
-  return { hosts, database };
 }
 
 // Refuses, with nothing touched, unless the setting names a DEV database on a host that is not
@@ -91,7 +92,12 @@ export function checkDevTarget(devUri: string | undefined, productionUri: string
 /* istanbul ignore next */
 export const connectDev: ConnectDev = async (uri) => {
   const conn = mongoose.createConnection(uri, { serverSelectionTimeoutMS: PING_TIMEOUT_MS });
-  await conn.asPromise();
+  try {
+    await conn.asPromise();
+  } catch (e) {
+    await conn.close().catch(() => undefined);
+    throw e;
+  }
   if (!conn.db) throw new Error('connection opened with no db handle');
   const modelRoot = path.resolve(import.meta.dirname, '..');
   const rebuild = mongooseIndexRebuilder(conn);
@@ -113,14 +119,28 @@ function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
 }
 
+// A connection that arrives after its deadline has no owner: close it instead of leaving it open.
+async function closeIfAbandoned(attempt: Promise<DevConnection>, isAbandoned: () => boolean): Promise<void> {
+  try {
+    const late = await attempt;
+    if (isAbandoned()) await late.close();
+  } catch {
+    // The attempt failed or the close failed: there is nothing left to release.
+  }
+}
+
 async function reachDev(connect: ConnectDev, uri: string, timeoutMs: number): Promise<DevConnection> {
   let conn: DevConnection | undefined;
+  let abandoned = false;
   try {
-    conn = await withTimeout(connect(uri), timeoutMs);
+    const attempt = connect(uri);
+    closeIfAbandoned(attempt, () => abandoned).catch(() => undefined);
+    conn = await withTimeout(attempt, timeoutMs);
     await withTimeout(conn.db.command({ ping: 1 }), timeoutMs);
     return conn;
   } catch {
     // Unreachable and "cannot tell" (a timeout) are refused the same way.
+    abandoned = conn === undefined;
     await conn?.close().catch(() => undefined);
     throw new RestoreRefusal('dev unreachable', DEV_ASLEEP);
   }

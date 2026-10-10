@@ -202,9 +202,21 @@ describe('copy-to-dev: the database name', () => {
     expect(() => checkDevTarget('mongodb://dev-host/webjamsalem', PROD)).toThrow(/does not contain "dev"/);
   });
 
+  it('refuses when no name is given, because the driver would connect to its default database', () => {
+    expect(() => checkDevTarget('mongodb://dev-host', PROD)).toThrow(/does not contain "dev"/);
+    expect(() => checkDevTarget('mongodb://dev-host/?retryWrites=true', PROD)).toThrow(/does not contain "dev"/);
+  });
+
   it('refuses when the name cannot be determined', () => {
-    expect(() => checkDevTarget('mongodb://dev-host', PROD)).toThrow(/cannot be determined/);
-    expect(() => checkDevTarget('mongodb://dev-host/?retryWrites=true', PROD)).toThrow(/cannot be determined/);
+    expect(() => checkDevTarget('mongodb://dev-host/%20', PROD)).toThrow(/cannot be determined/);
+  });
+
+  it('checks the name the driver would use after path normalization, and never connects', async () => {
+    expect(() => checkDevTarget('mongodb://dev-host/web-jam-dev/../webjamsalem', PROD)).toThrow(/does not contain "dev"/);
+    const s = setup();
+    s.opts.devUri = 'mongodb://dev-host/web-jam-dev/../webjamsalem';
+    expect((await refusal(copyToDev(s.opts))).guard).toBe('database name');
+    expect(s.connect).not.toHaveBeenCalled();
   });
 });
 
@@ -216,6 +228,26 @@ describe("copy-to-dev: production's host", () => {
   it("refuses when the host equals production's, however it is written", () => {
     expect(() => checkDevTarget('mongodb+srv://PROD-cluster.mongodb.net/web-jam-dev', PROD)).toThrow(/production's host/);
     expect(() => checkDevTarget('mongodb://a:27017,prod-cluster.mongodb.net:27017/web-jam-dev', PROD)).toThrow(/production's host/);
+  });
+
+  it("refuses a host written with percent-encoding that the driver decodes to production's", async () => {
+    expect(() => checkDevTarget('mongodb://%70rod-cluster.mongodb.net/web-jam-dev', PROD)).toThrow(/production's host/);
+    const s = setup();
+    s.opts.devUri = 'mongodb://%70rod-cluster.mongodb.net/web-jam-dev';
+    expect((await refusal(copyToDev(s.opts))).guard).toBe('host');
+    expect(s.connect).not.toHaveBeenCalled();
+  });
+
+  it("refuses the combined case: an encoded production host and a path that normalizes to production's database", async () => {
+    const prod = 'mongodb://prod-cluster.example/web-jam-data';
+    const dev = 'mongodb://%70rod-cluster.example/web-jam-dev/../web-jam-data';
+    expect(() => checkDevTarget(dev, prod)).toThrow(RestoreRefusal);
+    const s = setup();
+    s.opts.devUri = dev;
+    s.opts.productionUri = prod;
+    await refusal(copyToDev(s.opts));
+    expect(s.connect).not.toHaveBeenCalled();
+    expect(s.dev.writes()).toEqual([]);
   });
 
   it("refuses when production's host cannot be determined", () => {
@@ -246,6 +278,20 @@ describe('copy-to-dev: the DEV cluster', () => {
     expect(err.message).toBe(DEV_ASLEEP);
     expect(err.message).toMatch(/Resume/);
     expect(err.message).toMatch(/Atlas/);
+    expect(s.dev.writes()).toEqual([]);
+  });
+
+  it('closes a connection that arrives after the reachability deadline', async () => {
+    const s = setup();
+    let deliver: () => void = () => undefined;
+    const close = vi.fn(() => Promise.resolve());
+    s.connect.mockImplementation(() => new Promise((resolve) => {
+      deliver = () => resolve({ db: s.dev, close });
+    }));
+    expect((await refusal(copyToDev(s.opts))).message).toBe(DEV_ASLEEP);
+    expect(close).not.toHaveBeenCalled();
+    deliver();
+    await vi.waitFor(() => expect(close).toHaveBeenCalledTimes(1));
     expect(s.dev.writes()).toEqual([]);
   });
 
