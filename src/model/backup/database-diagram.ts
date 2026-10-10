@@ -98,11 +98,15 @@ export interface RawFieldDef {
   line: string;
 }
 
+export interface SchemaLike {
+  paths: Record<string, unknown>;
+}
+
 export function collectSchemaFieldsAndRefs(
   modelName: string,
-  schema: mongoose.Schema,
+  schema: SchemaLike,
   prefix = '',
-  ancestors: Set<mongoose.Schema> = new Set(),
+  ancestors: Set<unknown> = new Set(),
 ): { rawFields: RawFieldDef[]; relationships: RelationshipDef[] } {
   if (ancestors.has(schema)) {
     return { rawFields: [], relationships: [] };
@@ -135,8 +139,8 @@ export function collectSchemaFieldsAndRefs(
       });
     }
 
-    const subSchema = (schemaType as { schema?: mongoose.Schema; caster?: { schema?: mongoose.Schema } }).schema
-      || (schemaType as { schema?: mongoose.Schema; caster?: { schema?: mongoose.Schema } }).caster?.schema;
+    const subSchema = (schemaType as { schema?: SchemaLike; caster?: { schema?: SchemaLike } }).schema
+      || (schemaType as { schema?: SchemaLike; caster?: { schema?: SchemaLike } }).caster?.schema;
     if (subSchema && subSchema.paths) {
       const sub = collectSchemaFieldsAndRefs(modelName, subSchema, fullPath, nextAncestors);
       rawFields.push(...sub.rawFields);

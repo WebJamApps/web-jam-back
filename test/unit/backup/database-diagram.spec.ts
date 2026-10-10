@@ -6,6 +6,7 @@ import {
   isFieldUnique,
   getRefTarget,
   collectSchemaFieldsAndRefs,
+  type SchemaLike,
   type SchemaTypeLike,
 } from '#src/model/backup/database-diagram.js';
 
@@ -108,9 +109,9 @@ describe('database-diagram', () => {
 
       // Recursive helper to collect all expected field lines across parent and embedded schemas
       function collectAllExpectedFieldLines(
-        schema: mongoose.Schema,
+        schema: SchemaLike,
         prefix = '',
-        ancestors: Set<mongoose.Schema> = new Set(),
+        ancestors: Set<unknown> = new Set(),
       ): string[] {
         if (ancestors.has(schema)) return [];
         const nextAncestors = new Set(ancestors);
@@ -125,8 +126,8 @@ describe('database-diagram', () => {
           const isUnique = isFieldUnique(schemaType);
           lines.push(`        ${typeStr} ${sanitizedField}${isUnique ? ' UK' : ''}`);
 
-          const subSchema = (schemaType as { schema?: mongoose.Schema; caster?: { schema?: mongoose.Schema } }).schema
-            || (schemaType as { schema?: mongoose.Schema; caster?: { schema?: mongoose.Schema } }).caster?.schema;
+          const subSchema = (schemaType as { schema?: SchemaLike; caster?: { schema?: SchemaLike } }).schema
+            || (schemaType as { schema?: SchemaLike; caster?: { schema?: SchemaLike } }).caster?.schema;
           if (subSchema && subSchema.paths) {
             lines.push(...collectAllExpectedFieldLines(subSchema, fullPath, nextAncestors));
           }
