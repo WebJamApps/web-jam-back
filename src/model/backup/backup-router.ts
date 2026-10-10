@@ -1,20 +1,50 @@
 import express from 'express';
 import controller from './backup-controller.js';
-import authUtils from '../../auth/authUtils.js';
-import routeUtils from '../../lib/routeUtils.js';
+import topAdminGuard from './top-admin-guard.js';
 
-// ADMIN weekly Mongo backup (web-jam-tools#116). Mounted at /admin/backup, so
-// authUtils gates every route on AUTH_ROLES.admin — same key as /admin/user and
-// /admin/subscriber, no new env var needed — via the exact
-// routeUtils.makeAction + authUtils.ensureAuthenticated path that already
-// guards POST /outreach/advance. Triggered weekly by the Deno cron app (a
-// no-expiry service JWT, createServiceJWT — see admin-user's mintToken route).
+// Top-level admin MongoDB backup routes (web-jam-tools#1083, web-jam-back#1143, web-jam-back#1145).
+// Gated exclusively on the top-level admin role (Developer).
+// Does not rely on the AUTH_ROLES setting.
 const router = express.Router();
+
+router.use(topAdminGuard);
+
+router.route('/diagram/database')
+  .get((req, res) => {
+    controller.getDatabaseDiagram(req, res);
+  });
+
+router.route('/diagram/system')
+  .get((req, res) => {
+    controller.getSystemDiagram(req, res);
+  });
+
+router.route('/runs')
+  .get((req, res) => {
+    controller.listRuns(req, res);
+  })
+  .post((req, res) => {
+    controller.startRun(req, res);
+  });
+
+router.route('/runs/:name/restore')
+  .post((req, res) => {
+    controller.startRestore(req, res);
+  });
+
+router.route('/runs/:name/copy-to-dev')
+  .post((req, res) => {
+    controller.startCopyToDev(req, res);
+  });
+
+router.route('/operations/:name')
+  .get((req, res) => {
+    controller.getOperation(req, res);
+  });
 
 router.route('/')
   .post((req, res) => {
-    const action = routeUtils.makeAction(req, res, 'runBackup', controller, authUtils);
-    void action();
+    controller.runBackup(req, res);
   });
 
 export default router;

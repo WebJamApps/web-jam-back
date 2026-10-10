@@ -13,9 +13,10 @@ import { makeCorsOptions } from './lib/cors.js';
 import ReadCSV from './ReadCSV/index.js';
 import routes from './routes.js';
 import songData from './model/song/reset-song.js';
-import songController from './model/song/song-controller.js';
-import Controller from './lib/controller.js';
+import songModel from './model/song/song-schema.js';
+import { seedSongsIfEmpty, type SongSeedTarget } from './model/song/seed-songs.js';
 import { startFacebookRefresh } from './model/facebook/FacebookController.js';
+import { startBackupScheduler } from './model/backup/backup-scheduler.js';
 
 dotenv.config({ quiet: true });
 
@@ -70,6 +71,7 @@ routes(app);
 // Prime the CollegeLutheran Facebook feed cache and start the hourly refresh.
 // No-ops under NODE_ENV=test (so unit tests don't hit the network).
 startFacebookRefresh();
+startBackupScheduler();
 app.get('/*splat', (_req: Request, res: Response) => {
   res.sendFile(path.normalize(path.join(import.meta.dirname, '../../JaMmusic/dist/index.html')));
 });
@@ -90,10 +92,8 @@ app.use((err: { status: number, message: string }, _req: Request, res: Response)
   (async () => {
     const { songs } = songData;
     try {
-      await (songController as unknown as Controller).deleteAllDocs();
-      await (songController as unknown as Controller).createDocs(songs);
-    } catch (e) /* istanbul ignore next */ { debug((e as Error).message); return Promise.resolve((e as Error).message); }
-    return 'songs created';
+      return await seedSongsIfEmpty(songModel as unknown as SongSeedTarget, songs);
+    } catch (e) /* istanbul ignore next */ { debug((e as Error).message); return (e as Error).message; }
   })();
 }
 debug(`isTTY?: ${process.stderr.isTTY}`);

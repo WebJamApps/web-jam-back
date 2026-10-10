@@ -1,0 +1,36 @@
+%% Rule: service names and connections only, never an address, a login or a secret.
+flowchart TD
+    subgraph Users ["Users & Browsers"]
+        Website["Website"]
+    end
+
+    subgraph Heroku ["Heroku Platform"]
+        ProdBack["Production Backend (web-jam-back)"]
+        SocketBack["Socket Server (WebJamSocketCluster)"]
+    end
+
+    subgraph Atlas ["MongoDB Atlas"]
+        ProdDB[("Production Database (web-jam-data)")]
+        DevDB[("DEV Database (web-jam-dev)")]
+    end
+
+    subgraph External ["External Services"]
+        Dropbox["Dropbox (webjam-backup)"]
+        Gmail["Gmail API"]
+    end
+
+    subgraph DenoDeploy ["Deno Deploy"]
+        UptimeWatchdog["Watchdog (web-jam-uptime)"]
+        Devotional["Devotional (web-jam-devotional)"]
+    end
+
+    Website -->|"HTTP API"| ProdBack
+    Website -->|"WebSockets"| SocketBack
+    ProdBack -->|"Mongoose / Reads & Writes"| ProdDB
+    SocketBack -->|"Live Events"| ProdDB
+    ProdBack -->|"Daily Export & Retention"| Dropbox
+    ProdBack -.->|"Sanitized Copy"| DevDB
+    UptimeWatchdog -->|"Check Backup Status"| ProdBack
+    UptimeWatchdog -->|"Health Check"| Website
+    UptimeWatchdog -->|"Alerts"| Gmail
+    Devotional -->|"Daily Emails"| Gmail
