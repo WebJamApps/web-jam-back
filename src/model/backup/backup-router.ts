@@ -17,6 +17,11 @@ router.route('/runs')
     controller.startRun(req, res);
   });
 
+router.route('/runs/:name/restore')
+  .post((req, res) => {
+    controller.startRestore(req, res);
+  });
+
 router.route('/operations/:name')
   .get((req, res) => {
     controller.getOperation(req, res);

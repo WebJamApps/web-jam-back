@@ -1,176 +1,190 @@
-# Weekly Mongo backup (Dropbox)
+# Restoring the MongoDB backup
 
-Reference: [web-jam-tools#116](https://github.com/WebJamApps/web-jam-tools/issues/116).
+References: [web-jam-tools#116](https://github.com/WebJamApps/web-jam-tools/issues/116),
+[web-jam-tools#1083](https://github.com/WebJamApps/web-jam-tools/issues/1083) (the epic) and the
+design document `~/Dropbox/web-jam-llms/backup-restore/mongodb-backup-restore-design-2026-10-07.md`
+("Restoring production", "What it refuses to do").
 
-## TL;DR
+This is the restore runbook. It gives the exact commands to restore a backup run into **DEV** and,
+separately, into **production**. Free M0 Atlas keeps no snapshots, so these exports in Dropbox are the
+only copies of the data outside the live cluster.
 
-`POST /admin/backup` exports every collection of this app's own database as
-EJSON and uploads them to Dropbox, keeping the newest 8 weekly runs. Free M0
-Atlas has no snapshots/PITR, so this self-export is the only safety net.
-Triggered weekly by the Deno cron app (`web-jam-tools`, same pattern as
-`/outreach/advance`) — that half is a separate PR in that repo.
+## What a backup run is
 
-- One DB exported: **webjamsalem** (this app's own `MONGO_DB_URI`, the
-  web-jam-data database — gigs live here too as an artist-scoped collection
-  since web-jam-back#897 retired the old WebJamSocketCluster mirror connection
-  and its `GIGS_MONGO_DB_URI` var).
-- Responds **202 immediately**; the export + upload run async so the request
-  never rides Heroku's 30s router timeout (H12).
-- Exports collection-by-collection (one collection's documents in memory at a
-  time).
-- EJSON preserves data + types (ObjectId/Date/etc.) but **not** indexes or
-  collection options — Mongoose re-creates indexes on the app's next boot.
+One folder per run, named with the run's UTC start time, under `/webjam-backups` in the Dropbox
+app `webjam-backup`:
 
-## One-time manual setup
-
-### 1. Create the Dropbox app (Josh)
-
-1. <https://www.dropbox.com/developers/apps> → **Create app** → Scoped access →
-   **App folder** access type (simplest — the app only ever writes under its own
-   `/webjam-backups` folder) → name it e.g. `webjam-backup`.
-2. **Permissions** tab → enable `files.content.write` and `files.content.read` →
-   **Submit**.
-3. **Settings** tab → note the **App key** and **App secret**. Save both in
-   KeePass.
-4. Generate a refresh token (one-time, from a machine with a browser):
-   - Visit (replace `<APP_KEY>`):
-     `https://www.dropbox.com/oauth2/authorize?client_id=<APP_KEY>&token_access_type=offline&response_type=code`
-   - Approve access; copy the **authorization code** shown.
-   - Exchange it for a refresh token:
-     ```sh
-     curl https://api.dropboxapi.com/oauth2/token \
-       -d code=<AUTH_CODE> \
-       -d grant_type=authorization_code \
-       -d client_id=<APP_KEY> \
-       -d client_secret=<APP_SECRET>
-     ```
-   - The response's `refresh_token` **does not expire** (until revoked) — that's
-     why this flow is used instead of a deprecated long-lived token. Save it in
-     KeePass.
-
-### 2. Set the config vars on `webjamsalem`
-
-```sh
-heroku config:set DROPBOX_APP_KEY="<app key>" -a webjamsalem
-heroku config:set DROPBOX_APP_SECRET="<app secret>" -a webjamsalem
-heroku config:set DROPBOX_REFRESH_TOKEN="<refresh token>" -a webjamsalem
+```
+2026-10-08T12-00-00-000Z/
+  manifest.json              what ran, when, and every collection's record count
+  webjamsalem/<collection>.ndjson   one EJSON record per line
 ```
 
-### Environment variables
+A run is **good** only when its `manifest.json` exists and says every database exported. A folder
+without a manifest is incomplete; a manifest that says a database failed is failed. Only a good run can
+be restored. The newest 8 good runs are kept.
 
-| Var | Purpose | Without it |
-| --- | --- | --- |
-| `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET` / `DROPBOX_REFRESH_TOKEN` | Dropbox refresh-token flow | Export still runs, upload is skipped (local disk only) |
-| `BACKUP_OUTPUT_DIR` | Optional override for the local export scratch dir (default: OS tmpdir) | n/a |
-| `BACKUP_KEEP_LOCAL` | Set to `true` to keep the local export after a successful Dropbox upload (debugging) | Local export is deleted once safely in Dropbox |
+On the laptop the run folders sync to `~/Dropbox/Apps/webjam-backup/webjam-backups/`, which is where
+the script reads them. The backend reads and writes the same folder through the three settings
+`BACKUP_DROPBOX_APP_KEY`, `BACKUP_DROPBOX_APP_SECRET` and `BACKUP_DROPBOX_REFRESH_TOKEN`; a backend
+missing any of them refuses to back up or restore.
 
-## Auth
+## What a restore does
 
-Guarded exactly like `POST /outreach/advance`: `authUtils.ensureAuthenticated`
-via `routeUtils.makeAction`, mounted at `/admin/backup` so it's gated on
-`AUTH_ROLES.admin` (same key as `/admin/user`, `/admin/subscriber` — no new auth
-mechanism). The Deno cron calls it with a no-expiry **service JWT**
-(`createServiceJWT` — mint one via `POST /admin/user/:id/token` for an admin
-user, same as any other cron caller).
+A restore is a **replacement, not a merge**. For every collection in the chosen run it drops the
+collection and re-creates it from the run's file, then rebuilds the indexes the record definitions
+(the Mongoose schemas) declare. Whatever was written after the chosen run is gone from the restored
+collections.
 
-## Retention
+- Collections that are **not** in the run are left alone.
+- Role assignments are part of the data: who holds `Developer` is restored along with everything else.
+- Indexes made by hand outside the code are **not** re-created; the result lists every index that
+  existed before the restore and is missing after.
+- The site keeps running during a restore and serves a collection as empty for the moment it is replaced.
 
-After a successful upload, the job lists `/webjam-backups`' subfolders and
-deletes every one beyond the newest 8 (`src/lib/dropbox.ts`'s `foldersToPrune`).
-Dropbox's own version history covers recovering something pruned by mistake.
+Both the production route and the command-line script call one module,
+`src/model/backup/backup-restore.ts`.
 
-## Restoring
+## Restore into DEV (the normal drill)
 
-`scripts/restore-backup.mjs` restores one dated export folder's `<db>/*.ndjson`
-files back into a target Mongo database — **dropping** each target collection
-first (a restore is a replace, not a merge) and reinserting every exported
-document, then printing per-collection counts.
+DEV is disposable, so this is the safe way to test a backup. `.env` in `~/WebJamApps/web-jam-back`
+points `MONGO_DB_URI` at the DEV Atlas database (its name contains `dev`).
+
+1. Pick a good run folder, for example
+   `~/Dropbox/Apps/webjam-backup/webjam-backups/2026-10-08T12-00-00-000Z`. Open its `manifest.json`
+   and confirm each database says `"ok": true`.
+2. Build the compiled module the script imports:
+
+   ```sh
+   cd ~/WebJamApps/web-jam-back
+   npx tsc -p tsconfig.prod.json
+   ```
+
+3. Run the restore:
+
+   ```sh
+   node scripts/restore-backup.mjs \
+     --folder ~/Dropbox/Apps/webjam-backup/webjam-backups/2026-10-08T12-00-00-000Z \
+     --db webjamsalem
+   ```
+
+4. The script first checks each file's record count against `manifest.json`; any difference stops it
+   with nothing changed. Then it prints, per collection, the count restored beside the count in the
+   manifest, and lists any index that was present before and is missing after. The two counts must be
+   equal.
+5. Start the app against that database (`npm run dev`) and request a real route, for example
+   `curl http://localhost:7000/song`, to confirm the restored data serves.
+
+The script refuses any database whose name contains neither `dev` nor `test` (and is not
+`localhost`/`127.0.0.1`) unless `--force` is given. Options: `--folder` (required), `--db`
+(default `webjamsalem`), `--uri` (default `MONGO_DB_URI`), `--transform`, `--force`.
+
+## Restore into production
+
+A production restore replaces the live data. It is a deliberate act with four guards, and the first
+thing it does is take a fresh backup of production as it stands, so what you are about to overwrite
+survives in that backup.
+
+### From the admin page or the API (the normal way)
+
+Only an account holding the top-level admin role (`Developer`) can do this. The button on the
+database page calls this route; the same call by hand:
+
+1. List the runs, newest first, and pick a good one (`"state": "good"`):
+
+   ```sh
+   curl --oauth2-bearer "$TOKEN" https://webjamsalem.herokuapp.com/admin/backup/runs
+   ```
+
+2. Start the restore. `date` is the chosen run's date, typed as `YYYY-MM-DD` (UTC):
+
+   ```sh
+   curl -X POST --oauth2-bearer "$TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"date": "2026-10-08"}' \
+     https://webjamsalem.herokuapp.com/admin/backup/runs/2026-10-08T12-00-00-000Z/restore
+   ```
+
+   It answers `202` at once with `{"name": "restore-<time>", "message": "restore started"}`.
+
+3. Follow it with the name it returned until `status` is `completed` or `failed`:
+
+   ```sh
+   curl --oauth2-bearer "$TOKEN" https://webjamsalem.herokuapp.com/admin/backup/operations/restore-<time>
+   ```
+
+   `progress` names the step it is on. When `completed`, `result.collections` holds, per collection,
+   `restored` beside `manifest` (they must be equal), `result.missingIndexes` lists any index that
+   was present before and is missing after, and `result.indexFailures` lists any declared index that
+   could not be built (the data is restored either way).
+
+The four guards, checked in the order below. A refusal leaves `status: failed` with an `error` that names the guard, and
+**nothing is changed**:
+
+| Guard | Refuses when |
+|---|---|
+| 1. Choose a good run | the run has no manifest, a failed manifest, or its manifest cannot be read |
+| 2. Type its date | the typed date differs from the run's date, or the run's date cannot be determined |
+| 4. The files are checked | a file is missing or cannot be downloaded, or a file's record count differs from the manifest |
+| 3. A fresh backup first | the fresh backup of production fails, or cannot be read back as a good run |
+
+The run's files are downloaded and counted before the fresh backup is taken, because the fresh backup
+prunes to the newest 8 good runs and could otherwise delete the oldest run you just chose. Only one
+restore runs at a time; a second answers `409`, as does starting a restore while a backup is running.
+
+### From the laptop (when the backend is down)
+
+This is the disaster-recovery path and has **no typed date and no fresh backup**, so do those by hand.
+
+1. If the backend is up, take a fresh backup and wait for it to be good:
+
+   ```sh
+   curl -X POST --oauth2-bearer "$TOKEN" https://webjamsalem.herokuapp.com/admin/backup/runs
+   ```
+
+2. Build, then restore with `--force`, which is what allows a database whose name has neither `dev`
+   nor `test`. Keep the production connection string out of shell history: set `PROD_MONGO_URI` from
+   KeePass first.
+
+   ```sh
+   cd ~/WebJamApps/web-jam-back
+   npx tsc -p tsconfig.prod.json
+   node scripts/restore-backup.mjs \
+     --folder ~/Dropbox/Apps/webjam-backup/webjam-backups/2026-10-08T12-00-00-000Z \
+     --db webjamsalem \
+     --uri "$PROD_MONGO_URI" \
+     --force
+   ```
+
+3. Check that every restored count equals the manifest count, read the missing-index list, and open
+   the site.
+
+## Parameterization (reused by web-jam-tools#897)
+
+The script was reused, unchanged, as the import half of the wj-prod → web-jam-data migration
+(web-jam-tools#897). `--uri` points the restore at any Mongo connection string and `--db` selects
+which exported subfolder to restore. `--transform <path-to-module>` is an optional per-record hook: the
+module's default export, `(doc, collectionName) => result`, runs on every document before it is
+inserted, and `result` is one of:
+
+- a plain document — inserted into the **same** collection (what no `--transform` does);
+- `null` / `undefined` — the document is **dropped**;
+- `{ collection, doc }` — the document is **redirected** into `collection`.
+
+A collection is only dropped if at least one document resolves to it, so a collection entirely
+redirected or dropped by a transform is never touched. The implementation of #897 is
+`scripts/transforms/josh-migration.mjs`, tested in `test/unit/backup/josh-migration.spec.ts`:
 
 ```sh
-node scripts/restore-backup.mjs --folder <path/to/run-folder> --db webjamsalem
+node scripts/restore-backup.mjs \
+  --folder <run-folder> --db webjamsocket \
+  --uri "<dev-or-test web-jam-data Mongo URI>" \
+  --transform scripts/transforms/josh-migration.mjs
 ```
 
-- `--uri` defaults to `MONGO_DB_URI` from `.env` — **the DEV Atlas cluster**
-  locally (never prod; see the local-dev-uses-dev-atlas convention). Dev is
-  disposable by design, so restoring into it is the normal, safe drill target.
-- The script refuses to run against anything that doesn't look like
-  local/dev/test unless `--force` is passed (mirrors `scripts/seed-outreach.mjs`'s
-  guard) — a real disaster-recovery restore into prod is a deliberate act, never
-  an accidental default.
-- **Mongoose re-creates indexes on the app's next boot** — after restoring, run
-  `npm run dev` (or `npm start`) against that database to confirm indexes come
-  back and the app actually serves real data.
+## Making a backup
 
-### Parameterization (reused by web-jam-tools#897)
-
-This same script was reused, unchanged, as the import half of the wj-prod →
-web-jam-data migration (web-jam-tools#897, now complete — the mirror
-connection and `GIGS_MONGO_DB_URI` it used to feed have since been retired)
-— not just this issue's local/dev backup drill. It stays generic/reusable for
-any future one-off migration:
-
-- **Target database is already parameterized**, never hardcoded: `--uri`
-  points the restore at any Mongo connection string, and `--db` selects which
-  exported subfolder to restore. #897 passed its own `--uri`/`--db` rather than
-  needing a fork of this script.
-- **`--transform <path-to-module>`** is an optional per-record hook: the
-  module's default export, `(doc, collectionName) => result`, runs on every
-  document immediately after `EJSON.parse` and before `insertMany`. `result`
-  is one of:
-  - a plain document object — inserted into the **same** collection as the
-    source file (this is what the default identity passthrough returns, so a
-    plain #116 restore is unaffected).
-  - `null` / `undefined` — the document is **dropped** (not inserted
-    anywhere).
-  - `{ collection, doc }` — the document is **redirected**: `doc` is inserted
-    into `collection` instead of the source file's collection name.
-
-  A source collection is only dropped-and-reinserted in the target database if
-  at least one document actually resolves to it, so a collection that's
-  entirely redirected/dropped by a transform is never touched in the target
-  (see `scripts/transforms/josh-migration.mjs` below).
-
-  #897's implementation lives in `scripts/transforms/josh-migration.mjs`:
-  every `gigs` doc gets `artist: "josh"` added (same collection); every `book`
-  doc is kept only if `type === 'JaMmusic-music'` and, if kept, redirected into
-  a **new** `jamPics` collection — not `book`, since web-jam-data already has
-  its own `book` collection (CollegeLutheran's) that this migration must never
-  touch. Non-kept `book` docs are dropped. Unit tests for this module live at
-  `test/unit/backup/josh-migration.spec.ts`.
-
-  Example invocation (into a DEV/TEST `web-jam-data` target only — the safety
-  guard above still applies, and this step is never run with `--force`):
-
-  ```sh
-  node scripts/restore-backup.mjs \
-    --folder <run-folder> --db webjamsocket \
-    --uri "<dev-or-test web-jam-data Mongo URI>" \
-    --transform scripts/transforms/josh-migration.mjs
-  ```
-
-### End-to-end restore drill
-
-1. Trigger a real backup (or run the export directly for a local drill —
-   `DROPBOX_*` unset skips the upload and leaves the export on local disk at
-   `BACKUP_OUTPUT_DIR`, default the OS tmpdir).
-2. `node scripts/restore-backup.mjs --folder <run-folder> --db webjamsalem`
-   — confirm the printed per-collection counts match that run's `manifest.json`.
-3. `npm run dev` (or `npm start`) against that same `MONGO_DB_URI` and hit a real
-   route (e.g. `curl http://localhost:7000/song`) — confirms the restored data
-   actually serves, not just that the counts matched.
-
-The **real** drill (restoring an actual prod export) happens post-deploy, before
-[web-jam-tools#116](https://github.com/WebJamApps/web-jam-tools/issues/116) is
-closed by the companion cron PR in that repo.
-
-## Triggering
-
-Not yet wired to a schedule from this repo's side — the Deno cron app
-(`web-jam-tools`, PR follows this one) pings `POST /admin/backup` weekly, the
-same way it already pings `/outreach/advance` daily. Until then, trigger it
-manually with a service token:
-
-```sh
-curl -X POST https://webjamsalem.herokuapp.com/admin/backup \
-  -H "Authorization: Bearer <service JWT>"
-```
+The backend backs itself up: a check at start-up and every hour starts a run when the newest good run
+is more than 24 hours old, and `POST /admin/backup/runs` (or the older `POST /admin/backup`) starts
+one on demand. Each failed run emails the `Developer` accounts. `GET /backup/status` reports the
+newest good run's start time and whether the most recent run failed.

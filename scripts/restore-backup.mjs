@@ -22,11 +22,18 @@
 // accidental default.
 //
 // For each collection found in the export: DROPS the target collection (a
-// restore is a REPLACE, not a merge — safe because dev is disposable by
-// design) then reinserts every exported document. Prints per-collection
-// document counts so they can be checked against the export's manifest.json.
-// NOTE: Mongoose re-creates indexes on the app's next boot; this script does
-// not attempt to recreate them itself.
+// restore is a REPLACE, not a merge) then reinserts every exported document,
+// rebuilds the indexes the record definitions declare, and prints per
+// collection the count restored beside the count in the run's manifest.json,
+// plus any index that existed before the restore and is gone after. The files'
+// record counts are checked against manifest.json first; any difference stops
+// the restore with nothing changed.
+//
+// ONE MODULE (web-jam-back#1144): the work is done by
+// src/model/backup/backup-restore.ts, the same module the production route
+// (POST /admin/backup/runs/:name/restore) calls. This script imports its
+// compiled form through the `#src/*` imports map, so run
+// `npx tsc -p tsconfig.prod.json` first.
 //
 // TRANSFORM SEAM (for web-jam-tools#897): --transform <path> dynamically
 // imports a module whose default export is a per-document hook,
@@ -39,9 +46,8 @@
 //   - `{ collection, doc }`    -> the document is redirected: `doc` is
 //     inserted into `collection` instead of the source file's collection
 //     name (e.g. #897's book -> jamPics filtered remap).
-// Defaults to an identity passthrough (returns `doc` unchanged, same
-// collection, nothing dropped), so plain #116 restores are unaffected.
-// A source collection is only touched (dropped + reinserted) if at least one
+// With no --transform every document is inserted unchanged. A source
+// collection is only touched (dropped + reinserted) if at least one
 // document actually resolves to it — so a collection that's entirely
 // redirected/dropped (like #897's `book`) is never created or cleared in the
 // target database. See docs/mongo-backup.md and
@@ -51,10 +57,9 @@ import { config } from 'dotenv';
 import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 config(); // load .env if present
-
-const { EJSON } = mongoose.mongo.BSON;
 
 function parseArgs(argv) {
   const out = { db: 'webjamsalem' };
@@ -72,10 +77,10 @@ if (!args.folder) {
 }
 
 // Transform seam (web-jam-tools#897): loads a module's default export as a
-// `(doc, collectionName) => doc` hook, or a no-op passthrough if --transform
-// wasn't passed. See the file-header comment and docs/mongo-backup.md.
+// `(doc, collectionName) => result` hook, or undefined (no transform) if
+// --transform wasn't passed. See the file-header comment and docs/mongo-backup.md.
 async function loadTransform(modulePath) {
-  if (!modulePath) return (doc) => doc;
+  if (!modulePath) return undefined;
   const mod = await import(path.resolve(modulePath));
   return mod.default;
 }
@@ -88,7 +93,7 @@ if (!fs.existsSync(dbDir)) {
 }
 
 // ── SAFETY GUARD ─────────────────────────────────────────────────────────────
-const maskedUri = uri.replace(/\/\/[^@]+@/, '//<credentials>@');
+const maskedUri = uri.replace(/\/\/[^@]+@/, '//<masked>@');
 const dbName = (uri.split('?')[0].split('/').pop() || '').toLowerCase();
 const isLocal = uri.includes('localhost') || uri.includes('127.0.0.1');
 const isDevOrTest = dbName.includes('dev') || dbName.includes('test');
@@ -100,75 +105,63 @@ if (!isLocal && !isDevOrTest && !args.force) {
   process.exit(1);
 }
 
-// Reads one exported <collection>.ndjson file and buckets its (transformed)
-// documents by DESTINATION collection name — usually just `name` (identity),
-// but a transform may redirect some/all docs elsewhere via `{ collection, doc
-// }`, or drop a doc entirely via `null`/`undefined`. Returns a Map of
-// destination-collection-name -> docs[]. An empty source file still yields a
-// `name -> []` entry (preserves the pre-#897 "replace with empty" behavior
-// for a collection that legitimately has zero documents).
-function readAndTransform(name, filePath, transform) {
-  const raw = fs.readFileSync(filePath, 'utf8');
-  const lines = raw.split('\n').filter((line) => line.trim().length > 0);
-  const byDestination = new Map();
-  if (lines.length === 0) {
-    byDestination.set(name, []);
-    return byDestination;
-  }
-  for (const line of lines) {
-    const result = transform(EJSON.parse(line), name);
-    if (result === null || result === undefined) continue; // dropped
-    const isRedirect = typeof result === 'object' && !Array.isArray(result) && 'doc' in result && 'collection' in result;
-    const destName = isRedirect ? result.collection : name;
-    const doc = isRedirect ? result.doc : result;
-    if (!byDestination.has(destName)) byDestination.set(destName, []);
-    byDestination.get(destName).push(doc);
-  }
-  return byDestination;
+// The run folder's manifest.json, when it has one: the counts the files are checked against.
+function manifestCountsFor(folder, db) {
+  const file = path.join(folder, 'manifest.json');
+  if (!fs.existsSync(file)) return undefined;
+  const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return manifest.databases?.[db]?.collections;
 }
 
-async function insertIntoCollection(db, name, docs) {
-  try { await db.dropCollection(name); } catch { /* collection didn't exist yet — fine */ }
-  if (docs.length === 0) return 0;
-  const result = await db.collection(name).insertMany(docs, { ordered: false });
-  return result.insertedCount;
+async function loadRestoreModule() {
+  try {
+    return await import('#src/model/backup/backup-restore.js');
+  } catch (e) {
+    console.error(`ERROR: cannot load the compiled restore module (${e.message}).`);
+    console.error('Run `npx tsc -p tsconfig.prod.json` first, then retry.');
+    process.exit(1);
+    return undefined;
+  }
 }
 
 async function main() {
+  const restore = await loadRestoreModule();
   console.log(`Restoring "${args.db}" export from ${dbDir}`);
   console.log(`  into ${maskedUri} (database: ${dbName || '(default)'})`);
   const transform = await loadTransform(args.transform);
+  const manifestCounts = manifestCountsFor(args.folder, args.db);
+  if (!manifestCounts) console.log('  (no manifest.json counts for this database — files are not checked against a manifest)');
+
+  await restore.registerDeclaredModels(fileURLToPath(new URL('../build/src/model', import.meta.url)));
   const conn = await mongoose.createConnection(uri).asPromise();
-  const { db } = conn;
-  const files = fs.readdirSync(dbDir).filter((f) => f.endsWith('.ndjson')).sort();
+  try {
+    const result = await restore.restoreFromFolder({
+      db: conn.db,
+      folder: dbDir,
+      manifestCounts,
+      transform,
+      rebuildIndexes: restore.mongooseIndexRebuilder(conn),
+      onProgress: (step) => console.log(`  ${step} ...`),
+    });
 
-  // Merge every source file's per-destination buckets (a redirect target like
-  // `jamPics` may receive docs from more than one source file, in principle).
-  const merged = new Map();
-  for (const file of files) {
-    const name = file.replace(/\.ndjson$/, '');
-    const byDestination = readAndTransform(name, path.join(dbDir, file), transform);
-    for (const [destName, docs] of byDestination) {
-      if (!merged.has(destName)) merged.set(destName, []);
-      merged.get(destName).push(...docs);
+    console.log('\nRestore complete. Per collection, restored | in manifest:');
+    for (const row of result.collections) {
+      console.log(`  ${row.collection}: ${row.restored} | ${row.manifest ?? 'n/a'}`);
     }
+    if (result.indexFailures.length > 0) {
+      console.log('\nDeclared indexes that could not be built (the data is restored; later indexes of that collection may not have been built either):');
+      for (const f of result.indexFailures) console.log(`  ${f.collection}: ${f.message}`);
+    }
+    if (result.missingIndexes.length > 0) {
+      console.log('\nIndexes present before the restore and absent after (not re-created):');
+      for (const m of result.missingIndexes) console.log(`  ${m.collection}: ${m.index}`);
+    }
+  } finally {
+    await conn.close();
   }
-
-  const counts = {};
-  for (const [destName, docs] of merged) {
-    // eslint-disable-next-line no-await-in-loop
-    counts[destName] = await insertIntoCollection(db, destName, docs);
-  }
-  await conn.close();
-
-  console.log('\nRestore complete. Per-collection document counts:');
-  for (const [name, count] of Object.entries(counts)) {
-    console.log(`  ${name}: ${count}`);
-  }
-  console.log('\nNOTE: Mongoose re-creates indexes on the app\'s next boot — run `npm run dev` (or `npm start`) against this database next to verify.');
 }
 
 main().catch((e) => {
-  console.error('Restore failed:', e.message);
+  console.error(e.name === 'RestoreRefusal' ? `Restore refused, nothing changed (${e.guard}): ${e.message}` : `Restore failed: ${e.message}`);
   process.exit(1);
 });
