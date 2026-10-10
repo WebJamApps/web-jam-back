@@ -70,6 +70,19 @@ export function identifyFailureStep(err: unknown): string {
   return 'backup';
 }
 
+export function escapeHtml(str: string): string {
+  return str.replace(/[&<>"']/g, (m) => {
+    switch (m) {
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      case "'": return '&#39;';
+      default: return m;
+    }
+  });
+}
+
 export async function sendFailureEmail(
   runLabelStr: string,
   step: string,
@@ -79,17 +92,17 @@ export async function sendFailureEmail(
 ): Promise<void> {
   const users = await findEmailsFn();
   const emails = users.map((u) => u.email).filter(Boolean);
-  let to = emails.join(', ');
-  if (!to && process.env.GMAIL_USER) {
-    to = process.env.GMAIL_USER;
-  }
+  const to = emails.join(', ');
   if (!to) {
     debug('no Developer email found for failure alert');
     return;
   }
+  const safeLabel = escapeHtml(runLabelStr);
+  const safeStep = escapeHtml(step);
+  const safeError = escapeHtml(errorMessage);
   const subject = `MongoDB backup failed: ${runLabelStr}`;
-  const html = `<p>MongoDB backup run <b>${runLabelStr}</b> failed at step <b>${step}</b>.</p>`
-    + `<p><b>Error:</b> ${errorMessage}</p>`;
+  const html = `<p>MongoDB backup run <b>${safeLabel}</b> failed at step <b>${safeStep}</b>.</p>`
+    + `<p><b>Error:</b> ${safeError}</p>`;
   const text = `MongoDB backup run ${runLabelStr} failed at step ${step}.\n\nError: ${errorMessage}`;
   await sendMailFn({ to, subject, html, text });
 }
@@ -212,9 +225,14 @@ export async function runBackupCheck(opts: BackupSchedulerOptions = {}): Promise
       newestGoodRun = manifest.startedAt || label;
       lastRunFailed = false;
     } catch (err) {
-      lastRunFailed = true;
-      const step = identifyFailureStep(err);
-      await sendFailureEmail(label, step, (err as Error).message, mailerFn, findUsers);
+      const errMsg = (err as Error).message || '';
+      if (/in progress/i.test(errMsg)) {
+        debug('backup check found backup due but run refused because another run is in progress: %s', errMsg);
+      } else {
+        lastRunFailed = true;
+        const step = identifyFailureStep(err);
+        await sendFailureEmail(label, step, errMsg, mailerFn, findUsers);
+      }
     }
   }
 

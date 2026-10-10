@@ -7,6 +7,7 @@ import {
   stopBackupScheduler,
   identifyFailureStep,
   sendFailureEmail,
+  escapeHtml,
   getDeveloperEmails,
 } from '#src/model/backup/backup-scheduler.js';
 import type { DropboxClientLike } from '#src/model/backup/backup-controller.js';
@@ -287,41 +288,56 @@ describe('backup-scheduler.ts', () => {
       expect(identifyFailureStep(new Error('unknown failure'))).toBe('backup');
     });
 
-    it('falls back to GMAIL_USER when no Developer accounts are found', async () => {
-      const originalGmail = process.env.GMAIL_USER;
-      process.env.GMAIL_USER = 'admin-fallback@example.com';
-      try {
-        const sendMailFn = vi.fn<(_input: MailInput) => Promise<{ messageId: string }>>(() => Promise.resolve({ messageId: 'msg-test' }));
-        await sendFailureEmail(
-          '2026-10-10T12-00-00-000Z',
-          'export',
-          'disk full',
-          sendMailFn,
-          () => Promise.resolve([]),
-        );
-        expect(sendMailFn).toHaveBeenCalledTimes(1);
-        expect(sendMailFn.mock.calls[0]?.[0]?.to).toBe('admin-fallback@example.com');
-      } finally {
-        process.env.GMAIL_USER = originalGmail;
-      }
+    it('does not send an email and leaves lastRunFailed as false when performBackup rejects with an in-progress refusal', async () => {
+      const client = createMockDropboxClient({
+        listSubfolders: vi.fn(() => Promise.resolve([])),
+      });
+
+      const performBackupFn = vi.fn(() => Promise.reject(new Error('backup run in progress: folder 2026-10-10T11-58-00-000Z has no manifest')));
+      const sendMailFn = vi.fn<(_input: MailInput) => Promise<{ messageId: string }>>(() => Promise.resolve({ messageId: 'msg-1' }));
+      const findAdminUsers = vi.fn(() => Promise.resolve([
+        { email: 'josh@example.com' },
+      ]));
+
+      const now = new Date('2026-10-10T12:00:00.000Z');
+      const status = await runBackupCheck({
+        dropboxClient: client,
+        performBackupFn,
+        sendMailFn,
+        findAdminUsers,
+        now,
+      });
+
+      expect(status.lastRunFailed).toBe(false);
+      expect(sendMailFn).not.toHaveBeenCalled();
+    });
+
+    it('escapes HTML special characters in error message and step', async () => {
+      const sendMailFn = vi.fn<(_input: MailInput) => Promise<{ messageId: string }>>(() => Promise.resolve({ messageId: 'msg-test' }));
+      await sendFailureEmail(
+        '2026-10-10T12-00-00-000Z',
+        '<script>alert("step")</script>',
+        'error: <div>& "fatal"</div>',
+        sendMailFn,
+        () => Promise.resolve([{ email: 'dev@example.com' }]),
+      );
+      expect(sendMailFn).toHaveBeenCalledTimes(1);
+      const mailInput = sendMailFn.mock.calls[0]?.[0];
+      expect(mailInput?.html).toContain('&lt;script&gt;alert(&quot;step&quot;)&lt;/script&gt;');
+      expect(mailInput?.html).toContain('&lt;div&gt;&amp; &quot;fatal&quot;&lt;/div&gt;');
+      expect(mailInput?.text).toContain('<script>alert("step")</script>');
     });
 
     it('no-ops when no recipient emails are found', async () => {
-      const originalGmail = process.env.GMAIL_USER;
-      delete process.env.GMAIL_USER;
-      try {
-        const sendMailFn = vi.fn(() => Promise.resolve({ messageId: 'msg-test' }));
-        await sendFailureEmail(
-          '2026-10-10T12-00-00-000Z',
-          'export',
-          'disk full',
-          sendMailFn,
-          () => Promise.resolve([]),
-        );
-        expect(sendMailFn).not.toHaveBeenCalled();
-      } finally {
-        process.env.GMAIL_USER = originalGmail;
-      }
+      const sendMailFn = vi.fn(() => Promise.resolve({ messageId: 'msg-test' }));
+      await sendFailureEmail(
+        '2026-10-10T12-00-00-000Z',
+        'export',
+        'disk full',
+        sendMailFn,
+        () => Promise.resolve([]),
+      );
+      expect(sendMailFn).not.toHaveBeenCalled();
     });
 
     it('getDeveloperEmails queries userModel for userType Developer', async () => {
