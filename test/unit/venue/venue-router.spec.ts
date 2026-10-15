@@ -214,4 +214,23 @@ describe('Venue Router (PATCH /venue/:id)', () => {
 
     expect(r.status).toBe(201);
   });
+
+  it('does not capture /venue/places/... as /venue/:id (#1159)', async () => {
+    // If captured by /:id, "places" is treated as an invalid ObjectId and returns 400 "Find id is invalid"
+    const rSuggest = await request(app)
+      .get('/venue/places/suggest')
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`);
+
+    expect(rSuggest.status).toBe(403);
+    expect(rSuggest.body.message).not.toBe('Find id is invalid');
+
+    const rDetails = await request(app)
+      .get('/venue/places/some-place-id')
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`);
+
+    expect(rDetails.status).toBe(403);
+    expect(rDetails.body.message).not.toBe('Find id is invalid');
+  });
 });

@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.21.0",
+  "version": "2.22.0",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -74,6 +74,7 @@
     "debug": "^4.3.4",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
     "express-sslify": "^1.2.0",
     "helmet": "^8.1.0",
     "imapflow": "^1.7.8",
