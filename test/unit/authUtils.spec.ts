@@ -53,4 +53,25 @@ describe('the authUtils', () => {
     } catch (err) { eMessage = (err as Error).message; }
     expect(eMessage.includes('The user does not have the permission')).toBe(true);
   });
+  it('extracts canonical token from various authorization header formats (#1160)', () => {
+    expect(AuthUtils.extractToken({ headers: { authorization: 'Bearer jwt.token.here' } })).toBe('jwt.token.here');
+    expect(AuthUtils.extractToken({ headers: { authorization: 'Anything1 jwt.token.here' } })).toBe('jwt.token.here');
+    expect(AuthUtils.extractToken({ headers: { authorization: 'jwt.token.here' } })).toBe('jwt.token.here');
+    expect(AuthUtils.extractToken({ headers: { Authorization: 'Bearer cap.jwt.token' } })).toBe('cap.jwt.token');
+    expect(AuthUtils.extractToken({ headers: { authorization: ['Bearer array.token'] } })).toBe('array.token');
+    expect(AuthUtils.extractToken({ headers: {} })).toBe('');
+    expect(AuthUtils.extractToken({ headers: { authorization: '' } })).toBe('');
+  });
+  it('extracts sub claim from valid token across various authorization header formats (#1160)', () => {
+    const user = { _id: 'test-user-sub-123' };
+    const token = AuthUtils.createJWT(user);
+    expect(AuthUtils.extractSub({ headers: { authorization: `Bearer ${token}` } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: { authorization: `Anything1 ${token}` } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: { authorization: token } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: { Authorization: `Bearer ${token}` } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: { authorization: [`Bearer ${token}`] } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: {} })).toBe('');
+    expect(AuthUtils.extractSub({ headers: { authorization: '' } })).toBe('');
+    expect(AuthUtils.extractSub({ headers: { authorization: 'invalid.jwt.token' } })).toBe('');
+  });
 });

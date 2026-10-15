@@ -76,15 +76,29 @@ const createServiceJWT = (user: { _id: string }): string => {
   return jwt.encode(payload, process.env.HashString || /* istanbul ignore next */'');
 };
 
+const extractToken = (req: { headers: { authorization?: string | string[]; Authorization?: string | string[] } }): string => {
+  const authHeader = req.headers.authorization || req.headers.Authorization || '';
+  const tokenStr = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+  const parts = tokenStr.split(' ');
+  return (parts.length > 1 ? parts[1] : parts[0]) || '';
+};
+
+const extractSub = (req: { headers: { authorization?: string | string[]; Authorization?: string | string[] } }): string => {
+  const token = extractToken(req);
+  if (!token) return '';
+  try {
+    const payload = jwt.decode(token, process.env.HashString || /* istanbul ignore next */'') as JwtPayload;
+    return (payload && typeof payload.sub === 'string') ? payload.sub : '';
+  } catch {
+    return '';
+  }
+};
+
 const ensureAuthenticated = (req: AuthRequest): Promise<void> => {
   if (!req.headers.authorization && !req.headers.Authorization) {
     throw new Error('The request does not have an Authorization header');
   }
-  const authHeader = req.headers.authorization || req.headers.Authorization || '';
-  const tokenStr = Array.isArray(authHeader) ? authHeader[0] : authHeader;
-
-  const parts = tokenStr.split(' ');
-  const token = parts.length > 1 ? parts[1] : parts[0];
+  const token = extractToken(req);
   const payload = jwt.decode(token, process.env.HashString || /* istanbul ignore next */'') as JwtPayload;
   req.user = payload.sub;
   return findUserById(req);
@@ -98,5 +112,5 @@ const checkEmailSyntax = async (req: EmailCheckRequest): Promise<boolean> => {
 };
 
 export default {
-  checkEmailSyntax, ensureAuthenticated, createJWT, createServiceJWT, findUserById,
+  checkEmailSyntax, ensureAuthenticated, createJWT, createServiceJWT, findUserById, extractToken, extractSub,
 };
