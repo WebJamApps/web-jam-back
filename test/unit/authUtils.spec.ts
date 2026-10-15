@@ -62,4 +62,16 @@ describe('the authUtils', () => {
     expect(AuthUtils.extractToken({ headers: {} })).toBe('');
     expect(AuthUtils.extractToken({ headers: { authorization: '' } })).toBe('');
   });
+  it('extracts sub claim from valid token across various authorization header formats (#1160)', () => {
+    const user = { _id: 'test-user-sub-123' };
+    const token = AuthUtils.createJWT(user);
+    expect(AuthUtils.extractSub({ headers: { authorization: `Bearer ${token}` } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: { authorization: `Anything1 ${token}` } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: { authorization: token } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: { Authorization: `Bearer ${token}` } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: { authorization: [`Bearer ${token}`] } })).toBe('test-user-sub-123');
+    expect(AuthUtils.extractSub({ headers: {} })).toBe('');
+    expect(AuthUtils.extractSub({ headers: { authorization: '' } })).toBe('');
+    expect(AuthUtils.extractSub({ headers: { authorization: 'invalid.jwt.token' } })).toBe('');
+  });
 });

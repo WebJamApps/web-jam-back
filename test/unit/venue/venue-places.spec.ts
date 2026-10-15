@@ -15,6 +15,7 @@ describe('Google Places Address Lookup Routes (#1159)', () => {
   let nonAdminUser: { _id: string };
   let rateLimitUser: { _id: string };
   let rateLimitUser2: { _id: string };
+  let rateLimitUser3: { _id: string };
 
   const googleFetchMock = vi.fn();
 
@@ -63,6 +64,13 @@ describe('Google Places Address Lookup Routes (#1159)', () => {
       userType: 'JaM-admin',
     }) as unknown as { _id: { toString(): string } };
     rateLimitUser2 = { _id: rl2._id.toString() };
+
+    const rl3 = await userModel.create({
+      name: 'ratelimit-places-3',
+      email: 'ratelimit3@places-test.example.com',
+      userType: 'JaM-admin',
+    }) as unknown as { _id: { toString(): string } };
+    rateLimitUser3 = { _id: rl3._id.toString() };
   });
 
   afterAll(async () => {
@@ -222,8 +230,7 @@ describe('Google Places Address Lookup Routes (#1159)', () => {
     });
 
     it('returns 502 with timeout message and never leaks key on Google 5-second timeout', async () => {
-      const timeoutError = new Error('The operation timed out');
-      timeoutError.name = 'TimeoutError';
+      const timeoutError = new DOMException('The operation timed out', 'TimeoutError');
       googleFetchMock.mockRejectedValueOnce(timeoutError);
 
       const r = await request(app)
@@ -337,8 +344,7 @@ describe('Google Places Address Lookup Routes (#1159)', () => {
     });
 
     it('returns 502 with timeout message and never leaks key on 5-second Google timeout', async () => {
-      const timeoutError = new Error('The operation timed out');
-      timeoutError.name = 'TimeoutError';
+      const timeoutError = new DOMException('The operation timed out', 'TimeoutError');
       googleFetchMock.mockRejectedValueOnce(timeoutError);
 
       const r = await request(app)
@@ -473,6 +479,56 @@ describe('Google Places Address Lookup Routes (#1159)', () => {
       expect(rBareDetails.status).toBe(429);
 
       // A different caller with a distinct token still has their allowance available
+      const devToken = authUtils.createJWT({ _id: devUser._id });
+      const rOther = await request(app)
+        .get('/venue/places/suggest?input=test')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${devToken}`);
+      expect(rOther.status).toBe(200);
+    });
+
+    it('bounds rate limit per user across multiple distinct tokens for the same user (#1159, #1160)', async () => {
+      googleFetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          suggestions: [],
+          formattedAddress: '101 Main St',
+          addressComponents: [],
+        }),
+      });
+
+      const token1 = authUtils.createJWT({ _id: rateLimitUser3._id });
+      const token2 = authUtils.createServiceJWT({ _id: rateLimitUser3._id });
+      expect(token1).not.toBe(token2);
+
+      let lastStatus = 0;
+
+      // Exhaust 60 requests using the first token
+      for (let i = 1; i <= 60; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const r: ApiResponse = await request(app)
+          .get('/venue/places/suggest?input=test')
+          .set({ origin: allowedUrl })
+          .set('Authorization', `Bearer ${token1}`);
+        lastStatus = r.status;
+      }
+      expect(lastStatus).toBe(200);
+
+      // Verify that a distinct token for the same user also receives 429 across both lookup endpoints
+      const rToken2Suggest = await request(app)
+        .get('/venue/places/suggest?input=test')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${token2}`);
+      expect(rToken2Suggest.status).toBe(429);
+
+      const rToken2Details = await request(app)
+        .get('/venue/places/ChIJ123')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${token2}`);
+      expect(rToken2Details.status).toBe(429);
+
+      // A different caller still has their separate allowance available
       const devToken = authUtils.createJWT({ _id: devUser._id });
       const rOther = await request(app)
         .get('/venue/places/suggest?input=test')
