@@ -14,6 +14,7 @@ describe('Google Places Address Lookup Routes (#1159)', () => {
   let capabilityUser: { _id: string };
   let nonAdminUser: { _id: string };
   let rateLimitUser: { _id: string };
+  let rateLimitUser2: { _id: string };
 
   const googleFetchMock = vi.fn();
 
@@ -55,6 +56,13 @@ describe('Google Places Address Lookup Routes (#1159)', () => {
       userType: 'JaM-admin',
     }) as unknown as { _id: { toString(): string } };
     rateLimitUser = { _id: rl._id.toString() };
+
+    const rl2 = await userModel.create({
+      name: 'ratelimit-places-2',
+      email: 'ratelimit2@places-test.example.com',
+      userType: 'JaM-admin',
+    }) as unknown as { _id: { toString(): string } };
+    rateLimitUser2 = { _id: rl2._id.toString() };
   });
 
   afterAll(async () => {
@@ -412,6 +420,65 @@ describe('Google Places Address Lookup Routes (#1159)', () => {
         .set('Authorization', `Bearer ${token}`);
 
       expect(r61.status).toBe(429);
+    });
+
+    it('normalizes token before rate limiting so alternate accepted header forms with same JWT receive 429 across both endpoints (#1159, #1160)', async () => {
+      googleFetchMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          suggestions: [],
+          formattedAddress: '101 Main St',
+          addressComponents: [],
+        }),
+      });
+
+      const token = authUtils.createJWT({ _id: rateLimitUser2._id });
+      let lastStatus = 0;
+
+      // Exhaust 60 requests with standard Bearer format
+      for (let i = 1; i <= 60; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const r: ApiResponse = await request(app)
+          .get('/venue/places/suggest?input=test')
+          .set({ origin: allowedUrl })
+          .set('Authorization', `Bearer ${token}`);
+        lastStatus = r.status;
+      }
+      expect(lastStatus).toBe(200);
+
+      // Verify alternate accepted header forms with the same JWT receive 429 across both lookup endpoints
+      const rAltPrefixSuggest = await request(app)
+        .get('/venue/places/suggest?input=test')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Anything1 ${token}`);
+      expect(rAltPrefixSuggest.status).toBe(429);
+
+      const rAltPrefixDetails = await request(app)
+        .get('/venue/places/ChIJ123')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Anything2 ${token}`);
+      expect(rAltPrefixDetails.status).toBe(429);
+
+      const rBareSuggest = await request(app)
+        .get('/venue/places/suggest?input=test')
+        .set({ origin: allowedUrl })
+        .set('Authorization', token);
+      expect(rBareSuggest.status).toBe(429);
+
+      const rBareDetails = await request(app)
+        .get('/venue/places/ChIJ123')
+        .set({ origin: allowedUrl })
+        .set('Authorization', token);
+      expect(rBareDetails.status).toBe(429);
+
+      // A different caller with a distinct token still has their allowance available
+      const devToken = authUtils.createJWT({ _id: devUser._id });
+      const rOther = await request(app)
+        .get('/venue/places/suggest?input=test')
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${devToken}`);
+      expect(rOther.status).toBe(200);
     });
   });
 });

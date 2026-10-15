@@ -11,13 +11,14 @@ import routeUtils from '../../lib/routeUtils.js';
 const router = express.Router();
 
 // Rate limiter for Google Places lookup routes (#1159): at most 60 requests
-// a minute per caller, keyed on the Authorization header so no proxy setting changes.
+// a minute per caller, keyed on the normalized token from the Authorization
+// header so alternate accepted header forms share the same bucket (#1160).
 export const placesRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 60,
   keyGenerator: (req) => {
-    const authHeader = req.headers.authorization || req.headers.Authorization || '';
-    return (Array.isArray(authHeader) ? authHeader[0] : authHeader) || 'anonymous';
+    const token = authUtils.extractToken(req);
+    return token || 'anonymous';
   },
   validate: false,
   standardHeaders: true,

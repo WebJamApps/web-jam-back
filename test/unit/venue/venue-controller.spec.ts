@@ -60,37 +60,37 @@ describe('Venue Controller', () => {
 
   describe('authorizeAdminOnly (#1159)', () => {
     it('allows a privilege-less admin user', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.resolve({ userType: 'JaM-admin', privileges: [] }));
+      (userModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn(() => Promise.resolve({ userType: 'JaM-admin', privileges: [] }));
       const err = await c.authorizeAdminOnly({ user: 'a' });
       expect(err).toBeNull();
     });
 
     it('allows a privilege-less developer user', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.resolve({ userType: 'Developer' }));
+      (userModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn(() => Promise.resolve({ userType: 'Developer' }));
       const err = await c.authorizeAdminOnly({ user: 'a' });
       expect(err).toBeNull();
     });
 
     it('refuses a capability-bearing user even if admin role', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.resolve({ userType: 'Developer', privileges: ['venue:create'] }));
+      (userModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn(() => Promise.resolve({ userType: 'Developer', privileges: ['venue:create'] }));
       const err = await c.authorizeAdminOnly({ user: 'a' });
       expect(err).toEqual({ status: 403, message: 'admin role required' });
     });
 
     it('refuses a non-admin role', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.resolve({ userType: 'Fan', privileges: [] }));
+      (userModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn(() => Promise.resolve({ userType: 'Fan', privileges: [] }));
       const err = await c.authorizeAdminOnly({ user: 'a' });
       expect(err).toEqual({ status: 403, message: 'admin role required' });
     });
 
     it('returns 401 when user is not found', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.resolve(null));
+      (userModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn(() => Promise.resolve(null));
       const err = await c.authorizeAdminOnly({ user: 'a' });
       expect(err).toEqual({ status: 401, message: 'user not found' });
     });
 
     it('returns 500 when user lookup throws', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.reject(new Error('db err')));
+      (userModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn(() => Promise.reject(new Error('db err')));
       const err = await c.authorizeAdminOnly({ user: 'a' });
       expect(err).toEqual({ status: 500, message: 'db err' });
     });
