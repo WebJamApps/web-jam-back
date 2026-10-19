@@ -136,6 +136,12 @@ interface SendBody {
   nextGigDate?: string;
 }
 
+interface VenueCustomization {
+  venueId: string;
+  customIntro?: string;
+  customBody?: string;
+}
+
 // #844 — batch target-list approval. The approval gate is the TARGET SELECTION
 // (which vetted venues are in the batch), NOT individual emails. Dispatch is
 // gated by Gate 1 + Gate 2 (#1079), not by capability — a human holding
@@ -156,6 +162,34 @@ interface BatchBody {
   // #903 — same customIntro/customBody as SendBody, applied to every venue in the batch.
   customIntro?: string;
   customBody?: string;
+  // Per-venue slots are checked together with the whole approved set and persisted at preflight.
+  venueCustomizations?: VenueCustomization[];
+}
+
+function customSlotsForVenue(body: BatchBody, venueId: string): Pick<SendBody, 'customIntro' | 'customBody'> {
+  const custom = body.venueCustomizations?.find((entry) => entry.venueId === venueId);
+  return {
+    customIntro: custom?.customIntro ?? body.customIntro,
+    customBody: custom?.customBody ?? body.customBody,
+  };
+}
+
+function validateVenueCustomizations(body: BatchBody): string | undefined {
+  if (body.venueCustomizations === undefined) return undefined;
+  if (!Array.isArray(body.venueCustomizations)) return 'venueCustomizations must be an array';
+  const venueIds = new Set(body.venueIds);
+  const seen = new Set<string>();
+  for (const entry of body.venueCustomizations) {
+    if (!entry || typeof entry !== 'object' || !venueIds.has(entry.venueId) || seen.has(entry.venueId)) {
+      return 'venueCustomizations must name each customized batch venue at most once';
+    }
+    if ((entry.customIntro !== undefined && typeof entry.customIntro !== 'string')
+      || (entry.customBody !== undefined && typeof entry.customBody !== 'string')) {
+      return 'venueCustomizations customIntro and customBody must be strings';
+    }
+    seen.add(entry.venueId);
+  }
+  return undefined;
 }
 
 interface UpdateBody { status?: string; gmailThreadId?: string; actor?: string }
@@ -1574,7 +1608,7 @@ class OutreachController extends Controller {
     // core #844 vetting gate (a venue flipped not-interested between approval
     // and dispatch must never be mailed) and the dedup guard is what stops a
     // re-POSTed/retried batch mailing the same venue twice (#923).
-    const ctx = await this.resolvePitch({ venueId, templateType: body.templateType, ...sendBody });
+    const ctx = await this.resolvePitch({ venueId, templateType: body.templateType, ...sendBody, ...customSlotsForVenue(body, venueId) });
     if (ctx.error) {
       return { ok: false, venueName: ctx.error.venueName || UNKNOWN_VENUE_NAME, reason: ctx.error.message };
     }
@@ -1604,13 +1638,13 @@ class OutreachController extends Controller {
       if (!mongoose.Types.ObjectId.isValid(venueId) || verifiedMap?.has(venueId)) continue;
       // eslint-disable-next-line no-await-in-loop
       const ctx = await this.resolvePitch(
-        { venueId, templateType: body.templateType, ...sendBody },
+        { venueId, templateType: body.templateType, ...sendBody, ...customSlotsForVenue(body, venueId) },
         { skipDedup: true, requireEligible: false },
       );
       if (ctx.error) continue; // the send loop reports it as skipped
       const { venue, template } = ctx as Required<PitchContext>;
       try {
-        buildPitchEmail(venue, template, withNextGig(sendBody, ctx.nextGigDate));
+        buildPitchEmail(venue, template, withNextGig({ ...sendBody, ...customSlotsForVenue(body, venueId) }, ctx.nextGigDate));
       } catch (e) {
         if (!(e instanceof MissingFooterError)) throw e;
         footerErrors.push(e.message);
@@ -1643,8 +1677,9 @@ class OutreachController extends Controller {
         continue;
       }
 
+      const venueBody = withNextGig({ ...sendBody, ...customSlotsForVenue(body, venueId) }, item.nextGigDate);
       // eslint-disable-next-line no-await-in-loop
-      const r = await this.performSend(item.venue, item.template, item.type, withNextGig(sendBody, item.nextGigDate), actor, item.preRendered);
+      const r = await this.performSend(item.venue, item.template, item.type, venueBody, actor, item.preRendered);
       if (!r.ok) {
         result.skipped.push({ venueId, venueName: item.venue.name || UNKNOWN_VENUE_NAME, reason: r.message });
         continue;
@@ -1698,6 +1733,7 @@ class OutreachController extends Controller {
         bookingPeriod: body.bookingPeriod,
         customIntro: body.customIntro,
         customBody: body.customBody,
+        venueCustomizations: body.venueCustomizations,
         cc: body.cc,
         venueIds,
         venueCount: venueIds.length,
@@ -1800,8 +1836,9 @@ class OutreachController extends Controller {
         continue;
       }
 
+      const venueBody = withNextGig({ ...sendBody, ...customSlotsForVenue(batchParams, venueId) }, item.nextGigDate);
       // eslint-disable-next-line no-await-in-loop
-      const r = await this.performSend(item.venue, item.template, item.type, withNextGig(sendBody, item.nextGigDate), actor, item.preRendered);
+      const r = await this.performSend(item.venue, item.template, item.type, venueBody, actor, item.preRendered);
       if (!r.ok && r.stop) {
         // The mail account or connection is the problem: leave this venue unattempted and stop,
         // so the same dispatch can be called again once it clears.
@@ -1913,6 +1950,7 @@ class OutreachController extends Controller {
       bookingPeriod: dispatch.bookingPeriod as string | undefined,
       customIntro: dispatch.customIntro as string | undefined,
       customBody: dispatch.customBody as string | undefined,
+      venueCustomizations: dispatch.venueCustomizations as VenueCustomization[] | undefined,
       cc: dispatch.cc as string | string[] | undefined,
     };
     const sendBody: SendBody = {
@@ -2964,8 +3002,7 @@ class OutreachController extends Controller {
       targetDates: body.targetDates,
       targetWeekend: body.targetWeekend,
       bookingPeriod: body.bookingPeriod,
-      customIntro: body.customIntro,
-      customBody: body.customBody,
+      ...customSlotsForVenue(body, venueId),
     };
     const ctx = await this.resolvePitch(
       { venueId, templateType: body.templateType, ...sendBody },
@@ -3075,6 +3112,8 @@ class OutreachController extends Controller {
       }
     | { ok: false; status: number; message: string }
   > {
+    const customizationError = validateVenueCustomizations(body);
+    if (customizationError) return { ok: false, status: 400, message: customizationError };
     const bResult = resolveBatchIdentification(body);
     if ('error' in bResult) {
       return { ok: false, status: 400, message: bResult.error };
