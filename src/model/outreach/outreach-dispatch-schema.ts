@@ -59,6 +59,14 @@ const outreachDispatchSchema = new Schema({
     required: false,
     trim: true,
   },
+  venueCustomizations: {
+    type: [new Schema({
+      venueId: { type: String, required: true },
+      customIntro: { type: String },
+      customBody: { type: String },
+    }, { _id: false })],
+    default: undefined,
+  },
   cc: {
     type: Schema.Types.Mixed,
     required: false,
