@@ -4,6 +4,7 @@ import controller from '#src/model/venue/venue-controller.js';
 import userModel from '#src/model/user/user-facade.js';
 import gigModel from '#src/model/gig/gig-facade.js';
 import venueModel from '#src/model/venue/venue-facade.js';
+import venueSchema from '#src/model/venue/venue-schema.js';
 
 const c = controller as any;
 
@@ -1894,6 +1895,132 @@ describe('Venue Controller', () => {
       c.model.findByIdAndUpdate = upd;
       await c.updateVenue({ user: 'a', params: { id }, body: { outreachEligible: true } }, resStub);
       expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ outreachEligible: true }));
+    });
+  });
+
+  describe('location — exact GeoJSON pin (#989)', () => {
+    const pin = { type: 'Point', coordinates: [-80.0553, 37.2709] };
+    const createBody = { name: 'The Spot', address: '1 Main St', zipCode: '24153', venueType: 'Originals' };
+    const malformed: [string, unknown][] = [
+      ['a null location', null],
+      ['a string location', '-80.05,37.27'],
+      ['an array location', [-80.05, 37.27]],
+      ['a type other than Point', { type: 'LineString', coordinates: [-80.05, 37.27] }],
+      ['a missing type', { coordinates: [-80.05, 37.27] }],
+      ['missing coordinates', { type: 'Point' }],
+      ['non-array coordinates', { type: 'Point', coordinates: '-80.05,37.27' }],
+      ['empty coordinates', { type: 'Point', coordinates: [] }],
+      ['one coordinate', { type: 'Point', coordinates: [-80.05] }],
+      ['three coordinates', { type: 'Point', coordinates: [-80.05, 37.27, 0] }],
+      ['a string longitude', { type: 'Point', coordinates: ['-80.05', 37.27] }],
+      ['a null latitude', { type: 'Point', coordinates: [-80.05, null] }],
+      ['a longitude above 180', { type: 'Point', coordinates: [180.0001, 37.27] }],
+      ['a longitude below -180', { type: 'Point', coordinates: [-180.0001, 37.27] }],
+      ['a latitude above 90', { type: 'Point', coordinates: [-80.05, 90.0001] }],
+      ['a latitude below -90', { type: 'Point', coordinates: [-80.05, -90.0001] }],
+      ['coordinates given latitude-first out of range', { type: 'Point', coordinates: [37.27, -200] }],
+    ];
+
+    it('stores a well-formed in-range point on create', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'v1' }));
+      c.model.create = create;
+      await c.createVenue({ user: 'a', body: { ...createBody, location: pin } }, resStub);
+      expect(status).toBe(201);
+      expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({ location: { type: 'Point', coordinates: [-80.0553, 37.2709] } });
+    });
+
+    it.each([[180, 90], [-180, -90], [0, 0]])('accepts the in-range boundary point [%d, %d]', async (lng, lat) => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'v1' }));
+      c.model.create = create;
+      await c.createVenue({ user: 'a', body: { ...createBody, location: { type: 'Point', coordinates: [lng, lat] } } }, resStub);
+      expect(status).toBe(201);
+      expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({ location: { type: 'Point', coordinates: [lng, lat] } });
+    });
+
+    it('stores only the validated point, dropping any extra keys the client sent', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'v1' }));
+      c.model.create = create;
+      await c.createVenue({
+        user: 'a', body: { ...createBody, location: { ...pin, crs: { type: 'name' }, accuracy: 'ROOFTOP' } },
+      }, resStub);
+      expect((create.mock.calls[0] as unknown[])[0]).toMatchObject({ location: pin });
+      const stored = (create.mock.calls[0] as unknown[])[0] as { location: Record<string, unknown> };
+      expect(Object.keys(stored.location).sort()).toEqual(['coordinates', 'type']);
+    });
+
+    it('saves a venue without a location when the field is absent on create', async () => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'v1' }));
+      c.model.create = create;
+      await c.createVenue({ user: 'a', body: createBody }, resStub);
+      expect(status).toBe(201);
+      expect(Object.prototype.hasOwnProperty.call((create.mock.calls[0] as unknown[])[0], 'location')).toBe(false);
+    });
+
+    it.each(malformed)('refuses %s on create with a 400 and stores nothing', async (_name, location) => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'v1' }));
+      const upd = vi.fn(() => Promise.resolve({ _id: 'v1' }));
+      c.model.create = create;
+      c.model.findByIdAndUpdate = upd;
+      await c.createVenue({ user: 'a', body: { ...createBody, location } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('location');
+      expect(create).not.toHaveBeenCalled();
+      expect(upd).not.toHaveBeenCalled();
+    });
+
+    it('stores a well-formed point on update', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({ user: 'a', params: { id }, body: { location: pin } }, resStub);
+      expect(status).toBe(200);
+      expect(upd).toHaveBeenCalledWith(id, expect.objectContaining({ location: pin }));
+    });
+
+    it('leaves every other field and the stored location alone when the field is absent on update', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({ user: 'a', params: { id }, body: { notes: 'new note' } }, resStub);
+      expect(status).toBe(200);
+      const written = (upd.mock.calls[0] as unknown[])[1] as Record<string, unknown>;
+      expect(written).toEqual({ notes: 'new note', lastModifiedBy: 'a' });
+      expect(Object.prototype.hasOwnProperty.call(written, 'location')).toBe(false);
+    });
+
+    it.each(malformed)('refuses %s on update with a 400 and stores nothing', async (_name, location) => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({ user: 'a', params: { id }, body: { location } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('location');
+      expect(upd).not.toHaveBeenCalled();
+    });
+
+    it('declares a 2dsphere index on location and no other geospatial index', () => {
+      const indexes: [Record<string, unknown>, unknown][] = venueSchema.schema.indexes();
+      const geoIndexes = indexes.filter(([fields]) => Object.values(fields).includes('2dsphere'));
+      expect(geoIndexes).toHaveLength(1);
+      expect(geoIndexes[0][0]).toEqual({ location: '2dsphere' });
+    });
+
+    it('keeps a stored point exact and gives a venue with no location no location at all', async () => {
+      const withPin = new venueSchema({ name: 'A', location: pin }).toObject();
+      expect(withPin.location).toEqual(pin);
+      const without = new venueSchema({ name: 'B' });
+      expect(without.toObject().location).toBeUndefined();
+      await expect(without.validate()).resolves.toBeUndefined();
+    });
+
+    it('refuses a stored location that is not a complete Point', async () => {
+      await expect(new venueSchema({ name: 'C', location: { type: 'Point' } }).validate()).rejects.toThrow('coordinates');
+      await expect(new venueSchema({ name: 'D', location: { coordinates: [1, 2] } }).validate()).rejects.toThrow('type');
     });
   });
 });

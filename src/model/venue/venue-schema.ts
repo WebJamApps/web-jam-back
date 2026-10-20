@@ -15,6 +15,16 @@ const touchTargetWeekendSchema = new Schema({
   end: { type: Date, required: false },
 }, { _id: false });
 
+// A venue's exact pin as a GeoJSON Point, `coordinates` ordered [longitude, latitude]
+// (#989). It is only ever the exact position the shared address lookup returned for the
+// administrator's pick — never approximated, never a city centroid, never backfilled — so a
+// venue either carries a complete pin or no `location` at all. `coordinates` has no default:
+// Mongoose would otherwise store an empty array, which is not a valid 2dsphere key.
+const locationSchema = new Schema({
+  type: { type: String, required: true, enum: ['Point'] },
+  coordinates: { type: [Number], required: true, default: undefined },
+}, { _id: false });
+
 // Per-venue contact timeline (#898) — the backend of the JaMmusic outreach
 // workspace's per-venue history view. Kept as a small embedded array (not its
 // own collection like `outreach`, #823): a touch is a lightweight timeline
@@ -253,6 +263,13 @@ const venueSchema = new Schema({
   // The AI agent or human that last wrote this record (#818 `actor` field — one
   // shared agent identity authenticates, but each write records who acted).
   lastModifiedBy: { type: String, required: false },
+  // Exact GeoJSON pin for the radius search (#989); see locationSchema above. Optional, absent
+  // on every existing record, and written only by an explicit create/update carrying a pin.
+  location: { type: locationSchema, required: false },
 }, options);
+
+// Index for radius ($geoWithin / $nearSphere) queries on `location` (#989). 2dsphere indexes are
+// sparse, so venues with no `location` are simply not indexed.
+venueSchema.index({ location: '2dsphere' });
 
 export default mongoose.models.Venue || mongoose.model('Venue', venueSchema);
