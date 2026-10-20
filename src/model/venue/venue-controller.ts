@@ -128,6 +128,10 @@ interface VenueBody {
   // Same validation pattern as resumeBooking (validateBody below).
   bookedThrough?: string;
   bookedDate?: string;
+  // #989 — exact GeoJSON pin `{ type: 'Point', coordinates: [lng, lat] }`; see
+  // venue-schema.ts. Typed `unknown` because it comes off the wire and is checked
+  // (then rebuilt from its validated parts) by applyLocation below.
+  location?: unknown;
   actor?: string;
 }
 
@@ -366,6 +370,72 @@ function validateBody(body: VenueBody, partial: boolean): string {
     const reqErr = validateRequiredFields(body);
     if (reqErr) return reqErr;
   }
+  return '';
+}
+
+// #989 — three outcomes for a venue's exact `location` pin, decided before any DB write:
+//   - key absent (undefined)          -> '' and the body is untouched (nothing to judge).
+//   - well-formed, in-range Point     -> '' and body.location is rebuilt from the validated
+//                                        numbers alone, so no extra client key is ever stored.
+//   - anything else (including null,  -> an error message; the caller 400s and stores nothing.
+//     operator or dotted keys)
+// Only an exact pin is ever accepted as-is: no rounding, no clamping, no defaulting.
+// Alternate update paths (e.g. `$set: { location: null }` or dotted keys like `location.coordinates`)
+// must never bypass validation.
+function isCoordinateWithin(value: unknown, limit: number): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit;
+}
+
+function isLocationField(field: unknown): boolean {
+  if (typeof field !== 'string') return false;
+  const trimmed = field.trim();
+  return trimmed === 'location' || trimmed.startsWith('location.');
+}
+
+function targetsLocation(key: string, val: unknown): boolean {
+  if (key.startsWith('location.')) return true;
+  if (key.startsWith('$') && val && typeof val === 'object') {
+    if (Array.isArray(val)) {
+      return val.some((item) => isLocationField(item) || (item && typeof item === 'object' && targetsLocation('$', item)));
+    }
+    const isRename = key.toLowerCase().trim() === '$rename';
+    for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>)) {
+      if (
+        isLocationField(subKey) ||
+        (isRename && isLocationField(subVal)) ||
+        targetsLocation(subKey, subVal)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasOperatorOrDottedLocation(body: Record<string, unknown>): boolean {
+  for (const [key, val] of Object.entries(body)) {
+    if (targetsLocation(key, val)) return true;
+  }
+  return false;
+}
+
+function applyLocation(body: VenueBody): string {
+  if (hasOperatorOrDottedLocation(body as unknown as Record<string, unknown>)) {
+    return 'location must be a GeoJSON Point of the form { type: "Point", coordinates: [longitude, latitude] }';
+  }
+  if (body.location === undefined) return '';
+  const loc = body.location as { type?: unknown; coordinates?: unknown } | null;
+  if (!loc || typeof loc !== 'object' || Array.isArray(loc) || loc.type !== 'Point') {
+    return 'location must be a GeoJSON Point of the form { type: "Point", coordinates: [longitude, latitude] }';
+  }
+  const { coordinates } = loc;
+  if (!Array.isArray(coordinates) || coordinates.length !== 2) {
+    return 'location coordinates must be exactly two numbers: [longitude, latitude]';
+  }
+  const [lng, lat] = coordinates as unknown[];
+  if (!isCoordinateWithin(lng, 180)) return 'location longitude must be a number from -180 to 180';
+  if (!isCoordinateWithin(lat, 90)) return 'location latitude must be a number from -90 to 90';
+  body.location = { type: 'Point', coordinates: [lng, lat] };
   return '';
 }
 
@@ -787,7 +857,7 @@ class VenueController extends Controller {
     const body = (req.body || {}) as VenueBody;
     delete body._id;
     stripReadOnlyFields(body as unknown as Record<string, unknown>);
-    const invalid = validateBody(body, false);
+    const invalid = validateBody(body, false) || applyLocation(body);
     if (invalid) return res.status(400).json({ message: invalid });
     // #987 Part A — normalize the (now-guaranteed-present, per validateBody
     // above) address on write, identically to the PATCH path (updateVenue).
@@ -940,7 +1010,7 @@ class VenueController extends Controller {
     const body = (req.body || {}) as VenueBody;
     delete body._id;
     stripReadOnlyFields(body as unknown as Record<string, unknown>);
-    const invalid = validateBody(body, true);
+    const invalid = validateBody(body, true) || applyLocation(body);
     if (invalid) return res.status(400).json({ message: invalid });
     const addressErr = await this.applyAddressUpdate(req.params.id, body);
     if (addressErr) return res.status(addressErr.status).json({ message: addressErr.message });
