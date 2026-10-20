@@ -377,13 +377,41 @@ function validateBody(body: VenueBody, partial: boolean): string {
 //   - key absent (undefined)          -> '' and the body is untouched (nothing to judge).
 //   - well-formed, in-range Point     -> '' and body.location is rebuilt from the validated
 //                                        numbers alone, so no extra client key is ever stored.
-//   - anything else (including null)  -> an error message; the caller 400s and stores nothing.
+//   - anything else (including null,  -> an error message; the caller 400s and stores nothing.
+//     operator or dotted keys)
 // Only an exact pin is ever accepted as-is: no rounding, no clamping, no defaulting.
+// Alternate update paths (e.g. `$set: { location: null }` or dotted keys like `location.coordinates`)
+// must never bypass validation.
 function isCoordinateWithin(value: unknown, limit: number): value is number {
   return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit;
 }
 
+function targetsLocation(key: string, val: unknown): boolean {
+  if (key.startsWith('location.')) return true;
+  if (key.startsWith('$') && val && typeof val === 'object') {
+    if (Array.isArray(val)) {
+      return val.some((item) => typeof item === 'string' && (item === 'location' || item.startsWith('location.')));
+    }
+    for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>)) {
+      if (subKey === 'location' || subKey.startsWith('location.') || targetsLocation(subKey, subVal)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function hasOperatorOrDottedLocation(body: Record<string, unknown>): boolean {
+  for (const [key, val] of Object.entries(body)) {
+    if (targetsLocation(key, val)) return true;
+  }
+  return false;
+}
+
 function applyLocation(body: VenueBody): string {
+  if (hasOperatorOrDottedLocation(body as unknown as Record<string, unknown>)) {
+    return 'location must be a GeoJSON Point of the form { type: "Point", coordinates: [longitude, latitude] }';
+  }
   if (body.location === undefined) return '';
   const loc = body.location as { type?: unknown; coordinates?: unknown } | null;
   if (!loc || typeof loc !== 'object' || Array.isArray(loc) || loc.type !== 'Point') {

@@ -1920,6 +1920,17 @@ describe('Venue Controller', () => {
       ['a latitude below -90', { type: 'Point', coordinates: [-80.05, -90.0001] }],
       ['coordinates given latitude-first out of range', { type: 'Point', coordinates: [37.27, -200] }],
     ];
+    const alternateBypasses: [string, Record<string, unknown>][] = [
+      ['$set with null location', { $set: { location: null } }],
+      ['$set with malformed Point', { $set: { location: { type: 'Point' } } }],
+      ['$set with dotted location coordinates', { $set: { 'location.coordinates': [-80.0553, 37.2709] } }],
+      ['$set with dotted location type', { $set: { 'location.type': 'Point' } }],
+      ['$set with complete Point', { $set: { location: pin } }],
+      ['top-level dotted location.coordinates', { 'location.coordinates': [-80.0553, 37.2709] }],
+      ['top-level dotted location.type', { 'location.type': 'Point' }],
+      ['$unset with location', { $unset: { location: '' } }],
+      ['$unset with dotted location coordinates', { $unset: { 'location.coordinates': '' } }],
+    ];
 
     it('stores a well-formed in-range point on create', async () => {
       c.model.find = vi.fn(() => Promise.resolve([]));
@@ -1973,6 +1984,19 @@ describe('Venue Controller', () => {
       expect(upd).not.toHaveBeenCalled();
     });
 
+    it.each(alternateBypasses)('refuses alternate shape (%s) on create with a 400 and stores nothing', async (_name, alternateBody) => {
+      c.model.find = vi.fn(() => Promise.resolve([]));
+      const create = vi.fn(() => Promise.resolve({ _id: 'v1' }));
+      const upd = vi.fn(() => Promise.resolve({ _id: 'v1' }));
+      c.model.create = create;
+      c.model.findByIdAndUpdate = upd;
+      await c.createVenue({ user: 'a', body: { ...createBody, ...alternateBody } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('location');
+      expect(create).not.toHaveBeenCalled();
+      expect(upd).not.toHaveBeenCalled();
+    });
+
     it('stores a well-formed point on update', async () => {
       const id = new mongoose.Types.ObjectId().toString();
       const upd = vi.fn(() => Promise.resolve({ _id: id }));
@@ -1998,6 +2022,16 @@ describe('Venue Controller', () => {
       const upd = vi.fn(() => Promise.resolve({ _id: id }));
       c.model.findByIdAndUpdate = upd;
       await c.updateVenue({ user: 'a', params: { id }, body: { location } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('location');
+      expect(upd).not.toHaveBeenCalled();
+    });
+
+    it.each(alternateBypasses)('refuses alternate shape (%s) on update with a 400 and stores nothing', async (_name, alternateBody) => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn(() => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd;
+      await c.updateVenue({ user: 'a', params: { id }, body: alternateBody }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('location');
       expect(upd).not.toHaveBeenCalled();
