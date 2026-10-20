@@ -386,14 +386,25 @@ function isCoordinateWithin(value: unknown, limit: number): value is number {
   return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit;
 }
 
+function isLocationField(field: unknown): boolean {
+  if (typeof field !== 'string') return false;
+  const trimmed = field.trim();
+  return trimmed === 'location' || trimmed.startsWith('location.');
+}
+
 function targetsLocation(key: string, val: unknown): boolean {
   if (key.startsWith('location.')) return true;
   if (key.startsWith('$') && val && typeof val === 'object') {
     if (Array.isArray(val)) {
-      return val.some((item) => typeof item === 'string' && (item === 'location' || item.startsWith('location.')));
+      return val.some((item) => isLocationField(item) || (item && typeof item === 'object' && targetsLocation('$', item)));
     }
+    const isRename = key.toLowerCase().trim() === '$rename';
     for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>)) {
-      if (subKey === 'location' || subKey.startsWith('location.') || targetsLocation(subKey, subVal)) {
+      if (
+        isLocationField(subKey) ||
+        (isRename && isLocationField(subVal)) ||
+        targetsLocation(subKey, subVal)
+      ) {
         return true;
       }
     }

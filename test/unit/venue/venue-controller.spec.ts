@@ -1930,6 +1930,11 @@ describe('Venue Controller', () => {
       ['top-level dotted location.type', { 'location.type': 'Point' }],
       ['$unset with location', { $unset: { location: '' } }],
       ['$unset with dotted location coordinates', { $unset: { 'location.coordinates': '' } }],
+      ['$rename with location destination', { $rename: { notes: 'location' } }],
+      ['$rename with dotted location coordinates destination', { $rename: { notes: 'location.coordinates' } }],
+      ['$rename with dotted location type destination', { $rename: { notes: 'location.type' } }],
+      ['$rename with location source', { $rename: { location: 'notes' } }],
+      ['$rename with dotted location source', { $rename: { 'location.coordinates': 'notes' } }],
     ];
 
     it('stores a well-formed in-range point on create', async () => {
