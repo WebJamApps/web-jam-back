@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { vi } from 'vitest';
-import InquiryController, { senderForArtist } from '#src/model/inquiry/InquiryController.js';
+import type { Request, Response } from 'express';
+import InquiryController, { googlePlacesKeyForArtist, senderForArtist } from '#src/model/inquiry/InquiryController.js';
 
 // NODE_ENV is 'test' for the whole suite (see test/setup), so sendEmail never
 // hits the real Gmail transporter — it always short-circuits to the 200
@@ -8,11 +8,38 @@ import InquiryController, { senderForArtist } from '#src/model/inquiry/InquiryCo
 // formatInquiryEmail (subject/html/text) and sendEmail's text-vs-html
 // fallback, using a minimal Response stub.
 function mockRes() {
-  const res: any = {};
+  const res = {} as Response & { body?: unknown };
   res.status = (s: number) => { res.statusCode = s; return res; };
   res.json = (body: unknown) => { res.body = body; return res; };
   return res;
 }
+
+describe('googlePlacesKeyForArtist', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([undefined, null, '', ' ', 'jammusic', 'other-artist', 123])(
+    'uses the default Places key for artist %s', (artist) => {
+      vi.stubEnv('GOOGLE_PLACES_API_KEY', 'default-places-test-key');
+      vi.stubEnv('TimGooglePlacesApiKey', 'tim-places-test-key');
+      expect(googlePlacesKeyForArtist(artist)).toBe('default-places-test-key');
+    },
+  );
+
+  it.each(['tim', ' tim '])('uses TimGooglePlacesApiKey for %s', (artist) => {
+    vi.stubEnv('GOOGLE_PLACES_API_KEY', 'default-places-test-key');
+    vi.stubEnv('TimGooglePlacesApiKey', 'tim-places-test-key');
+    expect(googlePlacesKeyForArtist(artist)).toBe('tim-places-test-key');
+  });
+
+  it('never substitutes the other artist\'s key when a key is missing', () => {
+    vi.stubEnv('GOOGLE_PLACES_API_KEY', 'default-places-test-key');
+    vi.stubEnv('TimGooglePlacesApiKey', undefined);
+    expect(googlePlacesKeyForArtist('tim')).toBeUndefined();
+    vi.stubEnv('GOOGLE_PLACES_API_KEY', undefined);
+    vi.stubEnv('TimGooglePlacesApiKey', 'tim-places-test-key');
+    expect(googlePlacesKeyForArtist(undefined)).toBeUndefined();
+  });
+});
 
 describe('senderForArtist', () => {
   const origEnv = { ...process.env };
@@ -100,6 +127,30 @@ describe('InquiryController.handleInquiry', () => {
     process.env = { ...origEnv };
   });
 
+  it('emails the form and booking fields using the request Origin rather than body site fields', async () => {
+    const controller = new InquiryController();
+    const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
+    const req = {
+      headers: { origin: 'https://joshandmariamusic.com' },
+      body: {
+        form: 'jam-bookus', firstname: 'Jane', lastname: 'Smith',
+        eventDate: '2026-12-20', eventType: 'wedding', venueAddress: '123 Main St',
+        site: 'https://wrong.example', origin: 'https://wrong.example',
+      },
+    } as unknown as Request;
+    const res = mockRes();
+    await controller.handleInquiry(req, res);
+    const [html, , subject, , , text] = sendEmailSpy.mock.calls[0];
+    expect(subject).toBe('New inquiry from Jane Smith — Book Us form');
+    expect(text).toBe([
+      'Form: Book Us form', 'Site: https://joshandmariamusic.com', 'Name: Jane Smith',
+      'Event Date: 2026-12-20', 'Event Type: wedding', 'Venue Address: 123 Main St',
+    ].join('\n'));
+    expect(html).toContain('https://joshandmariamusic.com');
+    expect(html).not.toContain('wrong.example');
+    expect(res.statusCode).toBe(200);
+  });
+
   it('passes artist-specific sender through to sendEmail when configured', () => {
     process.env.TimGmailUser = 'tim@example.com';
     process.env.TimGmailAppPassword = 'tim-password';
@@ -113,7 +164,7 @@ describe('InquiryController.handleInquiry', () => {
         name: 'Jane Doe',
         email: 'customer@example.com',
       },
-    } as any, res);
+    } as unknown as Request, res);
 
     expect(sendEmailSpy).toHaveBeenCalledWith(
       expect.any(String),
@@ -140,14 +191,14 @@ describe('InquiryController.handleInquiry', () => {
         artist: 'tim', name: 'John Doe', email: 'john@example.com', phone: '555-123-4567',
         eventDate: '2026-08-15', message: 'Wedding gig',
       },
-    } as any, res);
+    } as unknown as Request, res);
     expect(res.statusCode).toBe(200);
   });
 
   it('formats a default-artist (JaMmusic) submission gracefully with missing fields', () => {
     const controller = new InquiryController();
     const res = mockRes();
-    controller.handleInquiry({ body: { emailaddress: 'yo@yo.com' } } as any, res);
+    controller.handleInquiry({ body: { emailaddress: 'yo@yo.com' } } as unknown as Request, res);
     expect(res.statusCode).toBe(200);
   });
 
@@ -157,7 +208,7 @@ describe('InquiryController.handleInquiry', () => {
     const res = mockRes();
     controller.handleInquiry({
       body: { email: '  customer@example.com  ' },
-    } as any, res);
+    } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(String),
@@ -176,7 +227,7 @@ describe('InquiryController.handleInquiry', () => {
     const res = mockRes();
     controller.handleInquiry({
       body: { emailaddress: '  legacy@example.com  ' },
-    } as any, res);
+    } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(String),
@@ -193,7 +244,7 @@ describe('InquiryController.handleInquiry', () => {
     const controller = new InquiryController();
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
-    controller.handleInquiry({ body: {} } as any, res);
+    controller.handleInquiry({ body: {} } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(String),
@@ -210,7 +261,7 @@ describe('InquiryController.handleInquiry', () => {
     const controller = new InquiryController();
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
-    controller.handleInquiry({} as any, res);
+    controller.handleInquiry({} as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenLastCalledWith(
       expect.any(String),
       expect.any(String),
@@ -222,7 +273,7 @@ describe('InquiryController.handleInquiry', () => {
       undefined,
     );
 
-    controller.handleInquiry({ body: { email: '   ', emailaddress: '   ' } } as any, res);
+    controller.handleInquiry({ body: { email: '   ', emailaddress: '   ' } } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenLastCalledWith(
       expect.any(String),
       expect.any(String),
@@ -271,9 +322,10 @@ describe('InquiryController.sendEmail', () => {
 describe('InquiryController transporters', () => {
   it('reuses transporters for the same user and creates distinct ones for different users', () => {
     const controller = new InquiryController();
-    const t1 = (controller as any).getTransporter('user1@example.com', 'pass1');
-    const t2 = (controller as any).getTransporter('user1@example.com', 'pass1');
-    const t3 = (controller as any).getTransporter('user2@example.com', 'pass2');
+    const transporters = controller as unknown as { getTransporter(user: string, pass: string): unknown };
+    const t1 = transporters.getTransporter('user1@example.com', 'pass1');
+    const t2 = transporters.getTransporter('user1@example.com', 'pass1');
+    const t3 = transporters.getTransporter('user2@example.com', 'pass2');
 
     expect(t1).toBeDefined();
     expect(t1).toBe(t2);

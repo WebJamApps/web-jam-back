@@ -42,6 +42,14 @@ export function senderForArtist(artist: unknown): { user: string; pass: string; 
   };
 }
 
+// Kept separate from sender selection: Tim's Places key never falls back to Josh's.
+// The later address-verification step consumes this lookup.
+export function googlePlacesKeyForArtist(artist: unknown): string | undefined {
+  return normalizeArtist(artist) === 'tim'
+    ? process.env.TimGooglePlacesApiKey
+    : process.env.GOOGLE_PLACES_API_KEY;
+}
+
 class InquiryController {
   private transporters = new Map<string, Transporter>();
 
@@ -97,7 +105,7 @@ class InquiryController {
     const sender = senderForArtist(artist);
     const body = (req.body || {}) as Record<string, unknown>;
     const replyTo = extractCustomerEmail(body) || undefined;
-    const { subject, html, text } = formatInquiryEmail(body);
+    const { subject, html, text } = formatInquiryEmail(body, req.headers?.origin);
     return this.sendEmail(html, to, subject, res, cc, text, sender, replyTo);
   }
 }
