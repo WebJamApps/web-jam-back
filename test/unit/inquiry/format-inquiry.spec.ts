@@ -1,6 +1,70 @@
 import { extractCustomerEmail, formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
 
 describe('formatInquiryEmail', () => {
+  it.each([
+    ['webjam-homepage', 'Web Jam homepage form'],
+    ['jam-bookus', 'Book Us form'],
+    ['tim-booking', 'Tim Sherman booking form'],
+  ])('labels %s in the subject and the first body row', (form, label) => {
+    const { subject, html, text } = formatInquiryEmail({
+      form, firstname: 'Jane', lastname: 'Smith',
+    }, 'https://web-jam.com');
+
+    expect(subject).toBe(`New inquiry from Jane Smith — ${label}`);
+    expect(text).toBe(`Form: ${label}\nSite: https://web-jam.com\nName: Jane Smith`);
+    const rows = html.match(/<tr>.*?<\/tr>/g);
+    expect(rows).toHaveLength(3);
+    expect(rows?.[0]).toContain(`>${label}</td>`);
+    expect(rows?.[1]).toContain('>https://web-jam.com</td>');
+  });
+
+  it('includes optional booking fields in both email parts without enforcing their values', () => {
+    const { html, text } = formatInquiryEmail({
+      form: 'jam-bookus', name: 'Jane', eventDate: '2026-12-20',
+      eventType: 'private-party', venueAddress: '123 Main St, Salem, VA',
+    });
+    expect(text).toBe([
+      'Form: Book Us form', 'Name: Jane', 'Event Date: 2026-12-20',
+      'Event Type: private-party', 'Venue Address: 123 Main St, Salem, VA',
+    ].join('\n'));
+    expect(html).toContain('2026-12-20');
+    expect(html).toContain('private-party');
+    expect(html).toContain('123 Main St, Salem, VA');
+    expect(text).not.toContain('verified');
+  });
+
+  it.each([undefined, 'unknown', '__proto__', { value: 'jam-bookus' }])(
+    'keeps legacy delivery formatting for an absent or unknown form (%s)', (form) => {
+      const { subject, text } = formatInquiryEmail({ form, name: 'Jane' });
+      expect(subject).toBe('New booking inquiry from Jane');
+      expect(text).toBe('Name: Jane');
+    },
+  );
+
+  it('handles a known form without a name or Origin', () => {
+    const { subject, text } = formatInquiryEmail({ form: 'tim-booking' });
+    expect(subject).toBe('New inquiry — Tim Sherman booking form');
+    expect(text).toBe('Form: Tim Sherman booking form');
+  });
+
+  it('omits blank or non-string booking fields', () => {
+    const { text } = formatInquiryEmail({ eventDate: 123, eventType: '  ', venueAddress: {} });
+    expect(text).toBe('No inquiry details were provided.');
+  });
+
+  it('escapes new rows in HTML while retaining their plaintext values', () => {
+    const { html, text } = formatInquiryEmail({
+      eventType: '<party>', venueAddress: '123 Main & Oak\n<script>alert(1)</script>',
+    }, 'https://example.com/<site>');
+    expect(html).toContain('https://example.com/&lt;site&gt;');
+    expect(html).toContain('&lt;party&gt;');
+    expect(html).toContain('123 Main &amp; Oak<br>&lt;script&gt;alert(1)&lt;/script&gt;');
+    expect(html).not.toContain('<script>');
+    expect(text).toContain('Site: https://example.com/<site>');
+    expect(text).toContain('Event Type: <party>');
+    expect(text).toContain('Venue Address: 123 Main & Oak\n<script>alert(1)</script>');
+  });
+
   it('formats a TimShermanMusic booking submission (name/email/phone/eventDate/message)', () => {
     const { subject, html, text } = formatInquiryEmail({
       artist: 'tim',
