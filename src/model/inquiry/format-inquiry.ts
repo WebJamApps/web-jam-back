@@ -45,9 +45,20 @@ export function extractCustomerEmail(body?: InquiryBody | null): string {
   return str(body.email) || str(body.emailaddress);
 }
 
+function formLabel(form: unknown): string {
+  switch (str(form)) {
+    case 'webjam-homepage': return 'Web Jam homepage form';
+    case 'jam-bookus': return 'Book Us form';
+    case 'tim-booking': return 'Tim Sherman booking form';
+    default: return '';
+  }
+}
+
 // Order fields should appear in the email body.
-function buildFields(body: InquiryBody): Array<[string, string]> {
+function buildFields(body: InquiryBody, label: string, origin: string): Array<[string, string]> {
   const fields: Array<[string, string]> = [];
+  if (label) fields.push(['Form', label]);
+  if (origin) fields.push(['Site', origin]);
   const name = displayName(body);
   if (name) fields.push(['Name', name]);
   const email = extractCustomerEmail(body);
@@ -56,6 +67,10 @@ function buildFields(body: InquiryBody): Array<[string, string]> {
   if (phone) fields.push(['Phone', phone]);
   const eventDate = str(body.eventDate);
   if (eventDate) fields.push(['Event Date', eventDate]);
+  const eventType = str(body.eventType);
+  if (eventType) fields.push(['Event Type', eventType]);
+  const venueAddress = str(body.venueAddress);
+  if (venueAddress) fields.push(['Venue Address', venueAddress]);
   const country = str(body.country);
   if (country) fields.push(['Country', country]);
   const state = str(body.uSAstate);
@@ -73,10 +88,16 @@ function fieldHtml([label, value]: [string, string]): string {
     + `<td style="padding:4px 0;">${safeValue}</td></tr>`;
 }
 
-export function formatInquiryEmail(body: InquiryBody): FormattedInquiry {
-  const fields = buildFields(body);
+export function formatInquiryEmail(body: InquiryBody, origin?: string): FormattedInquiry {
+  const label = formLabel(body.form);
+  const fields = buildFields(body, label, str(origin));
   const name = displayName(body);
-  const subject = name ? `New booking inquiry from ${name}` : 'New booking inquiry';
+  // Preserve legacy subjects while the forms are rolling out their identifiers.
+  let subject = name ? `New booking inquiry from ${name}` : 'New booking inquiry';
+  if (label) {
+    const inquiry = name ? `New inquiry from ${name}` : 'New inquiry';
+    subject = `${inquiry} — ${label}`;
+  }
 
   const html = fields.length
     ? `<table cellpadding="0" cellspacing="0">${fields.map(fieldHtml).join('')}</table>`
