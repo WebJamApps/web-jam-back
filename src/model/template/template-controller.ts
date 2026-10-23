@@ -9,7 +9,7 @@ import templateModel from './template-facade.js';
 import userModel from '../user/user-facade.js';
 
 const TEMPLATE_TYPES = ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar', 'OnlineForm'];
-const TEMPLATE_STAGES = ['cold', 'returning', 'upcoming'];
+const TEMPLATE_STAGES = ['cold', 'returning', 'upcoming', 'second-pitch'];
 
 // Role fallback for human admins who authorize by role (no privileges array).
 // AI agents pass via the template:* capabilities on the shared web-jam-llm
