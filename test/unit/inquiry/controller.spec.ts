@@ -125,6 +125,81 @@ describe('InquiryController.handleInquiry', () => {
 
   afterEach(() => {
     process.env = { ...origEnv };
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    ['tim', 'tim-places-test-key'],
+    ['jammusic', 'default-places-test-key'],
+    [undefined, 'default-places-test-key'],
+  ])('looks up the picked place with the %s artist key and delivers Google’s address', async (artist, key) => {
+    process.env.GOOGLE_PLACES_API_KEY = 'default-places-test-key';
+    process.env.TimGooglePlacesApiKey = 'tim-places-test-key';
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ formattedAddress: '123 Main St, Salem, VA' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new InquiryController();
+    const sendEmail = vi.spyOn(controller, 'sendEmail');
+    const res = mockRes();
+
+    await controller.handleInquiry({
+      body: { artist, venuePlaceId: ' place-id ', venueAddress: 'Ignored customer text', email: 'customer@example.com' },
+    } as unknown as Request, res);
+
+    expect(fetchMock).toHaveBeenCalledWith('https://places.googleapis.com/v1/places/place-id', expect.objectContaining({
+      headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'formattedAddress,addressComponents' },
+    }));
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const [html, , , , , text, , replyTo] = sendEmail.mock.calls[0];
+    expect(text).toContain('Venue Address: 123 Main St, Salem, VA');
+    expect(html).toContain('>123 Main St, Salem, VA</td>');
+    expect(text).not.toContain('Ignored customer text');
+    expect(replyTo).toBe('customer@example.com');
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ message: 'email sent' });
+  });
+
+  it.each(['no key', 'no Tim key', 'Google error', 'network error', 'timeout', 'unresolved place', 'malformed JSON'])(
+    'still delivers with an unavailable venue row for %s', async (scenario) => {
+      process.env.GOOGLE_PLACES_API_KEY = 'default-places-test-key';
+      process.env.TimGooglePlacesApiKey = 'tim-places-test-key';
+      const fetchMock = vi.fn<typeof fetch>();
+      vi.stubGlobal('fetch', fetchMock);
+      let artist: string | undefined;
+      switch (scenario) {
+        case 'no key': delete process.env.GOOGLE_PLACES_API_KEY; break;
+        case 'no Tim key': delete process.env.TimGooglePlacesApiKey; artist = 'tim'; break;
+        case 'Google error': fetchMock.mockResolvedValue(new Response(null, { status: 403 })); break;
+        case 'network error': fetchMock.mockRejectedValue(new Error('network error')); break;
+        case 'timeout': fetchMock.mockRejectedValue(new DOMException('timed out', 'TimeoutError')); break;
+        case 'malformed JSON': fetchMock.mockResolvedValue(new Response('invalid JSON')); break;
+        default: fetchMock.mockResolvedValue(Response.json({}));
+      }
+      const controller = new InquiryController();
+      const sendEmail = vi.spyOn(controller, 'sendEmail');
+      const res = mockRes();
+
+      await controller.handleInquiry({ body: { artist, venuePlaceId: 'place-id' } } as unknown as Request, res);
+
+      expect(sendEmail).toHaveBeenCalledTimes(1);
+      expect(sendEmail.mock.calls[0][5]).toBe('Venue address: not verified (lookup unavailable)');
+      expect(sendEmail.mock.calls[0][0]).toContain('>not verified (lookup unavailable)</td>');
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ message: 'email sent' });
+      expect(fetchMock).toHaveBeenCalledTimes(scenario.startsWith('no ') ? 0 : 1);
+    },
+  );
+
+  it('delivers typed addresses without calling Google', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+    const controller = new InquiryController();
+    const sendEmail = vi.spyOn(controller, 'sendEmail');
+    const res = mockRes();
+    await controller.handleInquiry({ body: { venueAddress: '123 Main St' } } as unknown as Request, res);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sendEmail.mock.calls[0][5]).toBe('Venue Address (typed by customer): 123 Main St');
+    expect(sendEmail.mock.calls[0][0]).toContain('>Venue Address (typed by customer)</td>');
+    expect(res.statusCode).toBe(200);
   });
 
   it('emails the form and booking fields using the request Origin rather than body site fields', async () => {
@@ -144,21 +219,21 @@ describe('InquiryController.handleInquiry', () => {
     expect(subject).toBe('New inquiry from Jane Smith — Book Us form');
     expect(text).toBe([
       'Form: Book Us form', 'Site: https://joshandmariamusic.com', 'Name: Jane Smith',
-      'Event Date: 2026-12-20', 'Event Type: wedding', 'Venue Address: 123 Main St',
+      'Event Date: 2026-12-20', 'Event Type: wedding', 'Venue Address (typed by customer): 123 Main St',
     ].join('\n'));
     expect(html).toContain('https://joshandmariamusic.com');
     expect(html).not.toContain('wrong.example');
     expect(res.statusCode).toBe(200);
   });
 
-  it('passes artist-specific sender through to sendEmail when configured', () => {
+  it('passes artist-specific sender through to sendEmail when configured', async () => {
     process.env.TimGmailUser = 'tim@example.com';
     process.env.TimGmailAppPassword = 'tim-password';
 
     const controller = new InquiryController();
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
-    controller.handleInquiry({
+    await controller.handleInquiry({
       body: {
         artist: 'tim',
         name: 'Jane Doe',
@@ -183,10 +258,10 @@ describe('InquiryController.handleInquiry', () => {
     });
   });
 
-  it('formats a Tim Sherman booking submission into a descriptive subject', () => {
+  it('formats a Tim Sherman booking submission into a descriptive subject', async () => {
     const controller = new InquiryController();
     const res = mockRes();
-    controller.handleInquiry({
+    await controller.handleInquiry({
       body: {
         artist: 'tim', name: 'John Doe', email: 'john@example.com', phone: '555-123-4567',
         eventDate: '2026-08-15', message: 'Wedding gig',
@@ -195,18 +270,18 @@ describe('InquiryController.handleInquiry', () => {
     expect(res.statusCode).toBe(200);
   });
 
-  it('formats a default-artist (JaMmusic) submission gracefully with missing fields', () => {
+  it('formats a default-artist (JaMmusic) submission gracefully with missing fields', async () => {
     const controller = new InquiryController();
     const res = mockRes();
-    controller.handleInquiry({ body: { emailaddress: 'yo@yo.com' } } as unknown as Request, res);
+    await controller.handleInquiry({ body: { emailaddress: 'yo@yo.com' } } as unknown as Request, res);
     expect(res.statusCode).toBe(200);
   });
 
-  it('extracts customer replyTo from body.email', () => {
+  it('extracts customer replyTo from body.email', async () => {
     const controller = new InquiryController();
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
-    controller.handleInquiry({
+    await controller.handleInquiry({
       body: { email: '  customer@example.com  ' },
     } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenCalledWith(
@@ -221,11 +296,11 @@ describe('InquiryController.handleInquiry', () => {
     );
   });
 
-  it('extracts customer replyTo from body.emailaddress when email is not provided', () => {
+  it('extracts customer replyTo from body.emailaddress when email is not provided', async () => {
     const controller = new InquiryController();
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
-    controller.handleInquiry({
+    await controller.handleInquiry({
       body: { emailaddress: '  legacy@example.com  ' },
     } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenCalledWith(
@@ -240,11 +315,11 @@ describe('InquiryController.handleInquiry', () => {
     );
   });
 
-  it('passes undefined replyTo when neither email nor emailaddress is provided', () => {
+  it('passes undefined replyTo when neither email nor emailaddress is provided', async () => {
     const controller = new InquiryController();
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
-    controller.handleInquiry({ body: {} } as unknown as Request, res);
+    await controller.handleInquiry({ body: {} } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(String),
@@ -257,11 +332,11 @@ describe('InquiryController.handleInquiry', () => {
     );
   });
 
-  it('passes undefined replyTo when body is missing or email fields are blank whitespace', () => {
+  it('passes undefined replyTo when body is missing or email fields are blank whitespace', async () => {
     const controller = new InquiryController();
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
-    controller.handleInquiry({} as unknown as Request, res);
+    await controller.handleInquiry({} as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenLastCalledWith(
       expect.any(String),
       expect.any(String),
@@ -273,7 +348,7 @@ describe('InquiryController.handleInquiry', () => {
       undefined,
     );
 
-    controller.handleInquiry({ body: { email: '   ', emailaddress: '   ' } } as unknown as Request, res);
+    await controller.handleInquiry({ body: { email: '   ', emailaddress: '   ' } } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenLastCalledWith(
       expect.any(String),
       expect.any(String),

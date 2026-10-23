@@ -13,6 +13,8 @@
 // entity-free by construction (same lesson as #909's mailer.ts fix, but this
 // controller has its own transporter and doesn't go through mailer.ts).
 
+import type { VenuePlaceLookup } from '#src/model/inquiry/lookup-venue.js';
+
 export type InquiryBody = Record<string, unknown>;
 
 export interface FormattedInquiry {
@@ -54,8 +56,18 @@ function formLabel(form: unknown): string {
   }
 }
 
+function venueFields(body: InquiryBody, venue?: VenuePlaceLookup): Array<[string, string]> {
+  if (str(body.venuePlaceId)) {
+    return [venue?.status === 'resolved'
+      ? ['Venue Address', venue.formattedAddress]
+      : ['Venue address', 'not verified (lookup unavailable)']];
+  }
+  const address = str(body.venueAddress);
+  return address ? [['Venue Address (typed by customer)', address]] : [];
+}
+
 // Order fields should appear in the email body.
-function buildFields(body: InquiryBody, label: string, origin: string): Array<[string, string]> {
+function buildFields(body: InquiryBody, label: string, origin: string, venue?: VenuePlaceLookup): Array<[string, string]> {
   const fields: Array<[string, string]> = [];
   if (label) fields.push(['Form', label]);
   if (origin) fields.push(['Site', origin]);
@@ -69,8 +81,7 @@ function buildFields(body: InquiryBody, label: string, origin: string): Array<[s
   if (eventDate) fields.push(['Event Date', eventDate]);
   const eventType = str(body.eventType);
   if (eventType) fields.push(['Event Type', eventType]);
-  const venueAddress = str(body.venueAddress);
-  if (venueAddress) fields.push(['Venue Address', venueAddress]);
+  fields.push(...venueFields(body, venue));
   const country = str(body.country);
   if (country) fields.push(['Country', country]);
   const state = str(body.uSAstate);
@@ -88,9 +99,9 @@ function fieldHtml([label, value]: [string, string]): string {
     + `<td style="padding:4px 0;">${safeValue}</td></tr>`;
 }
 
-export function formatInquiryEmail(body: InquiryBody, origin?: string): FormattedInquiry {
+export function formatInquiryEmail(body: InquiryBody, origin?: string, venue?: VenuePlaceLookup): FormattedInquiry {
   const label = formLabel(body.form);
-  const fields = buildFields(body, label, str(origin));
+  const fields = buildFields(body, label, str(origin), venue);
   const name = displayName(body);
   // Preserve legacy subjects while the forms are rolling out their identifiers.
   let subject = name ? `New booking inquiry from ${name}` : 'New booking inquiry';
