@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import Debug from 'debug';
 import { DEFAULT_ARTIST, normalizeArtist } from '#src/lib/artist.js';
 import { extractCustomerEmail, formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
+import { lookupVenuePlace } from '#src/model/inquiry/lookup-venue.js';
 
 const debug = Debug('web-jam-back:InquiryController');
 
@@ -98,14 +99,16 @@ class InquiryController {
     return res.status(200).json({ message: 'email sent' });
   }
 
-  handleInquiry(req: Request, res: Response) {
+  async handleInquiry(req: Request, res: Response) {
     debug(req.body);
     const artist = (req.body as { artist?: unknown })?.artist;
     const { to, cc } = recipientForArtist(artist);
     const sender = senderForArtist(artist);
     const body = (req.body || {}) as Record<string, unknown>;
     const replyTo = extractCustomerEmail(body) || undefined;
-    const { subject, html, text } = formatInquiryEmail(body, req.headers?.origin);
+    const placeId = typeof body.venuePlaceId === 'string' ? body.venuePlaceId.trim() : '';
+    const venue = placeId ? await lookupVenuePlace(placeId, googlePlacesKeyForArtist(artist)) : undefined;
+    const { subject, html, text } = formatInquiryEmail(body, req.headers?.origin, venue);
     return this.sendEmail(html, to, subject, res, cc, text, sender, replyTo);
   }
 }

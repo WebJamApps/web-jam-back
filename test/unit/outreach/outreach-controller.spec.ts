@@ -32,6 +32,7 @@ const {
   default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
   OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
   buildPitchEmail, buildFollowUpEmail, MissingFooterError, resolveFooterAsset,
+  computeDraftFingerprint,
   contactFirstName,
   wrapDarkEmail, DARK_WRAPPER_BG, DARK_WRAPPER_TEXT, DARK_WRAPPER_LINK, DARK_WRAPPER_START, DARK_WRAPPER_END,
   hasLinkedPastGig,
@@ -476,6 +477,96 @@ describe('Outreach Controller (#844 batch model)', () => {
   });
 
   describe('template by stage (#848, #1116)', () => {
+    describe('second-pitch templates', () => {
+      afterEach(() => { vi.restoreAllMocks(); });
+
+      it.each(['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'])('loads the active second-pitch copy for %s', async (type) => {
+        const template = validTemplate({ type, stage: 'second-pitch' });
+        const findOne = vi.spyOn(templateModel, 'findOne').mockResolvedValue(template);
+        expect(await c.findTemplate(type, 'second-pitch')).toEqual(template);
+        expect(findOne).toHaveBeenCalledExactlyOnceWith({ type, active: true, stage: 'second-pitch' });
+      });
+
+      it('refuses missing second-pitch copy without querying the cold or legacy templates', async () => {
+        const findOne = vi.spyOn(templateModel, 'findOne').mockResolvedValueOnce(null).mockResolvedValue(validTemplate());
+        expect(await c.findTemplate('Originals', 'second-pitch')).toBeNull();
+        expect(findOne).toHaveBeenCalledExactlyOnceWith({ type: 'Originals', active: true, stage: 'second-pitch' });
+      });
+
+      it('names the missing type and stage in the refusal and sends nothing', async () => {
+        vi.spyOn(c, 'resolveStageInfo').mockResolvedValue({ stage: 'second-pitch' });
+        vi.spyOn(templateModel, 'findOne').mockResolvedValue(null);
+        const context = await c.resolvePitch({ venueId: oid(), targetWeekend: VALID_WEEKEND });
+        expect(context.error).toMatchObject({ status: 400, message: 'no active second-pitch template for type Originals' });
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('propagates lookup failures instead of falling back to another stage', async () => {
+        const findOne = vi.spyOn(templateModel, 'findOne').mockRejectedValue(new Error('template lookup unavailable'));
+        await expect(c.findTemplate('Originals', 'second-pitch')).rejects.toThrow('template lookup unavailable');
+        expect(findOne).toHaveBeenCalledTimes(1);
+      });
+
+      const secondPitch = () => validTemplate({
+        stage: 'second-pitch', subject: 'Following up - [Venue Name] - [First Pitch Date]',
+        introHtml: '<p>Hi [Contact Name], my note from [First Pitch Date].</p>',
+        bodyHtml: '[Custom Body]<p>[Target Dates], first pitched [First Pitch Date].</p>',
+      });
+
+      it('fills the first-pitch date in every template field, retaining custom slots, footer and dark styling', () => {
+        const rendered = buildPitchEmail(validVenue(), secondPitch(), {
+          firstPitchDate: 'October 1', targetDates: 'Oct 16-18', customBody: 'An extra paragraph <plain text>.',
+        });
+        expect(rendered.subject).toBe('Following up - The Spot on Kirk - October 1');
+        expect(rendered.html).toContain('my note from October 1');
+        expect(rendered.html).toContain('Oct 16-18, first pitched October 1');
+        expect(rendered.html).toContain('An extra paragraph &lt;plain text&gt;.');
+        expect(rendered.html).toContain('cid:footerphoto');
+        expect(rendered.html).toContain(DARK_WRAPPER_START);
+        expect(rendered.html).not.toContain('[First Pitch Date]');
+        expect(rendered.attachments).toHaveLength(1);
+        const custom = buildPitchEmail(validVenue(), secondPitch(), { firstPitchDate: 'October 1', customIntro: 'Hi Pat,\n\nMy own opener.' });
+        expect(custom.html).toContain('My own opener.');
+        expect(custom.html).not.toContain('my note from');
+      });
+
+      it('uses the earlier follow-up fallback when no first-pitch date is supplied', () => {
+        const rendered = buildPitchEmail(validVenue(), secondPitch(), {});
+        expect(rendered.subject).toContain('earlier this season');
+        expect(rendered.html).toContain('my note from earlier this season');
+        expect(rendered.html).not.toContain('[First Pitch Date]');
+      });
+
+      it('checks second-pitch copy with its resolved first-pitch date and refuses a changed date', async () => {
+        const venue = validVenue();
+        const template = secondPitch();
+        vi.spyOn(c, 'resolvePitch').mockResolvedValue({ venue, template, type: 'Originals', firstPitchDate: 'October 1' });
+        const params = { targetDates: 'Oct 16-18', targetWeekend: VALID_WEEKEND };
+        const rendered = buildPitchEmail(venue, template, { ...params, firstPitchDate: 'October 1' });
+        const fingerprint = computeDraftFingerprint({ subject: rendered.subject, body: rendered.html });
+        expect(await c.verifyVenueRenderedCopy(String(venue._id), fingerprint, params)).toMatchObject({ ok: true, verified: { rendered } });
+        vi.spyOn(c, 'resolvePitch').mockResolvedValue({ venue, template, type: 'Originals', firstPitchDate: 'October 2' });
+        expect(await c.verifyVenueRenderedCopy(String(venue._id), fingerprint, params)).toMatchObject({ ok: false, status: 403 });
+        expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('uses the same resolved date in preview and send, ignoring a caller-supplied first-pitch date', async () => {
+        const venue = validVenue();
+        const template = secondPitch();
+        vi.spyOn(c, 'resolvePitch').mockResolvedValue({ venue, template, type: 'Originals', firstPitchDate: 'October 1' });
+        const dates = { targetDates: 'Oct 16-18', firstPitchDate: 'invented date' };
+        await c.previewByVenue({ user: 'approver', query: { venueId: venue._id, ...dates } }, resStub);
+        expect(status).toBe(200);
+        const preview = payload as { subject: string; html: string };
+        expect(preview.subject).toContain('October 1');
+        expect(preview.html).not.toContain('invented date');
+        asApprover();
+        await c.sendPitch({ user: 'approver', body: { venueId: venue._id, targetWeekend: VALID_WEEKEND, ...dates } }, resStub);
+        expect(status).toBe(201);
+        expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ subject: preview.subject, html: preview.html }));
+      });
+    });
+
     // #1059 retired the hand-pinned relationshipStage override. A venue
     // document that still carries the field (pre-migration data) must be
     // ignored entirely — the stage derives from gig history either way.

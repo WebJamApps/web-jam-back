@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.24.0",
+  "version": "2.25.0",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -51,7 +51,8 @@
     "test:lint": "eslint ./src --fix",
     "test:local": "npm run test:lint && npm run typecheck && rimraf coverage && npm run test:unit",
     "test:unit": "vitest run --coverage",
-    "test:all": "npm run test:local"
+    "test:all": "npm run test:local",
+    "seed:second-pitch-templates": "node scripts/seed-second-pitch-templates.mjs"
   },
   "repository": {
     "type": "git",
