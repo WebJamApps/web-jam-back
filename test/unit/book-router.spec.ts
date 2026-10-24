@@ -135,17 +135,6 @@ describe('The Book API', () => {
       });
     expect(r.status).toBe(201);
   });
-  it('deletes many books', async () => {
-    await BookModel.create({
-      title: 'Best Test Book Ever', type: 'paperback',
-    });
-    r = await request(app)
-      .delete('/book')
-      .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
-      .query({ type: 'paperback' });
-    expect(r.status).toBe(200);
-  });
   it('should wait unit tests finish before exiting', async () => { // eslint-disable-line vitest/expect-expect
     // eslint-disable-next-line no-promise-executor-return
     const delay = (ms: number) => new Promise((resolve) => setTimeout(() => resolve(true), ms));

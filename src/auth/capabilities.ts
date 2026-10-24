@@ -4,6 +4,7 @@ export const CAPABILITIES = [
   'gig:create',
   'gig:edit',
   'gig:delete',
+  'gig:announce',
   'tour:create',
   'tour:edit',
   'tour:delete',

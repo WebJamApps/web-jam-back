@@ -72,7 +72,7 @@ describe('GigController — announce (#962)', () => {
       const id = new mongoose.Types.ObjectId().toString();
       await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
       expect(status).toBe(403);
-      expect(payload.message).toContain('not authorized for gig announce');
+      expect(payload.message).toContain('not authorized for gig:announce');
     });
 
     it('allows a privilege-less admin via role fallback', async () => {

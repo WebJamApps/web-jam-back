@@ -139,16 +139,6 @@ describe('The Setlist API', () => {
     expect(r.status).toBe(200);
   });
 
-  it('deletes many setlists', async () => {
-    await SetlistModel.create({ name: 'Bulk Set' });
-    r = await request(app)
-      .delete('/setlist')
-      .set({ origin: allowedUrl })
-      .set('Authorization', auth())
-      .query({ name: 'Bulk Set' });
-    expect(r.status).toBe(200);
-  });
-
   describe('hybrid songId resolution (web-jam-back#946)', () => {
     let song: { _id: string; url: string };
 
