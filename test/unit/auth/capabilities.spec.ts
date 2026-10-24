@@ -14,7 +14,7 @@ function controllerFiles(dir: string): string[] {
 }
 
 // Quoted capability literals a controller gates on, e.g. 'outreach:create'.
-const CAP_LITERAL = /['"]([a-z][\w-]*:(?:create|edit|delete|email))['"]/g;
+const CAP_LITERAL = /['"]([a-z][\w-]*:(?:create|edit|delete|email|announce))['"]/g;
 
 describe('capabilities registry', () => {
   it('exposes the canonical list', () => {

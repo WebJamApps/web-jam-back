@@ -24,11 +24,6 @@ function setRoot(router: Router, controller: Icontroller, authUtils: typeof Auth
       const action = makeAction(req, res, 'create', controller, authUtils);
       // eslint-disable-next-line no-void
       void action();
-    })
-    .delete((req, res) => {
-      const action = makeAction(req, res, 'deleteMany', controller, authUtils);
-      // eslint-disable-next-line no-void
-      void action();
     });
 }
 function byId(router: Router, controller: Icontroller, authUtils: typeof AuthUtils): void {
