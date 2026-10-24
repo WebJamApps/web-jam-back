@@ -14,6 +14,7 @@ import { publishToInstagram, publishToFacebookPage, isMetaFullyUnconfigured } fr
 // Mirrors TemplateController/VenueController/PromoController (#819/#822).
 const ALLOWED_ROLES = ['JaM-admin', 'Developer'];
 const GIG_ANNOUNCE_CAPS = ['gig:announce'];
+const GIG_DELETE_CAPS = ['gig:delete', 'tour:delete'];
 
 interface AuthedUser { userType?: string; privileges?: string[] }
 type AuthRequest = Request & { user?: string };
@@ -41,7 +42,7 @@ function checkAccess(user: AuthedUser, required: string[]): AuthzResult {
     return null;
   }
   if (ALLOWED_ROLES.indexOf(user.userType || '') === -1) {
-    return { status: 403, message: 'not authorized for gig announce' };
+    return { status: 403, message: `not authorized for ${required.join('/')}` };
   }
   return null;
 }
@@ -72,7 +73,7 @@ function resolveDefaultPromoAsset(): string | null {
 // Gigs are shared across artists (#885): reads scope by ?artist=, writes stamp
 // the artist and respect artist-scoped admins.
 class GigController extends ArtistController {
-  // Load the token's user, then apply the access gate. announce() runs
+  // Load the token's user, then apply the access gate. The routes run
   // ensureAuthenticated first (valid token -> req.user); this adds
   // authorization on top, same pattern as TemplateController/VenueController.
   async authorize(req: AuthRequest, required: string[]): Promise<AuthzResult> { // eslint-disable-line class-methods-use-this
@@ -82,6 +83,12 @@ class GigController extends ArtistController {
     }
     if (!user) return { status: 401, message: 'user not found' };
     return checkAccess(user, required);
+  }
+
+  async findByIdAndDelete(req: AuthIdRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, GIG_DELETE_CAPS);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    return super.findByIdAndDelete(req, res);
   }
 
   // GET /gig/promo-default.jpg — public, no auth (#962). Serves the bundled

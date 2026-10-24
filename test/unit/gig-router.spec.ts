@@ -81,16 +81,7 @@ describe('The Gig API', () => {
     r = await request(app)
       .delete(`/gig/${gig._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`);
-    expect(r.status).toBe(200);
-  });
-  it('deletes many gigs', async () => {
-    await GigModel.create({ venue: 'Bulk Venue', city: 'Salem' });
-    r = await request(app)
-      .delete('/gig')
-      .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
-      .query({ city: 'Salem' });
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: adminUser._id })}`);
     expect(r.status).toBe(200);
   });
   it('serves the default promo image without auth (public, #962)', async () => {

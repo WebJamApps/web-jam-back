@@ -24,7 +24,7 @@ describe('Artist scoping', () => {
     await userModel.deleteMany({ email: { $in: ['super@example.com', 'tim@example.com'] } });
     const su = await userModel.create({ name: 'josh', email: 'super@example.com', userType: allowedRole }) as unknown as { _id: { toString(): string } };
     const tim = await userModel.create({
-      name: 'tim', email: 'tim@example.com', userType: allowedRole, artist: 'tim',
+      name: 'tim', email: 'tim@example.com', userType: allowedRole, artist: 'tim', privileges: ['gig:delete'],
     }) as unknown as { _id: { toString(): string } };
     superUser = { _id: su._id.toString() };
     timAdmin = { _id: tim._id.toString() };
@@ -96,12 +96,14 @@ describe('Artist scoping', () => {
     const g = await GigModel.create({ venue: 'JaM Only' });
     r = await request(app).delete(`/gig/${g._id}`).set({ origin: allowedUrl }).set('Authorization', auth(timAdmin._id));
     expect(r.status).toBe(403);
+    expect(await GigModel.findById(String(g._id))).not.toBeNull();
   });
 
   it('scoped admin can delete their own record', async () => {
     const g = await GigModel.create({ venue: 'Mine', artist: 'tim' });
     r = await request(app).delete(`/gig/${g._id}`).set({ origin: allowedUrl }).set('Authorization', auth(timAdmin._id));
     expect(r.status).toBe(200);
+    expect(await GigModel.findById(String(g._id))).toBeNull();
   });
 
   it('serves a public per-artist bio via GET /book/one', async () => {

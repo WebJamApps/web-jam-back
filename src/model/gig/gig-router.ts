@@ -7,7 +7,7 @@ const router = express.Router();
 
 // GET /gig is public (gigs are public data — same as the website + the
 // unauthenticated WebJamSocketCluster `allGigs` channel). setRoot's GET handler
-// runs without ensureAuthenticated; POST/DELETE stay authenticated.
+// runs without ensureAuthenticated; POST stays authenticated.
 routeUtils.setRoot(router, controller, authUtils);
 
 // GET /gig/promo-default.jpg is public, no auth (#962): it's the fallback
