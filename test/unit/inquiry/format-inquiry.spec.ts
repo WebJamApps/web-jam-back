@@ -1,6 +1,32 @@
 import { extractCustomerEmail, formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
 
 describe('formatInquiryEmail', () => {
+  it('renders only the looked-up address when a picked place also carries customer text', () => {
+    const { html, text } = formatInquiryEmail({ venuePlaceId: 'place-id', venueAddress: 'Untrusted address' }, undefined, {
+      status: 'resolved', formattedAddress: '123 Main & Oak <venue>', addressComponents: [],
+    });
+    expect(text).toBe('Venue Address: 123 Main & Oak <venue>');
+    expect(html).toContain('>Venue Address</td>');
+    expect(html).toContain('123 Main &amp; Oak &lt;venue&gt;');
+    expect(html).not.toContain('Untrusted address');
+  });
+
+  it.each([undefined, { status: 'unavailable' } as const])('labels an unavailable picked place (%j)', (venue) => {
+    const { html, text } = formatInquiryEmail({ venuePlaceId: 'place-id', venueAddress: 'Untrusted address' }, undefined, venue);
+    expect(text).toBe('Venue address: not verified (lookup unavailable)');
+    expect(html).toContain('>Venue address</td>');
+    expect(html).toContain('>not verified (lookup unavailable)</td>');
+    expect(text).not.toContain('Untrusted address');
+  });
+
+  it('trims typed addresses and ignores blank or non-string place IDs', () => {
+    for (const venuePlaceId of ['  ', 123, null]) {
+      const { html, text } = formatInquiryEmail({ venuePlaceId, venueAddress: ' 123 Main St ' });
+      expect(text).toBe('Venue Address (typed by customer): 123 Main St');
+      expect(html).toContain('>Venue Address (typed by customer)</td>');
+    }
+  });
+
   it.each([
     ['webjam-homepage', 'Web Jam homepage form'],
     ['jam-bookus', 'Book Us form'],
@@ -25,7 +51,7 @@ describe('formatInquiryEmail', () => {
     });
     expect(text).toBe([
       'Form: Book Us form', 'Name: Jane', 'Event Date: 2026-12-20',
-      'Event Type: private-party', 'Venue Address: 123 Main St, Salem, VA',
+      'Event Type: private-party', 'Venue Address (typed by customer): 123 Main St, Salem, VA',
     ].join('\n'));
     expect(html).toContain('2026-12-20');
     expect(html).toContain('private-party');
@@ -62,7 +88,7 @@ describe('formatInquiryEmail', () => {
     expect(html).not.toContain('<script>');
     expect(text).toContain('Site: https://example.com/<site>');
     expect(text).toContain('Event Type: <party>');
-    expect(text).toContain('Venue Address: 123 Main & Oak\n<script>alert(1)</script>');
+    expect(text).toContain('Venue Address (typed by customer): 123 Main & Oak\n<script>alert(1)</script>');
   });
 
   it('formats a TimShermanMusic booking submission (name/email/phone/eventDate/message)', () => {

@@ -24,7 +24,7 @@ jobs:
             echo "OK: PR base/head branch verification passed (Target: ${TARGET:-default}, Source: $SOURCE)"
       - run:
           name: Test install (skip postinstall — frontend not needed for tests)
-          command: npm install --ignore-scripts
+          command: npm ci --ignore-scripts
       - run:
           name: typecheck
           command: npm run typecheck
@@ -40,9 +40,9 @@ jobs:
           path: coverage
       - run:
           name: Smoketest - clean install without devDependencies
-          command: |
-            rm -rf node_modules package-lock.json JaMmusic build
-            npm install --omit=dev
+          # npm ci cleans node_modules and preserves the reviewed lockfile.
+          # postinstall already rebuilds the backend and frontend from scratch.
+          command: npm ci --omit=dev
       - run:
           name: Smoketest - verify production build artifact exists
           command: test -f build/src/index.js
