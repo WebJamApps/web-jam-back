@@ -50,6 +50,19 @@ describe('Template Controller', () => {
   });
 
   describe('createTemplate', () => {
+    it('accepts and deduplicates a second-pitch template independently', async () => {
+      const findOne = vi.fn(() => Promise.resolve(null));
+      c.model.findOne = findOne;
+      const create = vi.fn((doc: Record<string, unknown>) => Promise.resolve(doc));
+      c.model.create = create;
+      await c.createTemplate({ user: 'agent', body: {
+        type: 'Originals', stage: 'second-pitch', introHtml: '<p>My note from [First Pitch Date]</p>',
+      } }, resStub);
+      expect(status).toBe(201);
+      expect(findOne).toHaveBeenCalledWith({ type: 'Originals', stage: 'second-pitch' });
+      expect(create).toHaveBeenCalledWith(expect.objectContaining({ stage: 'second-pitch', introHtml: '<p>My note from [First Pitch Date]</p>' }));
+    });
+
     it('rejects a missing type', async () => {
       await c.createTemplate({ user: 'a', body: {} }, resStub);
       expect(status).toBe(400);
@@ -118,6 +131,16 @@ describe('Template Controller', () => {
   });
 
   describe('updateTemplate', () => {
+    it('accepts changing a template to the second-pitch stage', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      c.model.findById = vi.fn(() => Promise.resolve({ _id: id }));
+      const update = vi.fn(() => Promise.resolve({ _id: id, stage: 'second-pitch' }));
+      c.model.findByIdAndUpdate = update;
+      await c.updateTemplate({ user: 'agent', params: { id }, body: { stage: 'second-pitch' } }, resStub);
+      expect(status).toBe(200);
+      expect(update).toHaveBeenCalledWith(id, expect.objectContaining({ stage: 'second-pitch' }));
+    });
+
     it('rejects an invalid id', async () => {
       await c.updateTemplate({ user: 'a', params: { id: 'nope' }, body: {} }, resStub);
       expect(status).toBe(400);
