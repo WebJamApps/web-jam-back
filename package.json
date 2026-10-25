@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.25.1",
+  "version": "2.25.2",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -89,7 +89,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/coverage-v8": "^4.1.12",
     "@vitest/eslint-plugin": "^1.6.16",
     "concurrently": "^10.0.3",
     "eslint": "^10.2.1",
@@ -103,7 +103,7 @@
     "globals": "^17.5.0",
     "jscpd": "^5.0.11",
     "typescript-eslint": "^8.59.1",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "snyk": true
 }

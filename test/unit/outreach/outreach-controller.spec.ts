@@ -369,11 +369,12 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('dedup-guards an existing active pitch (409, no send)', async () => {
       asApprover();
-      c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'existing', status: 'sent' }));
-      await c.sendPitch({ user: 'a', body: body() }, resStub);
+      const requestBody = body();
+      c.model.find = vi.fn(async () => [{ venueId: requestBody.venueId, status: 'sent', sentAt: new Date() }]);
+      await c.sendPitch({ user: 'a', body: requestBody }, resStub);
       expect(status).toBe(409);
       expect(sendMail).not.toHaveBeenCalled();
-      expect((c.model.findOne as any).mock.calls[0][0].status).toEqual({ $in: ['sent', 'replied', 'booked', 'target-filled'] });
+      expect(vi.mocked(c.model.find).mock.calls[0][0]).not.toHaveProperty('status');
     });
 
     // #923 — the guard is now keyed on an OVERLAPPING targetWeekend range, not
@@ -383,9 +384,8 @@ describe('Outreach Controller (#844 batch model)', () => {
     describe('dedup guard rekeyed on targetWeekend overlap (#923)', () => {
       it('queries an overlap range keyed on the sent targetWeekend, not targetDates', async () => {
         asApprover();
-        c.model.findOne = vi.fn(() => Promise.resolve(null));
         await c.sendPitch({ user: 'a', body: body() }, resStub);
-        const query = (c.model.findOne as any).mock.calls[0][0];
+        const query = vi.mocked(c.model.find).mock.calls[0][0];
         expect(query.targetDates).toBeUndefined();
         expect(query['targetWeekend.start']).toEqual({ $exists: true, $lte: new Date(VALID_WEEKEND.end) });
         expect(query['targetWeekend.end']).toEqual({ $exists: true, $gte: new Date(VALID_WEEKEND.start) });
@@ -395,8 +395,9 @@ describe('Outreach Controller (#844 batch model)', () => {
         asApprover();
         // Existing record's range (Sept 24-26) overlaps the new send's (Sept 25-27)
         // without being identical — this is exactly the case string-matching missed.
-        c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'existing', status: 'sent' }));
-        await c.sendPitch({ user: 'a', body: body() }, resStub);
+        const requestBody = body();
+        c.model.find = vi.fn(async () => [{ venueId: requestBody.venueId, status: 'sent', sentAt: new Date() }]);
+        await c.sendPitch({ user: 'a', body: requestBody }, resStub);
         expect(status).toBe(409);
         expect(sendMail).not.toHaveBeenCalled();
       });
@@ -456,7 +457,7 @@ describe('Outreach Controller (#844 batch model)', () => {
 
     it('500s when the dedup lookup throws', async () => {
       asApprover();
-      c.model.findOne = vi.fn(() => Promise.reject(new Error('dedup down')));
+      c.model.find = vi.fn(async () => { throw new Error('dedup down'); });
       await send();
       expect(status).toBe(500);
     });
@@ -499,6 +500,22 @@ describe('Outreach Controller (#844 batch model)', () => {
         const context = await c.resolvePitch({ venueId: oid(), targetWeekend: VALID_WEEKEND });
         expect(context.error).toMatchObject({ status: 400, message: 'no active second-pitch template for type Originals' });
         expect(sendMail).not.toHaveBeenCalled();
+      });
+
+      it('refuses when skipDedup is false and targetWeekend is missing or unparseable', async () => {
+        const context = await c.resolvePitch({ venueId: oid(), targetDates: 'Aug 14-16' });
+        expect(context.error).toMatchObject({
+          status: 400,
+          message: 'targetWeekend {start, end} is required to check pitch eligibility',
+        });
+      });
+
+      it('permits a missing targetWeekend when skipDedup is true', async () => {
+        const context = await c.resolvePitch(
+          { venueId: oid(), targetDates: 'Aug 14-16' },
+          { skipDedup: true, requireEligible: false },
+        );
+        expect(context.error).toBeUndefined();
       });
 
       it('propagates lookup failures instead of falling back to another stage', async () => {
@@ -1060,7 +1077,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         asApprover();
         const vId = oid();
         stubVerified([vId]);
-        c.model.findOne = vi.fn(() => Promise.resolve({ _id: 'dupe', venueId: vId, status: 'sent' }));
+        c.model.find = vi.fn(async () => [{ venueId: vId, status: 'sent', sentAt: new Date() }]);
         await c.sendBatch({ user: 'josh', body: { venueIds: [vId], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND } }, resStub);
         expect(payload.sent).toBe(0);
         expect(payload.skipped).toHaveLength(1);
@@ -1221,7 +1238,6 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(payload.candidates[0]._id).toBe('b');
       expect(payload.weekendGigs).toEqual([]);
       expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
-        status: { $in: ['sent', 'replied'] },
         'targetWeekend.start': { $exists: true, $lte: new Date(VALID_WEEKEND.end) },
         'targetWeekend.end': { $exists: true, $gte: new Date(VALID_WEEKEND.start) },
       }));
@@ -1235,26 +1251,21 @@ describe('Outreach Controller (#844 batch model)', () => {
 
       it('excludes candidate venues when an active outreach record was sent/created <= 7 days ago', async () => {
         (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'v1' }, { _id: 'v2' }]));
-        const recentOutreach = [{ venueId: 'v1' }];
-        const findMock = vi.fn(() => Promise.resolve(recentOutreach));
+        const recentOutreach = [{ venueId: 'v1', status: 'sent', sentAt: new Date() }];
+        const findMock = vi.fn((_query: unknown) => Promise.resolve(recentOutreach));
         c.model.find = findMock;
         await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
         expect(status).toBe(200);
         expect(payload.candidates).toHaveLength(1);
         expect(payload.candidates[0]._id).toBe('v2');
-        expect(findMock).toHaveBeenCalledWith(expect.objectContaining({
-          status: { $in: ['sent', 'replied'] },
-          $or: [
-            { sentAt: { $gte: expect.any(Date) } },
-            { created_at: { $gte: expect.any(Date) } },
-          ],
-        }));
+        expect(findMock).toHaveBeenCalledWith(expect.objectContaining({ venueId: { $in: ['v1', 'v2'] } }));
+        expect(findMock.mock.calls[0][0]).not.toHaveProperty('status');
+        expect(findMock.mock.calls[0][0]).not.toHaveProperty('$or');
       });
 
-      it('returns candidate venues when active outreach records are > 7 days old (query returns no active matches)', async () => {
+      it('returns candidate venues when silent outreach records are > 7 days old', async () => {
         (venueModel as any).find = vi.fn(() => Promise.resolve([{ _id: 'v1' }, { _id: 'v2' }]));
-        const findMock = vi.fn(() => Promise.resolve([]));
-        c.model.find = findMock;
+        c.model.find = vi.fn(async () => [{ venueId: 'v1', status: 'no-response', sentAt: new Date(Date.now() - 8 * 86400000) }]);
         await c.getCandidates({ user: 'a', query: { targetWeekend: VALID_WEEKEND } }, resStub);
         expect(status).toBe(200);
         expect(payload.candidates).toHaveLength(2);
@@ -3071,62 +3082,29 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
-  describe('dedupGuard 7-day cooldown (#1046)', () => {
-    it('allows re-pitching when an active outreach record for the weekend was sent > 7 days ago', async () => {
-      // Mock findOne to return null (because the query with cooldown threshold filters out old records)
-      c.model.findOne = vi.fn((q: any) => {
-        if (q.$or) return Promise.resolve(null);
-        return Promise.resolve({ _id: oid(), status: 'sent', sentAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) });
-      });
+  describe('dedupGuard shared weekend policy (#1170)', () => {
+    it.each([['sent', 8, null], ['sent', 2, 409], ['target-filled', 90, 409], ['booked', 90, 409]])(
+      'applies %s at %s days old', async (recordStatus, days, expectedStatus) => {
+        const venueId = oid();
+        c.model.find = vi.fn(async () => [{ venueId, status: recordStatus, sentAt: new Date(Date.now() - days * 86400000) }]);
+        const error = await c.dedupGuard(venueId, VALID_WEEKEND);
+        expect(error?.status ?? null).toBe(expectedStatus);
+        if (recordStatus === 'booked' || recordStatus === 'target-filled') expect(error?.message).toContain('reopen');
+      },
+    );
 
-      const dupeErr = await c.dedupGuard(oid(), VALID_WEEKEND);
-      expect(dupeErr).toBeNull();
-      expect(c.model.findOne).toHaveBeenCalled();
-      const query = (c.model.findOne as any).mock.calls[0][0];
-      expect(query.$or).toBeDefined();
+    it('loads every status and age for the overlapping weekend', async () => {
+      await c.dedupGuard(oid(), parseTargetWeekend(VALID_WEEKEND));
+      const query = vi.mocked(c.model.find).mock.calls[0][0];
+      expect(query).not.toHaveProperty('status');
+      expect(query).not.toHaveProperty('$or');
+      expect(query['targetWeekend.start']).toEqual({ $exists: true, $lte: new Date(VALID_WEEKEND.end) });
+      expect(query['targetWeekend.end']).toEqual({ $exists: true, $gte: new Date(VALID_WEEKEND.start) });
     });
 
-    it('blocks re-pitching when an active outreach record was sent <= 7 days ago', async () => {
-      const recentDoc = { _id: oid(), status: 'sent', sentAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) };
-      c.model.findOne = vi.fn(() => Promise.resolve(recentDoc));
-
-      const dupeErr = await c.dedupGuard(oid(), VALID_WEEKEND);
-      expect(dupeErr).not.toBeNull();
-      expect(dupeErr?.status).toBe(409);
-      expect(dupeErr?.message).toContain('active outreach already exists');
-    });
-  });
-
-  describe('dedupGuard permanent block for a filled weekend (D-56, web-jam-tools#959)', () => {
-    it('blocks a booked or target-filled record at any age, pointing at Reopen', async () => {
-      const oldFilled = { _id: oid(), status: 'target-filled', sentAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) };
-      c.model.findOne = vi.fn(() => Promise.resolve(oldFilled));
-
-      const dupeErr = await c.dedupGuard(oid(), VALID_WEEKEND);
-
-      expect(dupeErr?.status).toBe(409);
-      expect(dupeErr?.message).toContain('reopen');
-    });
-
-    it('adds a date-free filled branch to the query when a targetWeekend is given', async () => {
-      c.model.findOne = vi.fn(() => Promise.resolve(null));
-
-      await c.dedupGuard(oid(), VALID_WEEKEND);
-
-      const query = (c.model.findOne as any).mock.calls[0][0];
-      expect(query.status).toEqual({ $in: ['sent', 'replied', 'booked', 'target-filled'] });
-      expect(query.$or).toContainEqual({ status: { $in: ['booked', 'target-filled'] } });
-    });
-
-    it('keeps only the 7-day active window when there is no targetWeekend', async () => {
-      c.model.findOne = vi.fn(() => Promise.resolve(null));
-
-      await c.dedupGuard(oid(), null);
-
-      const query = (c.model.findOne as any).mock.calls[0][0];
-      expect(query.status).toEqual({ $in: ['sent', 'replied'] });
-      expect(query.$or).toHaveLength(2);
-      expect(query['targetWeekend.start']).toBeUndefined();
+    it('does not let a different weekend block a request without a weekend', async () => {
+      expect(await c.dedupGuard(oid(), null)).toBeNull();
+      expect(c.model.find).not.toHaveBeenCalled();
     });
   });
 
@@ -3313,7 +3291,6 @@ describe('Outreach Controller (#844 batch model)', () => {
         vi.spyOn(c, 'getDraftFingerprintsApproval').mockResolvedValue({
           fingerprints: [{ venueId: id1, fingerprint: 'fp123' }],
         });
-        vi.spyOn(c, 'pitchedVenueIdsForWeekend').mockResolvedValue(new Set());
         (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ _id: id1 })));
         (templateModel as any).findOne = vi.fn(() => Promise.resolve(validTemplate({ footerPhotoRef: 'no-such-footer' })));
 
@@ -3342,9 +3319,10 @@ describe('Outreach Controller (#844 batch model)', () => {
       it('mails a venue id listed twice in one batch only once', async () => {
         asApprover();
         const id = oid();
-        let created: any = null;
-        c.model.create = vi.fn((doc: any) => { created = { _id: 'o1', ...doc }; return Promise.resolve(created); });
-        c.model.findOne = vi.fn(() => Promise.resolve(created));
+        vi.spyOn(venueModel, 'findById').mockResolvedValue(validVenue({ _id: id }));
+        let created: Record<string, unknown> | null = null;
+        c.model.create = vi.fn(async (doc: Record<string, unknown>) => { created = { _id: 'o1', ...doc }; return created; });
+        c.model.find = vi.fn(async () => (created ? [created] : []));
 
         await c.sendBatch({
           user: 'josh', body: { venueIds: [id, id], targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND },
@@ -3379,7 +3357,6 @@ describe('Outreach Controller (#844 batch model)', () => {
         const id1 = oid();
         vi.spyOn(c, 'getVenueSetApproval').mockResolvedValue({ venueIds: [id1] });
         vi.spyOn(c, 'getDraftFingerprintsApproval').mockResolvedValue({ fingerprints: [{ venueId: id1, fingerprint: 'fp123' }] });
-        vi.spyOn(c, 'pitchedVenueIdsForWeekend').mockResolvedValue(new Set());
         delete c.verifyBatchDispatch;
 
         await c.sendBatch({
