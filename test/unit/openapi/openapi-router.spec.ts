@@ -200,9 +200,41 @@ describe('OpenAPI Specification Router (GET /openapi.json)', () => {
       expect(spec.paths['/setlist/{id}'].put).toBeDefined();
       expect(spec.paths['/setlist/{id}'].delete).toBeDefined();
 
+      // Setlist update schema permits partial updates (e.g. items-only) without required name
+      expect(spec.paths['/setlist'].post.requestBody.content['application/json'].schema.$ref).toBe('#/components/schemas/SetlistInput');
+      expect(spec.paths['/setlist/{id}'].put.requestBody.content['application/json'].schema.$ref).toBe('#/components/schemas/SetlistUpdateInput');
+      expect(spec.components.schemas.SetlistInput.required).toEqual(['name']);
+      expect(spec.components.schemas.SetlistUpdateInput.required).toBeUndefined();
+
       // Does not leak private Dropbox paths
       expect(JSON.stringify(spec)).not.toContain('~/Dropbox');
       expect(JSON.stringify(spec)).not.toContain('/home/joshua/Dropbox');
+    });
+
+    it('accepts partial setlist updates without name while creation requires name', async () => {
+      mockUser('Developer');
+      const res: ApiResponse = await request(app)
+        .get('/openapi.json')
+        .set('Authorization', `Bearer ${devToken}`);
+
+      expect(res.status).toBe(200);
+      const spec = res.body;
+
+      const creationSchemaRef = spec.paths['/setlist'].post.requestBody.content['application/json'].schema.$ref;
+      const updateSchemaRef = spec.paths['/setlist/{id}'].put.requestBody.content['application/json'].schema.$ref;
+
+      expect(creationSchemaRef).toBe('#/components/schemas/SetlistInput');
+      expect(updateSchemaRef).toBe('#/components/schemas/SetlistUpdateInput');
+
+      const creationSchema = spec.components.schemas.SetlistInput;
+      const updateSchema = spec.components.schemas.SetlistUpdateInput;
+
+      expect(creationSchema.required).toContain('name');
+      expect(updateSchema.required).toBeUndefined();
+      // An items-only update payload conforms to the update schema
+      expect(updateSchema.properties.items).toBeDefined();
+      expect(updateSchema.properties.name).toBeDefined();
+      expect(updateSchema.properties.description).toBeDefined();
     });
   });
 
