@@ -24,3 +24,13 @@ if (fs.existsSync(mapSrc)) {
   console.log(`copied ${mapSrc} -> ${mapDest}`);
 }
 
+const openapiSrc = 'openapi.json';
+const openapiDest = 'build/openapi.json';
+
+if (fs.existsSync(openapiSrc)) {
+  fs.cpSync(openapiSrc, openapiDest);
+  // eslint-disable-next-line no-console
+  console.log(`copied ${openapiSrc} -> ${openapiDest}`);
+}
+
+

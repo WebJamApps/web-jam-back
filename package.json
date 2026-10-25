@@ -47,9 +47,10 @@
     "smoketest": "npm run cleanup && npm install --omit=dev",
     "node:debug": "node --inspect-brk index.js",
     "jscpd": "jscpd src",
-    "test": "eslint ./src && npm run jscpd && npm run typecheck && rimraf coverage && npm run test:unit",
+    "lint:openapi": "redocly lint openapi.json",
+    "test": "npm run lint:openapi && eslint ./src && npm run jscpd && npm run typecheck && rimraf coverage && npm run test:unit",
     "test:lint": "eslint ./src --fix",
-    "test:local": "npm run test:lint && npm run typecheck && rimraf coverage && npm run test:unit",
+    "test:local": "npm run lint:openapi && npm run test:lint && npm run typecheck && rimraf coverage && npm run test:unit",
     "test:unit": "vitest run --coverage",
     "test:all": "npm run test:local",
     "seed:second-pitch-templates": "node scripts/seed-second-pitch-templates.mjs"
@@ -89,6 +90,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@redocly/cli": "^1.34.22",
     "@vitest/coverage-v8": "^4.1.12",
     "@vitest/eslint-plugin": "^1.6.16",
     "concurrently": "^10.0.3",
