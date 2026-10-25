@@ -1042,6 +1042,21 @@ export async function getUnsentVenueNames(unsentIds: string[]): Promise<string[]
   }
 }
 
+function validateVenueSendability(venue: VenueDoc, requireEligible: boolean): AuthzError | null {
+  const venueName = venue.name || UNKNOWN_VENUE_NAME;
+  if (venue.status === 'archived') return { status: 400, message: 'venue is archived', venueName };
+  if (requireEligible && !venue.outreachEligible) {
+    return { status: 400, message: 'venue is not outreach-eligible (not vetted)', venueName };
+  }
+  // #974 — sendability precondition, ADDITIONAL to (never a replacement for)
+  // the outreachEligible vetting gate just above: a venue with no VALID
+  // primary email is never sendable. Format-checked, not just presence —
+  // `contactVerified` is gone; a real, present primary email IS the
+  // verification now.
+  if (!isValidEmail(venue.email)) return { status: 400, message: 'venue has no valid primary email to pitch', venueName };
+  return null;
+}
+
 class OutreachController extends Controller {
   static readonly DEFAULT_GIG_SPACING_MONTHS = DEFAULT_GIG_SPACING_MONTHS;
   static readonly BATCH_DISPATCH_TIME_LIMIT_MS = BATCH_DISPATCH_TIME_LIMIT_MS;
@@ -1449,21 +1464,16 @@ class OutreachController extends Controller {
       return { error: { status: 500, message: (e as Error).message, venueName: UNKNOWN_VENUE_NAME } };
     }
     if (!venue) return { error: { status: 400, message: 'venue not found', venueName: UNKNOWN_VENUE_NAME } };
+    const sendabilityError = validateVenueSendability(venue, requireEligible);
+    if (sendabilityError) return { error: sendabilityError };
     const venueName = venue.name || UNKNOWN_VENUE_NAME;
-    if (venue.status === 'archived') return { error: { status: 400, message: 'venue is archived', venueName } };
-    if (requireEligible && !venue.outreachEligible) {
-      return { error: { status: 400, message: 'venue is not outreach-eligible (not vetted)', venueName } };
-    }
-    // #974 — sendability precondition, ADDITIONAL to (never a replacement for)
-    // the outreachEligible vetting gate just above: a venue with no VALID
-    // primary email is never sendable. Format-checked, not just presence —
-    // `contactVerified` is gone; a real, present primary email IS the
-    // verification now.
-    if (!isValidEmail(venue.email)) return { error: { status: 400, message: 'venue has no valid primary email to pitch', venueName } };
 
     let pitchState: PitchEligibility;
     try {
       const tw = parseTargetWeekend(body.targetWeekend) || parseTargetDates(body.targetDates);
+      if (!opts.skipDedup && !tw) {
+        return { error: { status: 400, message: 'targetWeekend {start, end} is required to check pitch eligibility', venueName } };
+      }
       pitchState = (await this.pitchStatesForWeekend([body.venueId || ''], tw)).get(body.venueId || '')!;
     } catch (e) {
       return { error: { status: 500, message: (e as Error).message, venueName } };

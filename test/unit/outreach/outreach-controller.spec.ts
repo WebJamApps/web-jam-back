@@ -502,6 +502,22 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(sendMail).not.toHaveBeenCalled();
       });
 
+      it('refuses when skipDedup is false and targetWeekend is missing or unparseable', async () => {
+        const context = await c.resolvePitch({ venueId: oid(), targetDates: 'Aug 14-16' });
+        expect(context.error).toMatchObject({
+          status: 400,
+          message: 'targetWeekend {start, end} is required to check pitch eligibility',
+        });
+      });
+
+      it('permits a missing targetWeekend when skipDedup is true', async () => {
+        const context = await c.resolvePitch(
+          { venueId: oid(), targetDates: 'Aug 14-16' },
+          { skipDedup: true, requireEligible: false },
+        );
+        expect(context.error).toBeUndefined();
+      });
+
       it('propagates lookup failures instead of falling back to another stage', async () => {
         const findOne = vi.spyOn(templateModel, 'findOne').mockRejectedValue(new Error('template lookup unavailable'));
         await expect(c.findTemplate('Originals', 'second-pitch')).rejects.toThrow('template lookup unavailable');
