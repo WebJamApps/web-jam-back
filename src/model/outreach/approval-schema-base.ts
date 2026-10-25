@@ -7,6 +7,12 @@ export const targetWeekendSchema = new Schema({
   end: { type: Date, required: false },
 }, { _id: false });
 
+export const approvalTimeField = {
+  type: Date,
+  required: true,
+  default: Date.now,
+};
+
 export const baseApprovalFields = {
   batchId: {
     type: String,
@@ -29,11 +35,7 @@ export const baseApprovalFields = {
     required: true,
     trim: true,
   },
-  approvedAt: {
-    type: Date,
-    required: true,
-    default: Date.now,
-  },
+  approvedAt: approvalTimeField,
   notes: {
     type: String,
     required: false,

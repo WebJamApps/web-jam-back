@@ -15,9 +15,9 @@ const {
   resolveBatchIdentification,
   normalizeDraftFingerprints,
   isExactVenueSetMatch,
-  unpitchedApprovedVenueIds,
+  dueApprovedVenueIds,
   extractApprovedFingerprints,
-  unpitchedApprovedFingerprints,
+  dueApprovedFingerprints,
   wrapDarkEmail,
 } = await import('#src/model/outreach/outreach-controller.js');
 const { default: userModel } = await import('#src/model/user/user-facade.js');
@@ -145,7 +145,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
       asApprover();
       const existingId = oid();
       const vId = oid();
-      (venueApprovalModel as any).findOne = vi.fn(() => Promise.resolve({ _id: existingId, batchId: 'batch-oct-16' }));
+      vi.spyOn(venueApprovalModel, 'findOne').mockResolvedValue({ _id: existingId, batchId: 'batch-oct-16', venueIds: [vId] });
       (venueApprovalModel as any).findByIdAndUpdate = vi.fn((id, update) => Promise.resolve({ _id: id, ...update }));
 
       const req: any = {
@@ -625,13 +625,13 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         expect(isExactVenueSetMatch([id1], [id1, id1])).toBe(false);
       });
 
-      it('unpitchedApprovedVenueIds drops pitched venues and keeps approval order (D-60, D-61)', () => {
+      it('dueApprovedVenueIds excludes venues not due and keeps approval order', () => {
         const id1 = oid();
         const id2 = oid();
         const id3 = oid();
-        expect(unpitchedApprovedVenueIds([id1, ` ${id2} `, id3], new Set([id2]))).toEqual([id1, id3]);
-        expect(unpitchedApprovedVenueIds([id1, id2], new Set())).toEqual([id1, id2]);
-        expect(unpitchedApprovedVenueIds([id1], new Set([id1]))).toEqual([]);
+        expect(dueApprovedVenueIds([id1, ` ${id2} `, id3], new Set([id2]))).toEqual([id1, id3]);
+        expect(dueApprovedVenueIds([id1, id2], new Set())).toEqual([id1, id2]);
+        expect(dueApprovedVenueIds([id1], new Set([id1]))).toEqual([]);
       });
 
       it('extractApprovedFingerprints extracts map from array and object formats', () => {
@@ -655,7 +655,7 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         expect(fromMap.get(id2)).toBe('fp2');
       });
 
-      it('unpitchedApprovedFingerprints drops pitched venues and preserves unpitched fingerprints', () => {
+      it('dueApprovedFingerprints excludes venues not due and preserves the other fingerprints', () => {
         const id1 = oid();
         const id2 = oid();
         const id3 = oid();
@@ -665,13 +665,13 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
           [id3, 'fp3'],
         ]);
         const pitched = new Set([id2]);
-        const result = unpitchedApprovedFingerprints(approvedFps, pitched);
+        const result = dueApprovedFingerprints(approvedFps, pitched);
         expect(Array.from(result.entries())).toEqual([
           [id1, 'fp1'],
           [id3, 'fp3'],
         ]);
-        expect(unpitchedApprovedFingerprints(approvedFps, new Set())).toEqual(approvedFps);
-        expect(unpitchedApprovedFingerprints(approvedFps, new Set([id1, id2, id3]))).toEqual(new Map());
+        expect(dueApprovedFingerprints(approvedFps, new Set())).toEqual(approvedFps);
+        expect(dueApprovedFingerprints(approvedFps, new Set([id1, id2, id3]))).toEqual(new Map());
       });
     });
 
@@ -810,9 +810,8 @@ describe('Outreach Batch Approvals — Gate 1 & Gate 2 (web-jam-back#1078)', () 
         // send loop.
         expect(resolvePitchSpy).toHaveBeenCalledTimes(2);
         expect(resolvePitchSpy.mock.calls[0][1]).toEqual({ skipDedup: true, requireEligible: false });
-        // The send-loop resolve passes no opts, so production defaults apply
-        // (requireEligible: true, skipDedup: false).
-        expect(resolvePitchSpy.mock.calls[1][1]).toBeUndefined();
+        // Production sendability defaults apply, with the per-venue Gate 1 time.
+        expect(resolvePitchSpy.mock.calls[1][1]).toEqual({ approvedAt: null });
         // performSend was called with preRendered argument
         expect(performSendSpy).toHaveBeenCalledWith(
           expect.anything(),

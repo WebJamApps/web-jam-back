@@ -15,7 +15,7 @@ import { classifyReply } from '#src/lib/classify-reply.js';
 import { isAiAgentAccount } from '#src/auth/capabilities.js';
 import outreachModel from './outreach-facade.js';
 import outreachReportModel from './outreach-report-facade.js';
-import outreachVenueApprovalModel from './outreach-venue-approval-facade.js';
+import outreachVenueApprovalModel, { preserveVenueApprovalTimes, VenueApprovalRevisionError } from './outreach-venue-approval-facade.js';
 import outreachDraftApprovalModel from './outreach-draft-approval-facade.js';
 import outreachDispatchModel from './outreach-dispatch-facade.js';
 import venueModel from '../venue/venue-facade.js';
@@ -27,6 +27,10 @@ import {
   JOSH_GIGS_FILTER, groupGigsByVenue, type LinkableGig, type LinkableVenue,
 } from '#src/lib/gig-venue-link.js';
 import { MAX_STEP, nextTouchDueAfter, touchAt } from './cadence.js';
+import {
+  dueFromApproval, PITCH_COOLDOWN_DAYS, pitchEligibility, venueApprovalTime,
+  type PitchEligibility, type PitchRecord,
+} from './pitch-eligibility.js';
 
 // Every gig pitch CCs Josh + Maria so they see each send land (mirrors the
 // InquiryController CC precedent). Maria's address is the same one inquiries CC.
@@ -44,8 +48,8 @@ export const DEFAULT_TEMPLATE_TYPE = 'MidRangeCafeBar';
 // #1036 — default gig spacing in months when a venue's gigInterval is 0 or unset.
 export const DEFAULT_GIG_SPACING_MONTHS = 2;
 
-// #1046 — cooldown in days before an active outreach record no longer blocks candidate re-pitching for the same weekend.
-export const OUTREACH_COOLDOWN_DAYS = 7;
+// Silence must exceed this many days before a second pitch for the same weekend (#1170).
+export const OUTREACH_COOLDOWN_DAYS = PITCH_COOLDOWN_DAYS;
 
 // #1120 (D-76) — time limit in milliseconds on starting new sends during a chunked batch dispatch call.
 export const BATCH_DISPATCH_TIME_LIMIT_MS = 12_000;
@@ -57,16 +61,6 @@ export const DISPATCH_VERIFY_CONCURRENCY = 15;
 // venue doc could even be loaded (invalid id, or venue not found). The
 // frontend always renders venueName, so this field is never omitted.
 export const UNKNOWN_VENUE_NAME = '(unknown venue)';
-
-// An active campaign blocks a new pitch for the same venue + window (no
-// double-pitching). sent / replied are active; every outcome status
-// (no-response / interested / not-interested / booked / target-filled) is
-// terminal-for-this-window and doesn't block.
-const ACTIVE_STATUSES = ['sent', 'replied'];
-// D-56 (web-jam-tools#959) — outcomes that close a venue-weekend for good. Unlike
-// ACTIVE_STATUSES they block a re-pitch with no cooldown window; the admin
-// screen's Reopen action (applySuggestion with reopen: true) is the release.
-const FILLED_STATUSES = ['booked', 'target-filled'];
 
 const ALLOWED_ROLES = ['JaM-admin', 'Developer'];
 // Read/list endpoints: any outreach capability (incl. a pure approver) gets in.
@@ -91,7 +85,7 @@ type AuthzResult = AuthzError | null;
 interface PitchContext {
   error?: AuthzError; venue?: VenueDoc; template?: TemplateDoc; type?: string; nextGigDate?: string; firstPitchDate?: string;
 }
-interface ResolveOpts { skipDedup?: boolean; requireEligible?: boolean }
+interface ResolveOpts { skipDedup?: boolean; requireEligible?: boolean; approvedAt?: number | null }
 // `stop` is set only when sendMail threw and the failure is the mail account or connection
 // (mustStopDispatch), so a dispatch loop stops instead of skipping every remaining venue.
 type SendResult = { ok: true; record: unknown } | { ok: false; status: number; message: string; stop?: boolean };
@@ -435,8 +429,12 @@ function buildVenueApprovalDoc(
   };
 }
 
-async function upsertVenueApproval(query: Record<string, unknown>, docData: Record<string, unknown>) {
-  const existing = await outreachVenueApprovalModel.findOne(query) as { _id?: unknown } | null;
+async function upsertVenueApproval(docData: Record<string, unknown>, renewedIds: string[]) {
+  const exact = await outreachVenueApprovalModel.findOne({ batchId: docData.batchId });
+  const existing = exact || (docData.weekend ? await outreachVenueApprovalModel.findLatestOne({ weekend: docData.weekend }) : null);
+  Object.assign(docData, {
+    venueApprovals: preserveVenueApprovalTimes(docData.venueIds as string[], existing, renewedIds, docData.approvedAt as Date),
+  });
   if (existing && existing._id) {
     const updated = await outreachVenueApprovalModel.findByIdAndUpdate(String(existing._id), docData);
     return { status: 200, doc: updated };
@@ -485,12 +483,10 @@ export function isExactVenueSetMatch(approvedRaw: unknown[], batchVenues: string
   );
 }
 
-// D-60 / D-61 (web-jam-tools#959) — what a batch must equal: the approved Gate 1
-// venues minus those already carrying any outreach record for the weekend. On a
-// weekend nothing has been pitched for yet this is the whole approved set; after
-// a D-54 widening it is exactly the added venues.
-export function unpitchedApprovedVenueIds(approvedRaw: unknown[], pitched: Set<string>): string[] {
-  return approvedRaw.map((id) => String(id).trim()).filter((id) => !pitched.has(id));
+// Keep the approved order while excluding venues not due from Gate 1.
+// Widening alone never renews a carried venue's permission to send again.
+export function dueApprovedVenueIds(approvedRaw: unknown[], notDue: Set<string>): string[] {
+  return approvedRaw.map((id) => String(id).trim()).filter((id) => !notDue.has(id));
 }
 
 export function extractApprovedFingerprints(draftApproval: Record<string, unknown>): Map<string, string> {
@@ -506,13 +502,13 @@ export function extractApprovedFingerprints(draftApproval: Record<string, unknow
   return map;
 }
 
-export function unpitchedApprovedFingerprints(
+export function dueApprovedFingerprints(
   approvedFps: Map<string, string>,
-  pitched: Set<string>,
+  notDue: Set<string>,
 ): Map<string, string> {
   const map = new Map<string, string>();
   for (const [venueId, fp] of approvedFps) {
-    if (!pitched.has(venueId)) {
+    if (!notDue.has(venueId)) {
       map.set(venueId, fp);
     }
   }
@@ -1404,50 +1400,41 @@ class OutreachController extends Controller {
     return cold ? (formatTemplate(cold as unknown as Record<string, unknown>) as unknown as TemplateDoc) : null;
   }
 
-  // Dedup guard (#923): 409 when an active (sent/replied) record exists for
-  // this venue with an OVERLAPPING targetWeekend range — rekeyed off the
-  // structured date range instead of targetDates string equality, the root
-  // cause of the 7/5 duplicate-cadence incident (three free-text spellings of
-  // the same weekend never string-matched). sendPitch/sendBatch already
-  // require + validate targetWeekend before calling resolvePitch, so `tw` is
-  // always present here when skipDedup is false. A legacy record with no
-  // targetWeekend can never match (both clauses require the field to exist) —
-  // legacy records don't block.
-  //
-  // #1050 / #1046: Only active records sent or created within OUTREACH_COOLDOWN_DAYS
-  // (7 days) count as blocking; older campaigns allow re-pitching for the weekend.
-  //
-  // D-56 (web-jam-tools#959): a booked / target-filled record for an overlapping
-  // weekend blocks at any age — its $or branch carries no date bound. Only with a
-  // `tw`: without one a filled record would block the venue for every weekend.
-  // Returns the error envelope to relay, or null.
-  async dedupGuard(venueId: string | undefined, tw: TargetWeekend | null): Promise<AuthzError | null> {
-    const cooldownThreshold = new Date(Date.now() - OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
-    const blocking: Record<string, unknown>[] = [
-      { sentAt: { $gte: cooldownThreshold } },
-      { created_at: { $gte: cooldownThreshold } },
-    ];
-    if (tw) blocking.push({ status: { $in: FILLED_STATUSES } });
-    const query: Record<string, unknown> = {
-      venueId,
-      status: { $in: tw ? [...ACTIVE_STATUSES, ...FILLED_STATUSES] : ACTIVE_STATUSES },
-      $or: blocking,
-    };
-    if (tw) Object.assign(query, targetWeekendOverlapClause(tw));
-    let dupe;
+  // Load every matching record: an old answer closes the weekend just as a new
+  // one does. Query once for a candidate/batch set and apply the same policy.
+  async pitchStatesForWeekend(venueIds: string[], tw: TargetWeekend | null): Promise<Map<string, PitchEligibility>> {
+    const records = tw && venueIds.length ? await this.model.find({
+      venueId: { $in: venueIds }, ...targetWeekendOverlapClause(tw),
+    }) as unknown as PitchRecord[] : [];
+    const now = Date.now();
+    return new Map(venueIds.map((id) => {
+      const history = records.filter((record) => String(record.venueId).toLowerCase() === id.toLowerCase());
+      return [id, pitchEligibility(history, now)];
+    }));
+  }
+
+  async dedupGuard(
+    venueId: string | undefined,
+    tw: TargetWeekend | null,
+    knownState?: PitchEligibility,
+  ): Promise<AuthzError | null> {
     try {
-      dupe = await this.model.findOne(query);
+      const state = knownState ?? (await this.pitchStatesForWeekend([venueId || ''], tw)).get(venueId || '')!;
+      return state.open ? null : { status: 409, message: state.reason || 'this venue is not open to a pitch for this target weekend' };
     } catch (e) { return { status: 500, message: (e as Error).message }; }
-    if (!dupe) return null;
-    if (FILLED_STATUSES.includes(String((dupe as { status?: unknown }).status))) {
+  }
+
+  private async pitchGuard(body: SendBody, state: PitchEligibility, opts: ResolveOpts): Promise<AuthzError | null> {
+    if (opts.skipDedup) return null;
+    const error = await this.dedupGuard(body.venueId, parseTargetWeekend(body.targetWeekend), state);
+    if (error) return error;
+    if (opts.approvedAt !== undefined && !dueFromApproval(state, opts.approvedAt)) {
       return {
         status: 409,
-        message: 'this venue is already booked or target-filled for an overlapping target weekend; '
-          + 'reopen that record on the admin outreach screen to pitch it again',
-        outreach: dupe,
+        message: 'this venue is not due a pitch from its Gate 1 approval; approve this venue again after its last pitch',
       };
     }
-    return { status: 409, message: 'an active outreach already exists for this venue and an overlapping target weekend', outreach: dupe };
+    return null;
   }
 
   // Load + validate the venue and template for a send and run the dedup guard.
@@ -1456,7 +1443,7 @@ class OutreachController extends Controller {
   // the core #844 safety guard. Turned off for preview, which is read-only.
   // skipDedup (default false): suppress the "already-pitched" check (preview).
   async resolvePitch(body: SendBody, opts: ResolveOpts = {}): Promise<PitchContext> {
-    const { skipDedup = false, requireEligible = true } = opts;
+    const { requireEligible = true } = opts;
     let venue: VenueDoc | null;
     try { venue = await venueModel.findById(body.venueId || '') as unknown as VenueDoc | null; } catch (e) {
       return { error: { status: 500, message: (e as Error).message, venueName: UNKNOWN_VENUE_NAME } };
@@ -1474,11 +1461,15 @@ class OutreachController extends Controller {
     // verification now.
     if (!isValidEmail(venue.email)) return { error: { status: 400, message: 'venue has no valid primary email to pitch', venueName } };
 
-    // Dedup guard first — refuse a duplicate before doing template work.
-    if (!skipDedup) {
-      const dupeErr = await this.dedupGuard(body.venueId, parseTargetWeekend(body.targetWeekend));
-      if (dupeErr) return { error: { ...dupeErr, venueName } };
+    let pitchState: PitchEligibility;
+    try {
+      const tw = parseTargetWeekend(body.targetWeekend) || parseTargetDates(body.targetDates);
+      pitchState = (await this.pitchStatesForWeekend([body.venueId || ''], tw)).get(body.venueId || '')!;
+    } catch (e) {
+      return { error: { status: 500, message: (e as Error).message, venueName } };
     }
+    const pitchError = await this.pitchGuard(body, pitchState, opts);
+    if (pitchError) return { error: { ...pitchError, venueName } };
 
     // Template type: explicit caller value > per-venue override > venue's type
     // (#848). JaMmusic#1250 — when NONE of those resolve, fall back to
@@ -1493,9 +1484,9 @@ class OutreachController extends Controller {
     let stage: RelationshipStage;
     try {
       const info = await this.resolveStageInfo(venue);
-      stage = info.stage;
+      stage = pitchState.lastPitchAt === null ? info.stage : 'second-pitch';
       nextGigDate = info.nextGigDate;
-      template = await this.findTemplate(type, info.stage);
+      template = await this.findTemplate(type, stage);
     } catch (e) {
       return { error: { status: 500, message: (e as Error).message, venueName } };
     }
@@ -1506,6 +1497,7 @@ class OutreachController extends Controller {
 
     return {
       venue, template, type, nextGigDate,
+      firstPitchDate: pitchState.firstPitchAt === null ? undefined : formatNextGigDate(new Date(pitchState.firstPitchAt)),
     };
   }
 
@@ -1601,6 +1593,7 @@ class OutreachController extends Controller {
     body: BatchBody,
     sendBody: SendBody,
     verifiedMap?: Map<string, VerifiedPitchRender>,
+    venueApproval: Record<string, unknown> = {},
   ): Promise<
     | {
         ok: true;
@@ -1621,7 +1614,10 @@ class OutreachController extends Controller {
     // core #844 vetting gate (a venue flipped not-interested between approval
     // and dispatch must never be mailed) and the dedup guard is what stops a
     // re-POSTed/retried batch mailing the same venue twice (#923).
-    const ctx = await this.resolvePitch({ venueId, templateType: body.templateType, ...sendBody, ...customSlotsForVenue(body, venueId) });
+    const ctx = await this.resolvePitch(
+      { venueId, templateType: body.templateType, ...sendBody, ...customSlotsForVenue(body, venueId) },
+      { approvedAt: venueApprovalTime(venueApproval, venueId) },
+    );
     if (ctx.error) {
       return { ok: false, venueName: ctx.error.venueName || UNKNOWN_VENUE_NAME, reason: ctx.error.message };
     }
@@ -1676,6 +1672,7 @@ class OutreachController extends Controller {
     sendBody: SendBody,
     actor: string,
     verifiedMap: Map<string, VerifiedPitchRender> | undefined,
+    venueApproval: Record<string, unknown>,
     result: { requested: number; sent: number; skipped: { venueId: string; venueName: string; reason: string }[]; records: unknown[] },
   ): Promise<void> {
     for (const venueId of venueIds) {
@@ -1684,7 +1681,7 @@ class OutreachController extends Controller {
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      const item = await this.resolveBatchPitchItem(venueId, body, sendBody, verifiedMap);
+      const item = await this.resolveBatchPitchItem(venueId, body, sendBody, verifiedMap, venueApproval);
       if (!item.ok) {
         result.skipped.push({ venueId, venueName: item.venueName, reason: item.reason });
         continue;
@@ -1813,6 +1810,7 @@ class OutreachController extends Controller {
     batchParams: BatchBody,
     sendBody: SendBody,
     verifiedMap: Map<string, VerifiedPitchRender>,
+    venueApproval: Record<string, unknown>,
     actor: string,
     startTime: number,
   ): Promise<{
@@ -1837,7 +1835,7 @@ class OutreachController extends Controller {
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const item = await this.resolveBatchPitchItem(venueId, batchParams, sendBody, verifiedMap);
+      const item = await this.resolveBatchPitchItem(venueId, batchParams, sendBody, verifiedMap, venueApproval);
       if (!item.ok) {
         result.skipped.push({ venueId, venueName: item.venueName, reason: item.reason });
         result.newlyAttempted.push(venueId);
@@ -1926,29 +1924,26 @@ class OutreachController extends Controller {
       return res.status(500).json({ message: 'dispatch refused: failed to parse targetWeekend from dispatch record' });
     }
 
-    let pitched: Set<string>;
+    let states: Map<string, PitchEligibility>;
     try {
-      pitched = await this.pitchedVenueIdsForWeekend(storedVenueIds, tw);
+      states = await this.pitchStatesForWeekend(storedVenueIds, tw);
     } catch (e) {
       return res.status(500).json({
         message: `dispatch refused: failed to read the venues already pitched for this weekend: ${(e as Error).message}`,
       });
     }
 
-    const unsentIds = storedVenueIds.filter((id) => !attemptedSet.has(id) && !pitched.has(id));
+    const pendingIds = storedVenueIds.filter((id) => !attemptedSet.has(id));
+    const unsentIds = pendingIds.filter((id) => dueFromApproval(states.get(id)!, venueApprovalTime(venueApproval || {}, id)));
 
     if (!venueApproval || !draftApproval || checkApprovalsChanged(dispatch, venueApproval, draftApproval, storedVenueIds)) {
-      const unsentNames = await getUnsentVenueNames(unsentIds);
+      const unsentNames = await getUnsentVenueNames(pendingIds);
       await outreachDispatchModel.findOneAndUpdate({ dispatchId }, { $set: { status: 'aborted' } });
       const reason = (!venueApproval || !draftApproval) ? 'missing' : 'changed';
       return res.status(403).json({
         message: `dispatch refused: approval records ${reason} since preflight check. Unsent venues: ${unsentNames.join(', ')}`,
         unsentVenues: unsentNames,
       });
-    }
-
-    if (unsentIds.length === 0) {
-      return res.status(200).json({ sent: 0, skipped: [], records: [], remaining: 0 });
     }
 
     // Every send parameter comes from the dispatch record alone (D-75): a send
@@ -1996,11 +1991,23 @@ class OutreachController extends Controller {
       batchParams,
       sendBody,
       renderCheck.verifiedMap,
+      venueApproval,
       actor,
       startTime,
     );
 
-    return this.replyAfterDispatchLoop(res, dispatchId, result, unsentIds, storedVenueIds, attemptedSet, pitched);
+    const noLongerDue = pendingIds.filter((id) => !unsentIds.includes(id));
+    if (noLongerDue.length) {
+      const names = await getUnsentVenueNames(noLongerDue);
+      result.skipped.unshift(...noLongerDue.map((venueId, index) => ({
+        venueId, venueName: names[index], reason: states.get(venueId)?.reason || 'venue is no longer due a pitch from its Gate 1 approval',
+      })));
+      result.newlyAttempted.push(...noLongerDue);
+      await outreachDispatchModel.findOneAndUpdate(
+        { dispatchId }, { $addToSet: { attemptedVenueIds: { $each: noLongerDue } } },
+      );
+    }
+    return this.replyAfterDispatchLoop(res, dispatchId, result, unsentIds, storedVenueIds, attemptedSet);
   }
 
   // Builds the reply for one send call: the 502 for a stop on the call's first venue, otherwise the
@@ -2013,7 +2020,6 @@ class OutreachController extends Controller {
     unsentIds: string[],
     storedVenueIds: string[],
     attemptedSet: Set<string>,
-    pitched: Set<string>,
   ): Promise<unknown> {
     if (result.stopped && result.sent === 0 && result.skipped.length === 0) {
       // The failing venue was the first one this call handled: no progress, so report it as an error.
@@ -2026,7 +2032,7 @@ class OutreachController extends Controller {
     }
 
     const updatedAttemptedSet = new Set([...attemptedSet, ...result.newlyAttempted]);
-    const remaining = storedVenueIds.filter((id) => !updatedAttemptedSet.has(id) && !pitched.has(id)).length;
+    const remaining = storedVenueIds.filter((id) => !updatedAttemptedSet.has(id)).length;
     if (remaining === 0) {
       await outreachDispatchModel.findOneAndUpdate(
         { dispatchId },
@@ -2101,7 +2107,7 @@ class OutreachController extends Controller {
       });
     }
 
-    await this.dispatchBatchItems(body.venueIds, body, sendBody, actor, verifiedMap, result);
+    await this.dispatchBatchItems(body.venueIds, body, sendBody, actor, verifiedMap, approvalCheck.venueApproval || {}, result);
     return res.status(200).json(result);
   }
 
@@ -2210,8 +2216,8 @@ class OutreachController extends Controller {
   // "calendar full through" date is compared against the window being
   // pitched, not today) AND — the excludeUpcomingGigVenues spacing check
   // below — (every linked gig at that venue is ≥ `gigInterval` months from W,
-  // defaulting to 2 months when gigInterval is 0 or unset), minus any venue that
-  // already has an active outreach with an OVERLAPPING targetWeekend. #898: the
+  // defaulting to 2 months when gigInterval is 0 or unset), and open to a pitch
+  // under the shared policy for an OVERLAPPING targetWeekend. #898: the
   // targetWeekend filter is date-range aware (matching the dedup guard's overlap
   // semantics) rather than the old targetDates string filter. Read-only.
   // Optional query:
@@ -2285,25 +2291,11 @@ class OutreachController extends Controller {
       venues = await venueModel.find(filter);
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
 
-    let handled = new Set<string>();
-    if (tw) {
-      let active: { venueId?: unknown }[];
-      try {
-        const cooldownThreshold = new Date(now.getTime() - OUTREACH_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
-        active = await this.model.find({
-          status: { $in: ACTIVE_STATUSES },
-          ...targetWeekendOverlapClause(tw),
-          $or: [
-            { sentAt: { $gte: cooldownThreshold } },
-            { created_at: { $gte: cooldownThreshold } },
-          ],
-        });
-      } catch (e) {
-        return res.status(500).json({ message: (e as Error).message });
-      }
-      handled = new Set(active.map((a) => String(a.venueId)));
-    }
-    let candidates = venues.filter((v) => !handled.has(String(v._id)));
+    let states: Map<string, PitchEligibility>;
+    try {
+      states = await this.pitchStatesForWeekend(venues.map((venue) => String(venue._id)), tw);
+    } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
+    let candidates = venues.filter((v) => states.get(String(v._id))?.open);
 
     // #958/#980 — one extra gig query total (not per-venue): feeds both the
     // gigInterval spacing check (always applied) and, when a targetWeekend
@@ -2323,6 +2315,8 @@ class OutreachController extends Controller {
     const gigGroups = groupGigsByVenue(gigs, candidates as unknown as LinkableVenue[]);
     const withReason = candidates.map((v) => ({
       ...v,
+      lastPitchDate: states.get(String(v._id))?.lastPitchAt == null
+        ? null : new Date(states.get(String(v._id))!.lastPitchAt!).toISOString(),
       reason: OutreachController.buildCandidateReason(
         v as Record<string, unknown>,
         gigGroups.get(String(v._id)) || [],
@@ -2349,7 +2343,7 @@ class OutreachController extends Controller {
 
   private async previewBatchVenues(
     ids: string[],
-    q: { templateType?: string; targetDates?: string; bookingPeriod?: string; customIntro?: string; customBody?: string },
+    q: Pick<SendBody, 'templateType' | 'targetDates' | 'targetWeekend' | 'bookingPeriod' | 'customIntro' | 'customBody'>,
   ): Promise<{ results: { venueId: string; venueName: string; subject: string; body: string }[]; footerErrors: string[] }> {
     const results: { venueId: string; venueName: string; subject: string; body: string }[] = [];
     const footerErrors: string[] = [];
@@ -2357,7 +2351,7 @@ class OutreachController extends Controller {
       if (!mongoose.Types.ObjectId.isValid(venueId)) continue; // skip invalid ids
       // eslint-disable-next-line no-await-in-loop
       const ctx = await this.resolvePitch(
-        { venueId, templateType: q.templateType, targetDates: q.targetDates, bookingPeriod: q.bookingPeriod },
+        { ...q, venueId },
         { skipDedup: true, requireEligible: false },
       );
       if (ctx.error) continue; // skip unresolvable venues
@@ -2389,7 +2383,7 @@ class OutreachController extends Controller {
     const guardErr = await this.authorize(req, OUTREACH_ANY_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     const q = (req.query || {}) as {
-      venueId?: string; venueIds?: string; templateType?: string; targetDates?: string; bookingPeriod?: string;
+      venueId?: string; venueIds?: string; templateType?: string; targetDates?: string; targetWeekend?: RawTargetWeekend; bookingPeriod?: string;
       customIntro?: string; customBody?: string;
     };
 
@@ -2407,7 +2401,7 @@ class OutreachController extends Controller {
     // SINGLE form (back-compat): venueId (singular) → single { to, cc, subject, html }.
     if (!q.venueId || !mongoose.Types.ObjectId.isValid(q.venueId)) return res.status(400).json({ message: 'valid venueId is required' });
     const ctx = await this.resolvePitch(
-      { venueId: q.venueId, templateType: q.templateType, targetDates: q.targetDates, bookingPeriod: q.bookingPeriod },
+      { ...q, venueId: q.venueId },
       { skipDedup: true, requireEligible: false },
     );
     if (ctx.error) return res.status(ctx.error.status).json({ message: ctx.error.message });
@@ -2865,6 +2859,11 @@ class OutreachController extends Controller {
     const body = (req.body || {}) as Record<string, unknown>;
     const vResult = validateVenueIds(body.venueIds);
     if ('error' in vResult) return res.status(400).json({ message: vResult.error });
+    const renewedIds = body.reapproveVenueIds ?? [];
+    if (!Array.isArray(renewedIds) || new Set(renewedIds).size !== renewedIds.length
+      || renewedIds.some((id) => typeof id !== 'string' || !vResult.venueIds.includes(id))) {
+      return res.status(400).json({ message: 'reapproveVenueIds must be a unique subset of venueIds' });
+    }
 
     const bResult = resolveBatchIdentification(body);
     if ('error' in bResult) return res.status(400).json({ message: bResult.error });
@@ -2874,11 +2873,10 @@ class OutreachController extends Controller {
 
     const docData = buildVenueApprovalDoc(bResult, vResult.venueIds, approver, body);
     try {
-      const query = { $or: [{ batchId: bResult.batchId }, ...(bResult.weekend ? [{ weekend: bResult.weekend }] : [])] };
-      const { status, doc } = await upsertVenueApproval(query, docData);
+      const { status, doc } = await upsertVenueApproval(docData, renewedIds);
       return res.status(status).json(doc);
     } catch (e) {
-      return res.status(500).json({ message: (e as Error).message });
+      return res.status(e instanceof VenueApprovalRevisionError ? 400 : 500).json({ message: (e as Error).message });
     }
   }
 
@@ -3062,15 +3060,6 @@ class OutreachController extends Controller {
     return { ok: true, verified: { venue, template, type, rendered } };
   }
 
-  // D-61 (web-jam-tools#959): "already pitched" is ANY outreach record for the venue
-  // and an overlapping weekend — no status, no cooldown window, unlike dedupGuard.
-  async pitchedVenueIdsForWeekend(venueIds: string[], tw: TargetWeekend): Promise<Set<string>> {
-    const records = await this.model.find({
-      venueId: { $in: venueIds }, ...targetWeekendOverlapClause(tw),
-    }) as unknown as { venueId?: unknown }[];
-    return new Set(records.map((r) => String(r.venueId)));
-  }
-
   private async verifyBatchRenderings(
     batchVenueIds: string[],
     approvedFps: Map<string, string>,
@@ -3165,40 +3154,37 @@ class OutreachController extends Controller {
       };
     }
 
-    // D-60 / D-61: the batch must be exactly the approved venues with no outreach
-    // record for this weekend, so the pitched lookup needs the weekend itself.
     if (!bResult.tw) {
       return { ok: false, status: 400, message: 'dispatch refused: targetWeekend {start, end} is required to find the venues already pitched' };
     }
-    const approvedVenueIds = (venueApproval.venueIds as unknown[]) || [];
-    let pitched: Set<string>;
+    const approvedVenueIds = ((venueApproval.venueIds as unknown[]) || []).map((id) => String(id).trim());
+    let states: Map<string, PitchEligibility>;
     try {
-      pitched = await this.pitchedVenueIdsForWeekend(approvedVenueIds.map((id) => String(id).trim()), bResult.tw);
+      states = await this.pitchStatesForWeekend(approvedVenueIds, bResult.tw);
     } catch (e) {
-      // Outcome 3: Indeterminate check — the pitched-venue lookup failed (fails closed)
       return {
-        ok: false,
-        status: 500,
+        ok: false, status: 500,
         message: `dispatch refused: failed to read the venues already pitched for this weekend: ${(e as Error).message}`,
       };
     }
+    const notDue = new Set(approvedVenueIds.filter((id) => !dueFromApproval(states.get(id)!, venueApprovalTime(venueApproval, id))));
 
     // Outcome 2: Gate 1 venue set mismatch
     const batchVenueIds = (body.venueIds || []).map((id) => String(id).trim());
-    if (!isExactVenueSetMatch(unpitchedApprovedVenueIds(approvedVenueIds, pitched), batchVenueIds)) {
+    if (!isExactVenueSetMatch(dueApprovedVenueIds(approvedVenueIds, notDue), batchVenueIds)) {
       return {
         ok: false,
         status: 403,
         message: `dispatch refused: Gate 1 venue-set approval does not match batch venueIds for batch '${bResult.batchId}' `
-          + '(a batch must be exactly the approved venues not yet pitched for this weekend)',
+          + '(a batch must be exactly the approved venues due a pitch from their Gate 1 approval)',
       };
     }
 
     // Outcome 2: Gate 2 draft fingerprints venue set check
     const approvedFps = extractApprovedFingerprints(draftApproval);
-    const unpitchedFps = unpitchedApprovedFingerprints(approvedFps, pitched);
+    const dueFps = dueApprovedFingerprints(approvedFps, notDue);
     const batchSet = new Set(batchVenueIds);
-    if (unpitchedFps.size !== batchSet.size || !batchVenueIds.every((id) => unpitchedFps.has(id))) {
+    if (dueFps.size !== batchSet.size || !batchVenueIds.every((id) => dueFps.has(id))) {
       return {
         ok: false,
         status: 403,
@@ -3207,7 +3193,7 @@ class OutreachController extends Controller {
     }
 
     // Re-render draft emails and match fingerprints against Gate 2
-    const renderRes = await this.verifyBatchRenderings(batchVenueIds, unpitchedFps, body);
+    const renderRes = await this.verifyBatchRenderings(batchVenueIds, dueFps, body);
     if (!renderRes.ok) return renderRes;
     return {
       ok: true,
