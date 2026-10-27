@@ -2236,9 +2236,13 @@ describe('Outreach Controller (#844 batch model)', () => {
     describe('retired check-replies route', () => {
       it('does not register /check-replies on the outreach router', async () => {
         const { default: outreachRouter } = await import('#src/model/outreach/outreach-router.js');
-        const routes = (outreachRouter as any).stack
-          .filter((layer: any) => layer.route)
-          .map((layer: any) => layer.route.path);
+        interface RouterLayer {
+          route?: { path: string };
+        }
+        const routerWithStack = outreachRouter as unknown as { stack: RouterLayer[] };
+        const routes = routerWithStack.stack
+          .filter((layer): layer is { route: { path: string } } => Boolean(layer.route?.path))
+          .map((layer) => layer.route.path);
         expect(routes).not.toContain('/check-replies');
       });
     });
@@ -2569,10 +2573,10 @@ describe('Outreach Controller (#844 batch model)', () => {
     it('stamps status/outcomeAt/outcomeBy, nulls nextTouchDue, and records timeline touch on a replied outcome (#1171)', async () => {
       const rec = outreachRec();
       c.model.findById = vi.fn(() => Promise.resolve(rec));
-      const upd = vi.fn((id: string, u: any) => Promise.resolve({ _id: id, ...u }));
-      c.model.findByIdAndUpdate = upd;
-      const venueUpd = vi.fn(() => Promise.resolve({}));
-      (venueModel as any).findByIdAndUpdate = venueUpd;
+      const upd = vi.fn((id: string, u: Record<string, unknown>) => Promise.resolve({ _id: id, ...u }));
+      c.model.findByIdAndUpdate = upd as unknown as typeof c.model.findByIdAndUpdate;
+      const venueUpd = vi.fn(() => Promise.resolve({} as never));
+      venueModel.findByIdAndUpdate = venueUpd as unknown as typeof venueModel.findByIdAndUpdate;
       await c.recordOutcome({
         user: 'a', params: { id: String(rec._id) }, body: { status: 'replied', actor: 'josh' },
       }, resStub);
@@ -2580,7 +2584,8 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(upd).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({
         status: 'replied', outcomeBy: 'josh', nextTouchDue: null,
       }));
-      expect((upd.mock.calls[0] as any)[1].outcomeAt).toBeInstanceOf(Date);
+      const callArgs = upd.mock.calls[0] as [string, { outcomeAt?: Date }];
+      expect(callArgs[1].outcomeAt).toBeInstanceOf(Date);
       expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
         $push: { touches: expect.objectContaining({ type: 'outcome', outcome: 'replied', actor: 'josh' }) },
       }));

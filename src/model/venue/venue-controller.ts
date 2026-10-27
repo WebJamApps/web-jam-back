@@ -27,7 +27,7 @@ type DerivedBookingStatus = 'booked' | 'not-booking' | 'booking';
 const AUDIENCE_ATTENTION = ['low', 'medium', 'high'];
 // Per-venue timeline (#898) — mirrors touchSchema's enums in venue-schema.ts.
 const TOUCH_TYPES = ['visit', 'form', 'card', 'call', 'email', 'gig', 'other', 'outcome'];
-const TOUCH_OUTCOMES = ['interested', 'not-interested', 'booked', 'target-filled'];
+const TOUCH_OUTCOMES = ['replied', 'interested', 'not-interested', 'booked', 'target-filled'];
 
 // Role fallback for human admins who authorize by role (no privileges array).
 // AI agents pass via the venue:* capabilities on the shared web-jam-llm identity.
