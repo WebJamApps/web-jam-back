@@ -38,7 +38,7 @@ const locationSchema = new Schema({
 //     (which template rendered) + `targetWeekend` (which weekend the pitch was
 //     for), so the UI can show "pitched for Sept 26" vs "pitched for Oct 10"
 //     distinctly per the rescope's example.
-//   - 'outcome': a recorded outcome (interested / not-interested / booked /
+//   - 'outcome': a recorded outcome (replied / interested / not-interested / booked /
 //     target-filled). Carries `outcome` (the recorded value), `targetWeekend`
 //     (which pitch this outcome answers), and `bookedDate` when the outcome is
 //     'booked' (the actual gig date, distinct from the weekend range pitched).
@@ -62,7 +62,7 @@ const touchSchema = new Schema({
   outcome: {
     type: String,
     required: false,
-    enum: ['interested', 'not-interested', 'booked', 'target-filled'],
+    enum: ['replied', 'interested', 'not-interested', 'booked', 'target-filled'],
   },
   bookedDate: { type: Date, required: false },
   outreachId: { type: Schema.Types.ObjectId, ref: 'Outreach', required: false },

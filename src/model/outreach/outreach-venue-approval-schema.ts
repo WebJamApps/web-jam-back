@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { baseApprovalFields } from './approval-schema-base.js';
+import { approvalTimeField, baseApprovalFields } from './approval-schema-base.js';
 
 const { Schema } = mongoose;
 
@@ -17,6 +17,14 @@ const outreachVenueApprovalSchema = new Schema({
     ref: 'Venue',
     required: true,
   }],
+  // Absence on a legacy record must not renew every venue on a later widening.
+  venueApprovals: {
+    type: [new Schema({
+      venueId: { type: Schema.Types.ObjectId, ref: 'Venue', required: true },
+      approvedAt: approvalTimeField,
+    }, { _id: false })],
+    default: undefined,
+  },
 }, options);
 
 export default mongoose.models.OutreachVenueApproval

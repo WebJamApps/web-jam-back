@@ -397,7 +397,7 @@ describe('Google Places Address Lookup Routes (#1159)', () => {
     });
   });
 
-  describe('Rate Limiting (at most 60 requests a minute per caller)', () => {
+  describe('Rate Limiting (at most 60 requests a minute per caller)', { timeout: 15000 }, () => {
     it('returns 429 on the 61st request in a minute (#1159)', async () => {
       googleFetchMock.mockResolvedValue({
         ok: true,

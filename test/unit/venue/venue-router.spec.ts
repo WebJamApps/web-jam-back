@@ -215,6 +215,53 @@ describe('Venue Router (PATCH /venue/:id)', () => {
     expect(r.status).toBe(201);
   });
 
+  it('validates and appends a replied outcome touch using POST /venue/:id/touch (#1171)', async () => {
+    // 1. Direct Mongoose touchSchema validation (accepts replied, rejects invalid)
+    const venueDoc = new venueModel.Schema({
+      name: 'Schema Validation Venue',
+      address: '100 Main St',
+      touches: [{
+        type: 'outcome',
+        outcome: 'replied',
+      }],
+    });
+    await expect(venueDoc.validate()).resolves.toBeUndefined();
+
+    const invalidDoc = new venueModel.Schema({
+      name: 'Schema Invalid Venue',
+      address: '100 Main St',
+      touches: [{
+        type: 'outcome',
+        outcome: 'invalid-outcome',
+      }],
+    });
+    await expect(invalidDoc.validate()).rejects.toThrow(/`invalid-outcome` is not a valid enum value for path `outcome`/);
+
+    // 2. HTTP POST /venue/:id/touch with real DB persistence
+    const venue = await venueModel.create({
+      name: 'The Spot on Kirk Replied Test',
+      address: '22 S Kirk St',
+      city: 'Roanoke',
+      usState: 'Virginia',
+    }) as unknown as { _id: { toString(): string } };
+
+    r = await request(app)
+      .post(`/venue/${venue._id.toString()}/touch`)
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`)
+      .send({
+        type: 'outcome',
+        outcome: 'replied',
+      });
+
+    expect(r.status).toBe(201);
+    const updated = await venueModel.findById(venue._id.toString()) as unknown as {
+      touches: Array<{ type: string; outcome: string }>;
+    };
+    expect(updated.touches).toHaveLength(1);
+    expect(updated.touches[0]).toMatchObject({ type: 'outcome', outcome: 'replied' });
+  });
+
   it('does not capture /venue/places/... as /venue/:id (#1159)', async () => {
     // If captured by /:id, "places" is treated as an invalid ObjectId and returns 400 "Find id is invalid"
     const rSuggest = await request(app)

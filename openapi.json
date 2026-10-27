@@ -1,0 +1,927 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "web-jam-back API",
+    "version": "1.0.0",
+    "description": "The API specification of web-jam-back. Every authenticated route first runs the login check: the bearer token must be valid and name an existing user, and the user's role must pass the route's AUTH_ROLES entry when one is set; a failure there answers 401. The capability check follows. A caller whose user record carries a privileges list must hold one of the capabilities named in x-required-capabilities; a caller with no list must have the role JaM-admin or Developer; anyone else is answered 403 and nothing is written. A caller tied to one artist (an artist slug on the account) may write only that artist's gigs, and is answered 403 otherwise.",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The web-jam-back server the spec is served from."
+    }
+  ],
+  "tags": [
+    {
+      "name": "gigs",
+      "description": "Gig records, shared across artists."
+    },
+    {
+      "name": "setlists",
+      "description": "Setlist records and ordered song items."
+    }
+  ],
+  "security": [],
+  "paths": {
+    "/gig": {
+      "get": {
+        "tags": [
+          "gigs"
+        ],
+        "operationId": "listGigs",
+        "summary": "List gigs",
+        "description": "Public. With no artist parameter, or artist=jammusic, returns the original artist's gigs, including records with no artist field. Any other query parameter filters on that field.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "artist",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "examples": [
+                "jammusic",
+                "tim"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching gigs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Gig"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "gigs"
+        ],
+        "operationId": "createGig",
+        "summary": "Create a gig",
+        "description": "The artist is stamped on the record: forced to the caller's artist when the caller is tied to one, otherwise taken from the body, defaulting to jammusic. Any _id in the body is ignored.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "gig:create",
+          "tour:create"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GigInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created gig.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Gig"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "description": "Storage refused the gig, for example \"Gig validation failed: venue: Path `venue` is required.\"",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/gig/promo-default.jpg": {
+      "get": {
+        "tags": [
+          "gigs"
+        ],
+        "operationId": "getDefaultPromoImage",
+        "summary": "The default promotion image",
+        "description": "Public. The image the announce route falls back to when a gig has none.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The image.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/MessageNotFound"
+          }
+        }
+      }
+    },
+    "/gig/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/GigId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "gigs"
+        ],
+        "operationId": "getGig",
+        "summary": "Read one gig",
+        "description": "Login required; no capability.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The gig.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Gig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Find id is invalid\" or \"nothing found with id provided\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "gigs"
+        ],
+        "operationId": "editGig",
+        "summary": "Edit one gig",
+        "description": "Applies the body to the gig and returns the gig as it stands after the edit. A caller tied to one artist may edit only that artist's gigs and may not move a gig to another artist.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "gig:edit",
+          "tour:edit"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GigInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The edited gig.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Gig"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Update id is invalid\" or \"Id Not Found\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "gigs"
+        ],
+        "operationId": "deleteGig",
+        "summary": "Delete one gig",
+        "description": "Deletes the one gig named by id, for example a cancelled gig or one added by mistake. A caller tied to one artist may delete only that artist's gigs.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "gig:delete",
+          "tour:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "\"Gig was deleted successfully\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"id is invalid\" or \"Delete id is invalid\" (no gig has that id).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/gig/{id}/announce": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/GigId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "gigs"
+        ],
+        "operationId": "announceGig",
+        "summary": "Announce a gig on Instagram and the Web Jam LLC Facebook Page",
+        "description": "Publishes the caption and image to both. One failing never stops the other. When either succeeds the gig's announcedAt is set to now. The image is the body's imageUrl, else the gig's promoImageUrl, else /gig/promo-default.jpg.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "gig:announce"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "caption"
+                ],
+                "properties": {
+                  "caption": {
+                    "type": "string",
+                    "description": "The caption as editor HTML; it is converted to plain text."
+                  },
+                  "imageUrl": {
+                    "type": "string",
+                    "format": "uri"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The result of each publish.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "instagram": {
+                      "$ref": "#/components/schemas/LegResult"
+                    },
+                    "facebook": {
+                      "$ref": "#/components/schemas/LegResult"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Find id is invalid\", \"caption is required\" or \"nothing found with id provided\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "description": "Announcing is not configured on the server, or the gig could not be read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/setlist": {
+      "get": {
+        "tags": [
+          "setlists"
+        ],
+        "operationId": "listSetlists",
+        "summary": "List setlists",
+        "description": "Public. Returns all setlists with items resolved. Optional sort query parameter sorts items.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "examples": [
+                "title",
+                "artist",
+                "order"
+              ]
+            },
+            "description": "Sort option for setlist items (title, artist, or order)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The list of setlists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Setlist"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "setlists"
+        ],
+        "operationId": "createSetlist",
+        "summary": "Create a setlist",
+        "description": "Creates a setlist. Authentication required.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetlistInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created setlist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Setlist"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/setlist/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/SetlistId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "setlists"
+        ],
+        "operationId": "getSetlist",
+        "summary": "Read one setlist",
+        "description": "Public. Reads one setlist by id with items resolved. Optional sort query parameter sorts items.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "examples": [
+                "title",
+                "artist",
+                "order"
+              ]
+            },
+            "description": "Sort option for setlist items (title, artist, or order)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The setlist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Setlist"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Find id is invalid\" or \"nothing found with id provided\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "setlists"
+        ],
+        "operationId": "editSetlist",
+        "summary": "Edit one setlist",
+        "description": "Updates a setlist by id, replacing its items. Authentication required.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetlistUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The edited setlist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Setlist"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Update id is invalid\", \"Name is required\", or \"Id Not Found\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "setlists"
+        ],
+        "operationId": "deleteSetlist",
+        "summary": "Delete one setlist",
+        "description": "Deletes the one setlist named by id. Authentication required.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "\"Setlist was deleted successfully\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"id is invalid\" or \"Delete id is invalid\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "A web-jam-back login token. Browser logins expire after 24 hours; agent service tokens do not expire."
+      }
+    },
+    "parameters": {
+      "GigId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{24}$"
+        }
+      },
+      "SetlistId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{24}$"
+        }
+      }
+    },
+    "responses": {
+      "NotLoggedIn": {
+        "description": "No valid token, no user for it, or the user's role is not allowed on this route.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The caller lacks the capability (for example \"missing gig:edit/tour:edit capability\"), has no privileges list and is not JaM-admin or Developer, or is tied to a different artist (\"not authorized for this artist\").",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Storage failed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
+      "MessageNotFound": {
+        "description": "Not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Message": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "LegResult": {
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string",
+            "description": "The published post's id, when ok."
+          },
+          "error": {
+            "type": "string",
+            "description": "Why the publish failed, when not ok."
+          }
+        }
+      },
+      "GigInput": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          },
+          "datetime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "location": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "usState": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string",
+            "description": "Required when creating."
+          },
+          "tickets": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "number",
+            "default": 0
+          },
+          "promoImageUrl": {
+            "type": "string"
+          },
+          "more": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string",
+            "description": "Artist slug; records without one belong to jammusic."
+          },
+          "venueId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "The linked venue record."
+          }
+        }
+      },
+      "Gig": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/GigInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "_id",
+              "venue"
+            ],
+            "properties": {
+              "_id": {
+                "type": "string"
+              },
+              "announcedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
+      },
+      "SetlistItemInput": {
+        "type": "object",
+        "required": [
+          "order"
+        ],
+        "properties": {
+          "order": {
+            "type": "number"
+          },
+          "songId": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Reference to an existing Song"
+          },
+          "title": {
+            "type": "string",
+            "description": "Required when songId is not set"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "playLink": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
+      "SetlistItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SetlistItemInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "_id": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "SetlistInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SetlistItemInput"
+            }
+          }
+        }
+      },
+      "SetlistUpdateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SetlistItemInput"
+            }
+          }
+        }
+      },
+      "Setlist": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SetlistInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "_id"
+            ],
+            "properties": {
+              "_id": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SetlistItem"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

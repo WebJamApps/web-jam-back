@@ -17,11 +17,13 @@ import facebook from './model/facebook/index.js';
 import backup from './model/backup/backup-router.js';
 import backupStatus from './model/backup/backup-status-router.js';
 import venueMiningSweep from './model/venue-mining-sweep/venue-mining-sweep-router.js';
+import openapi from './model/openapi/openapi-router.js';
 
 const router = express.Router();
 
 export default function route(app: Express): void {
   app.use(router);
+  router.use('/openapi.json', openapi);
   router.use('/user', user);
   router.use('/admin/user', adminUser);
   router.use('/book', book);
