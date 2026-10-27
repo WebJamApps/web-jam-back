@@ -1861,6 +1861,19 @@ describe('Venue Controller', () => {
       expect(touch).toMatchObject({ type: 'outcome', outcome: 'booked', bookedDate: new Date('2026-09-26') });
     });
 
+    it('appends an outcome touch (replied) without bookedDate (#1171)', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      const upd = vi.fn((_targetId: string, _update: { $push: { touches: Record<string, unknown> } }) => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd as unknown as typeof c.model.findByIdAndUpdate;
+      await c.addTouch({
+        user: 'agent', params: { id }, body: { type: 'outcome', outcome: 'replied' },
+      }, resStub);
+      expect(status).toBe(201);
+      const callArgs = upd.mock.calls[0] as [string, { $push: { touches: Record<string, unknown> } }];
+      const touch = callArgs[1].$push.touches;
+      expect(touch).toMatchObject({ type: 'outcome', outcome: 'replied' });
+    });
+
     it('400s when the id is not found', async () => {
       const id = new mongoose.Types.ObjectId().toString();
       c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve(null));

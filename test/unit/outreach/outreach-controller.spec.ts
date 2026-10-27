@@ -16,18 +16,6 @@ vi.mock('#src/lib/calendar.js', () => ({
   default: { createCallTaskEvent },
 }));
 
-const findReplies = vi.fn(() => Promise.resolve([] as any[]));
-vi.mock('#src/lib/imap-replies.js', () => ({
-  findReplies,
-  default: { findReplies },
-}));
-
-const classifyReply = vi.fn(() => Promise.resolve(null as any));
-vi.mock('#src/lib/classify-reply.js', () => ({
-  classifyReply,
-  default: { classifyReply },
-}));
-
 const {
   default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
   OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
@@ -105,10 +93,6 @@ describe('Outreach Controller (#844 batch model)', () => {
     sendMail.mockResolvedValue({ messageId: 'mid-123' });
     createCallTaskEvent.mockClear();
     createCallTaskEvent.mockResolvedValue({ id: 'evt-1' });
-    findReplies.mockClear();
-    findReplies.mockResolvedValue([]);
-    classifyReply.mockClear();
-    classifyReply.mockResolvedValue(null);
     asAgent();
     (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue()));
     (venueModel as any).find = vi.fn(() => Promise.resolve([]));
@@ -2248,108 +2232,18 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
-  describe('reply-detection (#825)', () => {
-    describe('checkReplies', () => {
-      it('403s without outreach:edit', async () => {
-        asAgent(['outreach:create']);
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(status).toBe(403);
-      });
-
-      it('500s when the active-outreach query throws', async () => {
-        c.model.find = vi.fn(() => Promise.reject(new Error('db down')));
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(status).toBe(500);
-      });
-
-      it('reports nothing matched when there are no replies', async () => {
-        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
-        findReplies.mockResolvedValue([]);
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0, bounced: 0 });
-      });
-
-      it('marks a matched reply replied, stores the snippet + suggestion, and halts cadence', async () => {
-        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
-        findReplies.mockResolvedValue([{
-          outreachId: 'o1', fromAddress: 'pat@v.com', repliedAt: new Date('2026-06-26'), snippet: 'We would love to!', gmailThreadId: 't9',
-        }]);
-        classifyReply.mockResolvedValue({ sentiment: 'positive', proposedBookingStatus: 'booking', model: 'claude-haiku-4-5' });
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 1, classified: 1, bounced: 0 });
-        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith('o1', expect.objectContaining({
-          status: 'replied', replySnippet: 'We would love to!', gmailThreadId: 't9', nextTouchDue: null,
-          suggestion: expect.objectContaining({ sentiment: 'positive' }),
-        }));
-      });
-
-      it('counts a match without an AI suggestion as matched-not-classified', async () => {
-        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
-        findReplies.mockResolvedValue([{ outreachId: 'o1', repliedAt: new Date(), snippet: 'hi' }]);
-        classifyReply.mockResolvedValue(null);
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 1, classified: 0, bounced: 0 });
-      });
-
-      it('skips a match that does not correspond to a scanned record', async () => {
-        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
-        findReplies.mockResolvedValue([{ outreachId: 'ghost', repliedAt: new Date(), snippet: 'hi' }]);
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0, bounced: 0 });
-      });
-
-      it('swallows a per-record update failure without aborting the scan', async () => {
-        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
-        findReplies.mockResolvedValue([{ outreachId: 'o1', repliedAt: new Date(), snippet: 'hi' }]);
-        c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('write fail')));
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0, bounced: 0 });
-      });
-
-      // #825 bounce auto-flag: a bounced match auto-flags the venue + halts the
-      // outreach deterministically, with NO AI suggestion involved.
-      it('auto-flags the venue and halts the outreach on a bounce match, without classifying', async () => {
-        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
-        findReplies.mockResolvedValue([{
-          outreachId: 'o1', fromAddress: 'mailer-daemon@x.com', repliedAt: new Date('2026-06-26'),
-          snippet: 'Delivery failure notice.', gmailThreadId: 't9', isBounce: true,
-        }]);
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 1, classified: 0, bounced: 1 });
-        expect(classifyReply).not.toHaveBeenCalled();
-        // #974 — contactVerified is gone; the bounce auto-flag now relies
-        // solely on outreachEligible:false (also asserts the dropped field is
-        // no longer written at all).
-        expect(venueModel.findByIdAndUpdate).toHaveBeenCalledWith('v1', expect.objectContaining({
-          outreachEligible: false,
-        }));
-        expect((venueModel.findByIdAndUpdate as any).mock.calls[0][1]).not.toHaveProperty('contactVerified');
-        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith('o1', expect.objectContaining({
-          status: 'no-response', nextTouchDue: null, replyKind: 'bounce',
-          replySnippet: 'Delivery failure notice.', gmailThreadId: 't9',
-        }));
-        expect(c.model.findByIdAndUpdate).not.toHaveBeenCalledWith('o1', expect.objectContaining({ suggestion: expect.anything() }));
-      });
-
-      it('swallows a bounce venue-write failure and still halts the outreach', async () => {
-        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
-        findReplies.mockResolvedValue([{
-          outreachId: 'o1', repliedAt: new Date(), snippet: 'bounce', isBounce: true,
-        }]);
-        (venueModel as any).findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('venue write fail')));
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 1, classified: 0, bounced: 1 });
-        expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith('o1', expect.objectContaining({ status: 'no-response' }));
-      });
-
-      it('swallows a bounce outreach-write failure without aborting the scan', async () => {
-        c.model.find = vi.fn(() => Promise.resolve([{ _id: 'o1', venueId: 'v1', messageId: '<m1@x>' }]));
-        findReplies.mockResolvedValue([{
-          outreachId: 'o1', repliedAt: new Date(), snippet: 'bounce', isBounce: true,
-        }]);
-        c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('write fail')));
-        await c.checkReplies({ user: 'a' }, resStub);
-        expect(payload).toEqual({ checked: 1, matched: 0, classified: 0, bounced: 0 });
+  describe('reply-detection (#825, retired in #1171)', () => {
+    describe('retired check-replies route', () => {
+      it('does not register /check-replies on the outreach router', async () => {
+        const { default: outreachRouter } = await import('#src/model/outreach/outreach-router.js');
+        interface RouterLayer {
+          route?: { path: string };
+        }
+        const routerWithStack = outreachRouter as unknown as { stack: RouterLayer[] };
+        const routes = routerWithStack.stack
+          .filter((layer): layer is { route: { path: string } } => Boolean(layer.route?.path))
+          .map((layer) => layer.route.path);
+        expect(routes).not.toContain('/check-replies');
       });
     });
 
@@ -2674,6 +2568,27 @@ describe('Outreach Controller (#844 batch model)', () => {
         status: 'interested', outcomeBy: 'josh', nextTouchDue: null,
       }));
       expect((upd.mock.calls[0] as any)[1].outcomeAt).toBeInstanceOf(Date);
+    });
+
+    it('stamps status/outcomeAt/outcomeBy, nulls nextTouchDue, and records timeline touch on a replied outcome (#1171)', async () => {
+      const rec = outreachRec();
+      c.model.findById = vi.fn(() => Promise.resolve(rec));
+      const upd = vi.fn((id: string, u: Record<string, unknown>) => Promise.resolve({ _id: id, ...u }));
+      c.model.findByIdAndUpdate = upd as unknown as typeof c.model.findByIdAndUpdate;
+      const venueUpd = vi.fn(() => Promise.resolve({} as never));
+      venueModel.findByIdAndUpdate = venueUpd as unknown as typeof venueModel.findByIdAndUpdate;
+      await c.recordOutcome({
+        user: 'a', params: { id: String(rec._id) }, body: { status: 'replied', actor: 'josh' },
+      }, resStub);
+      expect(status).toBe(200);
+      expect(upd).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({
+        status: 'replied', outcomeBy: 'josh', nextTouchDue: null,
+      }));
+      const callArgs = upd.mock.calls[0] as [string, { outcomeAt?: Date }];
+      expect(callArgs[1].outcomeAt).toBeInstanceOf(Date);
+      expect(venueUpd).toHaveBeenCalledWith(String(rec.venueId), expect.objectContaining({
+        $push: { touches: expect.objectContaining({ type: 'outcome', outcome: 'replied', actor: 'josh' }) },
+      }));
     });
 
     it('writes a venue timeline touch for the outcome', async () => {

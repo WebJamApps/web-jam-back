@@ -63,14 +63,6 @@ router.route('/advance')
     void action();
   });
 
-// POST /outreach/check-replies — Gmail reply-detection tick (#825). IMAP scan;
-// halts the cadence on matched replies + attaches an AI suggestion for review.
-router.route('/check-replies')
-  .post((req, res) => {
-    const action = routeUtils.makeAction(req, res, 'checkReplies', controller, authUtils);
-    void action();
-  });
-
 // GET /outreach/replies/pending — the "replies to review" queue (#825).
 router.route('/replies/pending')
   .get((req, res) => {
