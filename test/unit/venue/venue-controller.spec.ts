@@ -1863,13 +1863,14 @@ describe('Venue Controller', () => {
 
     it('appends an outcome touch (replied) without bookedDate (#1171)', async () => {
       const id = new mongoose.Types.ObjectId().toString();
-      const upd = vi.fn(() => Promise.resolve({ _id: id }));
-      c.model.findByIdAndUpdate = upd;
+      const upd = vi.fn((_targetId: string, _update: { $push: { touches: Record<string, unknown> } }) => Promise.resolve({ _id: id }));
+      c.model.findByIdAndUpdate = upd as unknown as typeof c.model.findByIdAndUpdate;
       await c.addTouch({
         user: 'agent', params: { id }, body: { type: 'outcome', outcome: 'replied' },
       }, resStub);
       expect(status).toBe(201);
-      const touch = (upd.mock.calls[0] as any)[1].$push.touches;
+      const callArgs = upd.mock.calls[0] as [string, { $push: { touches: Record<string, unknown> } }];
+      const touch = callArgs[1].$push.touches;
       expect(touch).toMatchObject({ type: 'outcome', outcome: 'replied' });
     });
 
