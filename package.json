@@ -90,7 +90,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@redocly/cli": "^1.34.22",
+    "@redocly/cli": "^2.71.1",
     "@vitest/coverage-v8": "^4.1.12",
     "@vitest/eslint-plugin": "^1.6.16",
     "concurrently": "^10.0.3",
