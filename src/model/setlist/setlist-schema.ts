@@ -22,6 +22,11 @@ const setlistItemSchema = new Schema({
   artist: { type: String, required: false },
   playLink: { type: String, required: false },
   notes: { type: String, required: false },
+  key: { type: String, required: false },
+  capo: { type: String, required: false },
+  tempo: { type: String, required: false },
+  durationSeconds: { type: Number, required: false },
+  leadSheetUrl: { type: String, required: false },
 });
 
 const setlistSchema = new Schema({
