@@ -95,6 +95,22 @@ type SendResult = { ok: true; record: unknown } | { ok: false; status: number; m
 // left optional) are unaffected.
 interface RawTargetWeekend { start?: string | Date; end?: string | Date }
 
+// MongoDB's $centerSphere takes [longitude, latitude] and a radius in radians.
+function candidateRadiusFilter(query: Record<string, unknown>): { location?: Record<string, unknown>; error?: string } {
+  const values = [query.lat, query.lng, query.radiusMiles];
+  if (values.every((value) => value === undefined)) return {};
+  if (values.some((value) => typeof value !== 'string' || !value.trim() || !Number.isFinite(Number(value)))) {
+    return { error: 'lat, lng and radiusMiles must all be provided as finite numbers' };
+  }
+  const [lat, lng, radiusMiles] = values.map(Number);
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180 || radiusMiles <= 0) {
+    return { error: 'lat must be between -90 and 90, lng between -180 and 180, and radiusMiles greater than 0' };
+  }
+  // Equatorial Earth radius in miles, as in MongoDB's $centerSphere example.
+  // A radius covering the whole globe need not exceed pi radians.
+  return { location: { $geoWithin: { $centerSphere: [[lng, lat], Math.min(radiusMiles / 3963.2, Math.PI)] } } };
+}
+
 // #980 — per-candidate qualifying context, attached to every GET
 // /outreach/candidates result so JaMmusic#1238's Find-Eligible UI can show
 // "why did this venue qualify" without re-deriving eligibility client-side.
@@ -2248,6 +2264,8 @@ class OutreachController extends Controller {
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
 
     const query = (req.query || {}) as { targetWeekend?: RawTargetWeekend; targetDates?: string; cities?: string };
+    const radius = candidateRadiusFilter(query);
+    if (radius.error) return res.status(400).json({ message: radius.error });
     const { tw, error: twError } = resolveCandidateWeekend(query);
     if (twError) return res.status(400).json({ message: twError });
     const now = new Date();
@@ -2296,6 +2314,8 @@ class OutreachController extends Controller {
       };
       // #980 — optional city filter, AND'd with everything above.
       if (cities.length) filter.city = { $in: cities };
+      // Stored exact pins only; MongoDB excludes venues without a location.
+      if (radius.location) filter.location = radius.location;
       venues = await venueModel.find(filter);
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
 
