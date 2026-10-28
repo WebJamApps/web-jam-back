@@ -1087,6 +1087,61 @@ describe('Outreach Controller (#844 batch model)', () => {
   });
 
   describe('getCandidates (#844)', () => {
+    describe('radius parameters', () => {
+      const radiusQuery = { lat: '37.27', lng: '-80.06', radiusMiles: '25' };
+
+      it('adds the spherical radius to the existing venue query', async () => {
+        await c.getCandidates({ user: 'a', query: { ...radiusQuery, cities: 'Salem' } }, resStub);
+        expect(status).toBe(200);
+        expect(venueModel.find).toHaveBeenCalledWith(expect.objectContaining({
+          outreachEligible: true,
+          email: { $nin: [null, ''], $regex: EMAIL_RE },
+          status: { $ne: 'archived' },
+          city: { $in: ['Salem'] },
+          location: { $geoWithin: { $centerSphere: [[-80.06, 37.27], 25 / 3963.2] } },
+          $or: expect.any(Array),
+          $and: expect.any(Array),
+        }));
+      });
+
+      it('leaves location unrestricted when all radius parameters are absent', async () => {
+        await c.getCandidates({ user: 'a', query: {} }, resStub);
+        expect(status).toBe(200);
+        expect(venueModel.find).toHaveBeenCalledWith(expect.not.objectContaining({ location: expect.anything() }));
+      });
+
+      it.each([
+        { lat: '0' }, { lng: '0' }, { radiusMiles: '25' },
+        { lat: '0', lng: '0' }, { lat: '0', radiusMiles: '25' }, { lng: '0', radiusMiles: '25' },
+        { ...radiusQuery, lat: '' }, { ...radiusQuery, lng: '   ' }, { ...radiusQuery, radiusMiles: '' },
+        { ...radiusQuery, lat: 'north' }, { ...radiusQuery, lng: 'NaN' }, { ...radiusQuery, radiusMiles: '25 miles' },
+        { ...radiusQuery, lat: '90.01' }, { ...radiusQuery, lat: '-90.01' },
+        { ...radiusQuery, lng: '180.01' }, { ...radiusQuery, lng: '-180.01' },
+        { ...radiusQuery, radiusMiles: '0' }, { ...radiusQuery, radiusMiles: '-1' },
+        { ...radiusQuery, lat: 'Infinity' }, { ...radiusQuery, lng: '-Infinity' }, { ...radiusQuery, radiusMiles: '1e999' },
+        { ...radiusQuery, lat: ['37', '38'] }, { ...radiusQuery, lng: { $gt: 0 } }, { ...radiusQuery, radiusMiles: null },
+      ])('refuses invalid or partial radius parameters before querying venues: %j', async (query) => {
+        await c.getCandidates({ user: 'a', query }, resStub);
+        expect(status).toBe(400);
+        expect(payload).toEqual({ message: expect.any(String) });
+        expect(venueModel.find).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        { lat: '-90', lng: '-180', radiusMiles: '0.1' },
+        { lat: '90', lng: '180', radiusMiles: '25' },
+        { lat: '0', lng: '0', radiusMiles: '1e308' },
+      ])('accepts boundary coordinates and every finite positive radius: %j', async (query) => {
+        await c.getCandidates({ user: 'a', query }, resStub);
+        expect(status).toBe(200);
+        expect(venueModel.find).toHaveBeenCalledWith(expect.objectContaining({
+          location: { $geoWithin: { $centerSphere: [
+            [Number(query.lng), Number(query.lat)], Math.min(Number(query.radiusMiles) / 3963.2, Math.PI),
+          ] } },
+        }));
+      });
+    });
+
     it('403s without an outreach capability', async () => {
       asAgent(['venue:create']);
       await c.getCandidates({ user: 'a', query: {} }, resStub);
