@@ -10,9 +10,19 @@ describe('setlist-resolve', () => {
     });
 
     it('converts a Dropbox widget link (dl=1) to the player form (dl=0), preserving rlkey', () => {
-      const widget = 'https://dl.dropboxusercontent.com/s/abc123/song.mp3?rlkey=xyz789&dl=1';
+      const widget = 'https://dl.dropboxusercontent.com/scl/fi/abc/take1.mp3?rlkey=k&dl=1';
       const player = toSetlistPlayerLink(widget);
-      expect(player).toBe('https://www.dropbox.com/s/abc123/song.mp3?rlkey=xyz789&dl=0');
+      expect(player).toBe('https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=0');
+    });
+
+    it('converts a www.dropbox.com link ending dl=1 to dl=0, preserving rlkey', () => {
+      const share = 'https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=1';
+      expect(toSetlistPlayerLink(share)).toBe('https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=0');
+    });
+
+    it('leaves a www.dropbox.com link ending dl=0 unchanged', () => {
+      const player = 'https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=0';
+      expect(toSetlistPlayerLink(player)).toBe(player);
     });
 
     it('converts a Dropbox widget link with no dl param, leaving other params alone', () => {
@@ -22,12 +32,13 @@ describe('setlist-resolve', () => {
     });
 
     it('converts a YouTube embed link to the watch form', () => {
+      expect(toSetlistPlayerLink('https://www.youtube.com/embed/xyz')).toBe('https://www.youtube.com/watch?v=xyz');
       const embed = 'https://www.youtube.com/embed/ach2ubW21h4?enablejsapi=1&origin=https://web-jam.com';
       expect(toSetlistPlayerLink(embed)).toBe('https://www.youtube.com/watch?v=ach2ubW21h4');
     });
 
     it('leaves a Spotify link unchanged', () => {
-      const spotify = 'https://open.spotify.com/track/abc123';
+      const spotify = 'https://open.spotify.com/track/xyz';
       expect(toSetlistPlayerLink(spotify)).toBe(spotify);
     });
 
@@ -82,6 +93,65 @@ describe('setlist-resolve', () => {
       const item = resolveSetlistItem({ order: 3, songId: null });
       expect(item.songId).toBeUndefined();
       expect(item.title).toBeUndefined();
+    });
+
+    it('preserves key, capo, tempo, durationSeconds, and converts Dropbox links on catalog song url, inline playLink, and leadSheetUrl', () => {
+      const catalogResolved = resolveSetlistItem({
+        _id: 'item-cat',
+        order: 1,
+        key: 'G',
+        capo: '2',
+        tempo: '120',
+        durationSeconds: 215,
+        leadSheetUrl: 'https://www.dropbox.com/scl/fi/sheet1/lead.pdf?rlkey=s1&dl=1',
+        songId: {
+          _id: 'song-cat',
+          title: 'Catalog Song',
+          artist: 'Josh & Maria',
+          url: 'https://dl.dropboxusercontent.com/scl/fi/abc/take1.mp3?rlkey=k&dl=1',
+        },
+      });
+      expect(catalogResolved).toEqual({
+        _id: 'item-cat',
+        order: 1,
+        songId: 'song-cat',
+        notes: undefined,
+        title: 'Catalog Song',
+        artist: 'Josh & Maria',
+        playLink: 'https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=0',
+        key: 'G',
+        capo: '2',
+        tempo: '120',
+        durationSeconds: 215,
+        leadSheetUrl: 'https://www.dropbox.com/scl/fi/sheet1/lead.pdf?rlkey=s1&dl=0',
+      });
+
+      const inlineResolved = resolveSetlistItem({
+        _id: 'item-inline',
+        order: 2,
+        title: 'Inline Song',
+        artist: 'Guest Artist',
+        playLink: 'https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=1',
+        key: 'Am',
+        capo: '3',
+        tempo: '98',
+        durationSeconds: 180,
+        leadSheetUrl: 'https://dl.dropboxusercontent.com/scl/fi/sheet2/lead.docx?rlkey=s2&dl=1',
+      });
+      expect(inlineResolved).toEqual({
+        _id: 'item-inline',
+        order: 2,
+        songId: undefined,
+        notes: undefined,
+        title: 'Inline Song',
+        artist: 'Guest Artist',
+        playLink: 'https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=0',
+        key: 'Am',
+        capo: '3',
+        tempo: '98',
+        durationSeconds: 180,
+        leadSheetUrl: 'https://www.dropbox.com/scl/fi/sheet2/lead.docx?rlkey=s2&dl=0',
+      });
     });
   });
 

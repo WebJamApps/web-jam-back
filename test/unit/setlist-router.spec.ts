@@ -193,6 +193,79 @@ describe('The Setlist API', () => {
       const list = await request(app).get('/setlist').set({ origin: allowedUrl });
       expect(list.status).toBe(200);
       const found = (list.body as Array<{ _id: string }>).find((s) => s._id === created._id.toString());
+      expect(found).toBeDefined();
+    });
+
+    it('persists key, capo, tempo, durationSeconds, and leadSheetUrl across save and load and serves player-form Dropbox links without rewriting stored links', async () => {
+      const saveRes = await request(app)
+        .post('/setlist')
+        .set({ origin: allowedUrl })
+        .set('Authorization', auth())
+        .send({
+          name: 'Full Builder Fields Set',
+          items: [
+            {
+              order: 1,
+              songId: song._id,
+              key: 'G',
+              capo: '2',
+              tempo: '116',
+              durationSeconds: 210,
+              notes: 'start on acoustic',
+              leadSheetUrl: 'https://www.dropbox.com/scl/fi/sheet1/song1.pdf?rlkey=rk1&dl=1',
+            },
+            {
+              order: 2,
+              title: 'Custom Cover',
+              artist: 'Custom Artist',
+              key: 'D',
+              capo: '4',
+              tempo: '92',
+              durationSeconds: 195,
+              playLink: 'https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=1',
+              leadSheetUrl: 'https://dl.dropboxusercontent.com/scl/fi/sheet2/song2.docx?rlkey=rk2&dl=1',
+            },
+          ],
+        });
+      expect(saveRes.status).toBe(201);
+      const setlistId = saveRes.body._id as string;
+
+      // Load via GET /setlist/:id — all five fields survive and links are converted to player form
+      const loadRes = await request(app).get(`/setlist/${setlistId}`).set({ origin: allowedUrl });
+      expect(loadRes.status).toBe(200);
+      expect(loadRes.body.items).toHaveLength(2);
+      expect(loadRes.body.items[0]).toMatchObject({
+        order: 1,
+        songId: song._id.toString(),
+        title: 'Setlist Ref Song',
+        artist: 'The Reference Band',
+        key: 'G',
+        capo: '2',
+        tempo: '116',
+        durationSeconds: 210,
+        notes: 'start on acoustic',
+        playLink: 'https://www.dropbox.com/s/abc123/song.mp3?rlkey=xyz789&dl=0',
+        leadSheetUrl: 'https://www.dropbox.com/scl/fi/sheet1/song1.pdf?rlkey=rk1&dl=0',
+      });
+      expect(loadRes.body.items[1]).toMatchObject({
+        order: 2,
+        title: 'Custom Cover',
+        artist: 'Custom Artist',
+        key: 'D',
+        capo: '4',
+        tempo: '92',
+        durationSeconds: 195,
+        playLink: 'https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=0',
+        leadSheetUrl: 'https://www.dropbox.com/scl/fi/sheet2/song2.docx?rlkey=rk2&dl=0',
+      });
+
+      // Stored links in MongoDB remain untouched (conversion is read-time only)
+      const rawDoc = await SetlistModel.Schema.findById(setlistId).lean().exec() as unknown as {
+        items: Array<{ playLink?: string; leadSheetUrl?: string }>;
+      };
+      expect(rawDoc.items[0].leadSheetUrl).toBe('https://www.dropbox.com/scl/fi/sheet1/song1.pdf?rlkey=rk1&dl=1');
+      expect(rawDoc.items[1].playLink).toBe('https://www.dropbox.com/scl/fi/abc/take1.mp3?rlkey=k&dl=1');
+      expect(rawDoc.items[1].leadSheetUrl).toBe('https://dl.dropboxusercontent.com/scl/fi/sheet2/song2.docx?rlkey=rk2&dl=1');
     });
   });
 
