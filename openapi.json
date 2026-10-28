@@ -843,6 +843,21 @@
           },
           "notes": {
             "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "capo": {
+            "type": "string"
+          },
+          "tempo": {
+            "type": "string"
+          },
+          "durationSeconds": {
+            "type": "number"
+          },
+          "leadSheetUrl": {
+            "type": "string"
           }
         }
       },

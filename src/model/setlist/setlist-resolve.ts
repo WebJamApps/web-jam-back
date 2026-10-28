@@ -16,7 +16,7 @@ export function toSetlistPlayerLink(url?: string): string | undefined {
   } catch {
     return url;
   }
-  if (parsed.hostname === 'dl.dropboxusercontent.com') {
+  if (parsed.hostname === 'dl.dropboxusercontent.com' || parsed.hostname === 'www.dropbox.com') {
     parsed.hostname = 'www.dropbox.com';
     if (parsed.searchParams.has('dl')) parsed.searchParams.set('dl', '0');
     return parsed.toString();
@@ -44,6 +44,11 @@ export interface SetlistItemLean {
   artist?: string;
   playLink?: string;
   notes?: string;
+  key?: string;
+  capo?: string;
+  tempo?: string;
+  durationSeconds?: number;
+  leadSheetUrl?: string;
   [key: string]: unknown;
 }
 
@@ -55,6 +60,11 @@ export interface ResolvedSetlistItem {
   title?: string;
   artist?: string;
   playLink?: string;
+  key?: string;
+  capo?: string;
+  tempo?: string;
+  durationSeconds?: number;
+  leadSheetUrl?: string;
 }
 
 // A populate('items.songId') result is a Song object when the reference
@@ -74,7 +84,12 @@ export function resolveSetlistItem(item: SetlistItemLean): ResolvedSetlistItem {
     notes: item.notes,
     title: song ? song.title : item.title,
     artist: song ? song.artist : item.artist,
-    playLink: song ? toSetlistPlayerLink(song.url) : item.playLink,
+    playLink: toSetlistPlayerLink(song ? song.url : item.playLink),
+    key: item.key,
+    capo: item.capo,
+    tempo: item.tempo,
+    durationSeconds: item.durationSeconds,
+    leadSheetUrl: toSetlistPlayerLink(item.leadSheetUrl),
   };
 }
 
