@@ -7,8 +7,9 @@ import ArtistController from '../../lib/artist-controller.js';
 import gigModel from './gig-facade.js';
 import { Icontroller } from '../../lib/routeUtils.js';
 import userModel from '../user/user-facade.js';
+import { getInstagramKey } from '../../lib/instagram-key.js';
 import { htmlCaptionToText } from '#src/lib/caption-text.js';
-import { publishToInstagram, publishToFacebookPage, isMetaFullyUnconfigured } from '#src/lib/meta-publish.js';
+import { publishToInstagram, type InstagramTag } from '#src/lib/meta-publish.js';
 
 // Role fallback for human admins who authorize by role (no privileges array).
 // Mirrors TemplateController/VenueController/PromoController (#819/#822).
@@ -24,7 +25,8 @@ type AuthzResult = AuthzError | null;
 
 interface AnnounceBody {
   caption?: string;
-  imageUrl?: string;
+  imageUrl?: unknown;
+  userTags?: unknown;
 }
 
 interface GigDoc {
@@ -100,24 +102,31 @@ class GigController extends ArtistController {
     return res.sendFile(assetPath);
   }
 
-  // POST /gig/:id/announce (#962) — publish an approved caption + image to
-  // Instagram and the Web Jam LLC Facebook Page. Body: { caption (TinyMCE
-  // HTML, required), imageUrl (optional) }. One leg failing never blocks the
-  // other (see meta-publish.ts's never-throws contract); on any leg success
-  // the gig's announcedAt is stamped/updated.
+  // Publish the approved caption and tags to the Josh Sherman Instagram.
   async announce(req: AuthIdRequest, res: Response): Promise<unknown> {
     const guardErr = await this.authorize(req, GIG_ANNOUNCE_CAPS);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Find id is invalid' });
 
     const body = (req.body || {}) as AnnounceBody;
-    if (!body.caption || !body.caption.trim()) return res.status(400).json({ message: 'caption is required' });
+    if (typeof body.caption !== 'string' || !body.caption.trim()) return res.status(400).json({ message: 'caption is required' });
 
-    if (isMetaFullyUnconfigured()) {
-      return res.status(500).json({
-        message: 'Meta announce is not configured: set META_IG_USER_ID, META_IG_ACCESS_TOKEN, META_FB_PAGE_ID, META_FB_PAGE_ACCESS_TOKEN',
-      });
+    const usernames = body.userTags ?? [];
+    if (!Array.isArray(usernames) || usernames.length > 2
+      || usernames.some((name) => typeof name !== 'string' || (name !== '' && !/^[a-zA-Z0-9._]{1,30}$/.test(name)))) {
+      return res.status(400).json({ message: 'userTags must contain at most two Instagram usernames without @' });
     }
+    if (body.imageUrl !== undefined && typeof body.imageUrl !== 'string') {
+      return res.status(400).json({ message: 'imageUrl must be a string' });
+    }
+    const tags: InstagramTag[] = usernames.flatMap((username: string, index: number) => (
+      username ? [{ username, x: index === 0 ? 0.25 : 0.75, y: 0.85 }] : []
+    ));
+    let key: Awaited<ReturnType<typeof getInstagramKey>>;
+    try { key = await getInstagramKey(); } catch {
+      return res.status(500).json({ message: 'Instagram key could not be read' });
+    }
+    if (!key) return res.status(500).json({ message: 'Instagram announce is not configured' });
 
     let gig: GigDoc | null;
     try { gig = await this.model.findById(req.params.id) as unknown as GigDoc | null; } catch (e) {
@@ -126,19 +135,20 @@ class GigController extends ArtistController {
     if (!gig) return res.status(400).json({ message: 'nothing found with id provided' });
 
     const imageUrl = body.imageUrl || gig.promoImageUrl || `${selfBaseUrl(req)}/gig/promo-default.jpg`;
+    try {
+      await this.model.findByIdAndUpdate(req.params.id, { announceImageUrl: imageUrl });
+    } catch {
+      return res.status(500).json({ message: 'Announce image could not be saved' });
+    }
     const captionText = htmlCaptionToText(body.caption);
-
-    const [instagram, facebook] = await Promise.all([
-      publishToInstagram(captionText, imageUrl),
-      publishToFacebookPage(captionText, imageUrl),
-    ]);
-
-    if (instagram.ok || facebook.ok) {
-      // Stamping failure shouldn't mask the publish result the caller cares about.
+    const publicImageUrl = `${selfBaseUrl(req)}/gig/${req.params.id}/announce-image.jpg`;
+    const instagram = await publishToInstagram(captionText, publicImageUrl, tags, key);
+    if (instagram.ok) {
+      // A stamp failure must not invite a duplicate post by hiding publish success.
       try { await this.model.findByIdAndUpdate(req.params.id, { announcedAt: new Date() }); } catch { /* ignore */ }
     }
 
-    return res.status(200).json({ instagram, facebook });
+    return res.status(200).json({ instagram });
   }
 }
 

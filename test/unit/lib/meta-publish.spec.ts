@@ -1,172 +1,43 @@
-// Unit tests for the gig-announce Meta Graph API clients (#962). Every test
-// mocks global.fetch — NEVER a real network call to Meta, per the repo's hard
-// safety rule for this feature.
-import {
-  publishToInstagram, publishToFacebookPage, isMetaFullyUnconfigured,
-} from '#src/lib/meta-publish.js';
-
-const ENV_KEYS = ['META_IG_USER_ID', 'META_IG_ACCESS_TOKEN', 'META_FB_PAGE_ID', 'META_FB_PAGE_ACCESS_TOKEN'] as const;
-
-describe('meta-publish (#962)', () => {
-  let original: Record<string, string | undefined>;
-
-  beforeEach(() => {
-    original = {};
-    for (const k of ENV_KEYS) { original[k] = process.env[k]; delete process.env[k]; }
+import { publishToInstagram } from '#src/lib/meta-publish.js';
+const key = { userId: 'account', accessToken: 'fixture-key', issuedAt: new Date() };
+const tags = [{ username: 'chemmariasherman', x: 0.25, y: 0.85 }, { username: 'venue', x: 0.75, y: 0.85 }];
+describe('Instagram publishing', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('creates and publishes a v25.0 container with both tag positions', async () => {
+    const http = vi.spyOn(global, 'fetch').mockResolvedValueOnce(Response.json({ id: 'container' }))
+      .mockResolvedValueOnce(Response.json({ id: 'post' }));
+    expect(await publishToInstagram('Caption', 'https://example.com/image.jpg', tags, key)).toEqual({ ok: true, id: 'post' });
+    expect(http.mock.calls.map(([url]) => url)).toEqual([
+      'https://graph.instagram.com/v25.0/account/media', 'https://graph.instagram.com/v25.0/account/media_publish',
+    ]);
+    const form = new URLSearchParams(http.mock.calls[0][1]?.body as string);
+    expect(form.get('image_url')).toBe('https://example.com/image.jpg');
+    expect(form.get('caption')).toBe('Caption');
+    expect(JSON.parse(form.get('user_tags')!)).toEqual(tags);
+    expect(form.get('access_token')).toBe(key.accessToken);
+    expect(new URLSearchParams(http.mock.calls[1][1]?.body as string).get('creation_id')).toBe('container');
   });
-
-  afterEach(() => {
-    for (const k of ENV_KEYS) {
-      if (original[k] === undefined) delete process.env[k];
-      else process.env[k] = original[k];
-    }
-    vi.restoreAllMocks();
+  it.each([
+    [{ error: { message: 'tag refused' } }, 'tag refused'],
+    [{}, 'Instagram media container creation failed'],
+  ])('refuses a failed container', async (response, error) => {
+    const http = vi.spyOn(global, 'fetch').mockResolvedValue(Response.json(response));
+    expect(await publishToInstagram('Caption', 'https://example.com/image.jpg', [], key)).toEqual({ ok: false, error });
+    expect(http).toHaveBeenCalledTimes(1);
   });
-
-  describe('isMetaFullyUnconfigured', () => {
-    it('is true when no env var is set', () => {
-      expect(isMetaFullyUnconfigured()).toBe(true);
-    });
-
-    it('is false when only the Instagram pair is set', () => {
-      process.env.META_IG_USER_ID = 'ig-user';
-      process.env.META_IG_ACCESS_TOKEN = 'ig-token';
-      expect(isMetaFullyUnconfigured()).toBe(false);
-    });
-
-    it('is false when only the Facebook pair is set', () => {
-      process.env.META_FB_PAGE_ID = 'page-id';
-      process.env.META_FB_PAGE_ACCESS_TOKEN = 'page-token';
-      expect(isMetaFullyUnconfigured()).toBe(false);
-    });
+  it.each([
+    [{ error: { message: 'expired key' } }, 'expired key'],
+    [{}, 'Instagram publish failed'],
+  ])('passes through a publish refusal', async (response, error) => {
+    vi.spyOn(global, 'fetch').mockResolvedValueOnce(Response.json({ id: 'container' })).mockResolvedValueOnce(Response.json(response));
+    expect(await publishToInstagram('Caption', 'https://example.com/image.jpg', [], key)).toEqual({ ok: false, error });
   });
-
-  describe('publishToInstagram', () => {
-    it('errors clearly when not configured, without calling fetch', async () => {
-      const fetchSpy = vi.spyOn(global, 'fetch');
-      const result = await publishToInstagram('caption', 'https://example.com/img.jpg');
-      expect(result).toEqual({ ok: false, error: expect.stringContaining('META_IG_USER_ID') });
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
-
-    it('creates a media container then publishes it (two calls)', async () => {
-      process.env.META_IG_USER_ID = 'ig-user';
-      process.env.META_IG_ACCESS_TOKEN = 'ig-token';
-      const fetchSpy = vi.spyOn(global, 'fetch')
-        .mockResolvedValueOnce({ json: () => Promise.resolve({ id: 'container-1' }) } as Response)
-        .mockResolvedValueOnce({ json: () => Promise.resolve({ id: 'media-1' }) } as Response);
-
-      const result = await publishToInstagram('Great show tonight!', 'https://example.com/img.jpg');
-
-      expect(result).toEqual({ ok: true, id: 'media-1' });
-      expect(fetchSpy).toHaveBeenCalledTimes(2);
-      const firstUrl = fetchSpy.mock.calls[0][0] as string;
-      expect(firstUrl).toContain('/ig-user/media');
-      const secondUrl = fetchSpy.mock.calls[1][0] as string;
-      expect(secondUrl).toContain('/ig-user/media_publish');
-    });
-
-    it('surfaces a Graph error on container creation without attempting publish', async () => {
-      process.env.META_IG_USER_ID = 'ig-user';
-      process.env.META_IG_ACCESS_TOKEN = 'ig-token';
-      const fetchSpy = vi.spyOn(global, 'fetch')
-        .mockResolvedValueOnce({ json: () => Promise.resolve({ error: { message: 'bad image url' } }) } as Response);
-
-      const result = await publishToInstagram('caption', 'not-a-real-url');
-
-      expect(result).toEqual({ ok: false, error: 'bad image url' });
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('surfaces a Graph error on the publish step', async () => {
-      process.env.META_IG_USER_ID = 'ig-user';
-      process.env.META_IG_ACCESS_TOKEN = 'ig-token';
-      vi.spyOn(global, 'fetch')
-        .mockResolvedValueOnce({ json: () => Promise.resolve({ id: 'container-1' }) } as Response)
-        .mockResolvedValueOnce({ json: () => Promise.resolve({ error: { message: 'token expired' } }) } as Response);
-
-      const result = await publishToInstagram('caption', 'https://example.com/img.jpg');
-      expect(result).toEqual({ ok: false, error: 'token expired' });
-    });
-
-    it('catches a network exception as a leg failure, never throwing', async () => {
-      process.env.META_IG_USER_ID = 'ig-user';
-      process.env.META_IG_ACCESS_TOKEN = 'ig-token';
-      vi.spyOn(global, 'fetch').mockRejectedValue(new Error('network down'));
-
-      const result = await publishToInstagram('caption', 'https://example.com/img.jpg');
-      expect(result).toEqual({ ok: false, error: 'network down' });
-    });
-
-    it('falls back to a generic message when the container response has neither error nor id', async () => {
-      process.env.META_IG_USER_ID = 'ig-user';
-      process.env.META_IG_ACCESS_TOKEN = 'ig-token';
-      vi.spyOn(global, 'fetch').mockResolvedValueOnce({ json: () => Promise.resolve({}) } as Response);
-
-      const result = await publishToInstagram('caption', 'https://example.com/img.jpg');
-      expect(result).toEqual({ ok: false, error: 'Instagram media container creation failed' });
-    });
-
-    it('falls back to a generic message when the publish response has neither error nor id', async () => {
-      process.env.META_IG_USER_ID = 'ig-user';
-      process.env.META_IG_ACCESS_TOKEN = 'ig-token';
-      vi.spyOn(global, 'fetch')
-        .mockResolvedValueOnce({ json: () => Promise.resolve({ id: 'container-1' }) } as Response)
-        .mockResolvedValueOnce({ json: () => Promise.resolve({}) } as Response);
-
-      const result = await publishToInstagram('caption', 'https://example.com/img.jpg');
-      expect(result).toEqual({ ok: false, error: 'Instagram publish failed' });
-    });
+  it('refuses unsuccessful HTTP responses even when they contain an id', async () => {
+    vi.spyOn(global, 'fetch').mockResolvedValue(Response.json({ id: 'bad' }, { status: 500 }));
+    expect((await publishToInstagram('Caption', 'https://example.com/image.jpg', [], key)).error).toBe('Instagram request failed');
   });
-
-  describe('publishToFacebookPage', () => {
-    it('errors clearly when not configured, without calling fetch', async () => {
-      const fetchSpy = vi.spyOn(global, 'fetch');
-      const result = await publishToFacebookPage('caption', 'https://example.com/img.jpg');
-      expect(result).toEqual({ ok: false, error: expect.stringContaining('META_FB_PAGE_ID') });
-      expect(fetchSpy).not.toHaveBeenCalled();
-    });
-
-    it('posts the image + caption to the page photos edge', async () => {
-      process.env.META_FB_PAGE_ID = 'page-id';
-      process.env.META_FB_PAGE_ACCESS_TOKEN = 'page-token';
-      const fetchSpy = vi.spyOn(global, 'fetch')
-        .mockResolvedValueOnce({ json: () => Promise.resolve({ id: 'photo-1' }) } as Response);
-
-      const result = await publishToFacebookPage('Great show tonight!', 'https://example.com/img.jpg');
-
-      expect(result).toEqual({ ok: true, id: 'photo-1' });
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-      const url = fetchSpy.mock.calls[0][0] as string;
-      expect(url).toContain('/page-id/photos');
-    });
-
-    it('surfaces a Graph error', async () => {
-      process.env.META_FB_PAGE_ID = 'page-id';
-      process.env.META_FB_PAGE_ACCESS_TOKEN = 'page-token';
-      vi.spyOn(global, 'fetch')
-        .mockResolvedValueOnce({ json: () => Promise.resolve({ error: { message: 'permission denied' } }) } as Response);
-
-      const result = await publishToFacebookPage('caption', 'https://example.com/img.jpg');
-      expect(result).toEqual({ ok: false, error: 'permission denied' });
-    });
-
-    it('catches a network exception as a leg failure, never throwing', async () => {
-      process.env.META_FB_PAGE_ID = 'page-id';
-      process.env.META_FB_PAGE_ACCESS_TOKEN = 'page-token';
-      vi.spyOn(global, 'fetch').mockRejectedValue(new Error('network down'));
-
-      const result = await publishToFacebookPage('caption', 'https://example.com/img.jpg');
-      expect(result).toEqual({ ok: false, error: 'network down' });
-    });
-
-    it('falls back to a generic message when the response has neither error nor id', async () => {
-      process.env.META_FB_PAGE_ID = 'page-id';
-      process.env.META_FB_PAGE_ACCESS_TOKEN = 'page-token';
-      vi.spyOn(global, 'fetch').mockResolvedValueOnce({ json: () => Promise.resolve({}) } as Response);
-
-      const result = await publishToFacebookPage('caption', 'https://example.com/img.jpg');
-      expect(result).toEqual({ ok: false, error: 'Facebook post failed' });
-    });
+  it('does not expose request details from network exceptions', async () => {
+    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('private request details'));
+    expect((await publishToInstagram('Caption', 'https://example.com/image.jpg', [], key)).error).toBe('Instagram request could not be completed');
   });
 });

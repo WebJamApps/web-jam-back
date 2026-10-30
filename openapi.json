@@ -321,8 +321,8 @@
           "gigs"
         ],
         "operationId": "announceGig",
-        "summary": "Announce a gig on Instagram and the Web Jam LLC Facebook Page",
-        "description": "Publishes the caption and image to both. One failing never stops the other. When either succeeds the gig's announcedAt is set to now. The image is the body's imageUrl, else the gig's promoImageUrl, else /gig/promo-default.jpg.",
+        "summary": "Announce a gig on the Josh Sherman Instagram",
+        "description": "Converts the caption to plain text, saves the chosen image source as announceImageUrl, and publishes the public /gig/{id}/announce-image.jpg with tags through Instagram v25.0. Success sets announcedAt. The image source is imageUrl, else promoImageUrl, else /gig/promo-default.jpg. Requires the separately provided public JPEG route.",
         "security": [
           {
             "bearerAuth": []
@@ -348,6 +348,16 @@
                   "imageUrl": {
                     "type": "string",
                     "format": "uri"
+                  },
+                  "userTags": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "description": "Maria username first (x=0.25), venue username second (x=0.75); y=0.85. Empty strings clear a tag while preserving positions. Omitted means no tags.",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 30,
+                      "pattern": "^[a-zA-Z0-9._]*$"
+                    }
                   }
                 }
               }
@@ -356,16 +366,13 @@
         },
         "responses": {
           "200": {
-            "description": "The result of each publish.",
+            "description": "The Instagram publish result, including Instagram error text on refusal.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "instagram": {
-                      "$ref": "#/components/schemas/LegResult"
-                    },
-                    "facebook": {
                       "$ref": "#/components/schemas/LegResult"
                     }
                   }
@@ -374,7 +381,7 @@
             }
           },
           "400": {
-            "description": "\"Find id is invalid\", \"caption is required\" or \"nothing found with id provided\".",
+            "description": "Invalid gig id, caption, imageUrl or userTags, or gig not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -390,7 +397,7 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "500": {
-            "description": "Announcing is not configured on the server, or the gig could not be read.",
+            "description": "Instagram announce is not configured, or its key or gig could not be read, or the image source could not be saved.",
             "content": {
               "application/json": {
                 "schema": {
@@ -994,6 +1001,11 @@
               "announcedAt": {
                 "type": "string",
                 "format": "date-time"
+              },
+              "announceImageUrl": {
+                "type": "string",
+                "format": "uri",
+                "description": "The chosen source image saved for the public announce JPEG route."
               },
               "created_at": {
                 "type": "string",
