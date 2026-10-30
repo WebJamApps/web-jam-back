@@ -23,6 +23,10 @@
     {
       "name": "setlists",
       "description": "Setlist records and ordered song items."
+    },
+    {
+      "name": "venues",
+      "description": "Venue records and booking details."
     }
   ],
   "security": [],
@@ -632,6 +636,192 @@
           }
         }
       }
+    },
+    "/venue": {
+      "post": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "createVenue",
+        "summary": "Create or update a matching venue",
+        "description": "Matches an existing venue by name, city and normalized street address, otherwise creates a new record. instagramUsername is checked before writes: only letters, numbers, periods and underscores, at most 30 characters, without @. Empty string clears it; omission leaves an existing username unchanged. Operator and dotted updates targeting instagramUsername are refused.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "venue:create"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VenueInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Venue"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The created venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Venue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid venue fields, including instagramUsername; nothing is written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/venue/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "updateVenue",
+        "summary": "Update one venue",
+        "description": "Merges only the submitted fields into the selected venue. instagramUsername is checked before writes: only letters, numbers, periods and underscores, at most 30 characters, without @. Empty string clears it; omission leaves an existing username unchanged. Operator and dotted updates targeting instagramUsername are refused.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "venue:edit"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VenueUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Venue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid venue fields, including instagramUsername; nothing is written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "getVenue",
+        "summary": "Read one venue",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "venue:create",
+          "venue:edit",
+          "venue:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "The venue, including instagramUsername when set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Venue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unknown venue id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -932,6 +1122,77 @@
                 "items": {
                   "$ref": "#/components/schemas/SetlistItem"
                 }
+              }
+            }
+          }
+        ]
+      },
+      "VenueUpdateInput": {
+        "type": "object",
+        "description": "Partial venue fields; other existing venue fields are also accepted.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "zipCode": {
+            "type": "string"
+          },
+          "usState": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "instagramUsername": {
+            "type": "string",
+            "maxLength": 30,
+            "pattern": "^[A-Za-z0-9._]{0,30}(?![\\s\\S])",
+            "description": "Optional Instagram username without @. Empty string clears the username; omission preserves the stored value on updates.",
+            "examples": [
+              "venue.name_1",
+              ""
+            ]
+          }
+        }
+      },
+      "VenueInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/VenueUpdateInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "address",
+              "zipCode"
+            ]
+          }
+        ]
+      },
+      "Venue": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/VenueUpdateInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "_id": {
+                "type": "string",
+                "readOnly": true
               }
             }
           }
