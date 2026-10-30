@@ -96,6 +96,7 @@ interface VenueBody {
   secondaryEmail?: string;
   phone?: string;
   website?: string;
+  instagramUsername?: string;
   status?: string;
   outreachEligible?: boolean;
   // #1059 — payAmount replaces payTier; audienceAttention/personalFavorite
@@ -318,6 +319,10 @@ function applyFamilyNearbyOnWrite(body: VenueBody, source: LocatableVenue, inten
 }
 
 function validateFormatFields(body: VenueBody): string {
+  if (hasAlternateFieldUpdate(body, 'instagramUsername') || (body.instagramUsername !== undefined
+    && (typeof body.instagramUsername !== 'string' || body.instagramUsername.length > 30 || /[^A-Za-z0-9._]/.test(body.instagramUsername)))) {
+    return 'instagramUsername must contain only letters, numbers, periods and underscores, up to 30 characters, without @';
+  }
   if (body.email !== undefined && body.email !== '' && !isValidEmail(body.email)) {
     return 'A valid email is required';
   }
@@ -386,24 +391,24 @@ function isCoordinateWithin(value: unknown, limit: number): value is number {
   return typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= limit;
 }
 
-function isLocationField(field: unknown): boolean {
+function isGuardedField(field: unknown, name: string): boolean {
   if (typeof field !== 'string') return false;
   const trimmed = field.trim();
-  return trimmed === 'location' || trimmed.startsWith('location.');
+  return trimmed === name || trimmed.startsWith(`${name}.`);
 }
 
-function targetsLocation(key: string, val: unknown): boolean {
-  if (key.startsWith('location.')) return true;
+function targetsField(key: string, val: unknown, name: string): boolean {
+  if (key.startsWith(`${name}.`)) return true;
   if (key.startsWith('$') && val && typeof val === 'object') {
     if (Array.isArray(val)) {
-      return val.some((item) => isLocationField(item) || (item && typeof item === 'object' && targetsLocation('$', item)));
+      return val.some((item) => isGuardedField(item, name) || (item && typeof item === 'object' && targetsField('$', item, name)));
     }
     const isRename = key.toLowerCase().trim() === '$rename';
     for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>)) {
       if (
-        isLocationField(subKey) ||
-        (isRename && isLocationField(subVal)) ||
-        targetsLocation(subKey, subVal)
+        isGuardedField(subKey, name) ||
+        (isRename && isGuardedField(subVal, name)) ||
+        targetsField(subKey, subVal, name)
       ) {
         return true;
       }
@@ -412,15 +417,15 @@ function targetsLocation(key: string, val: unknown): boolean {
   return false;
 }
 
-function hasOperatorOrDottedLocation(body: Record<string, unknown>): boolean {
+function hasAlternateFieldUpdate(body: object, name: string): boolean {
   for (const [key, val] of Object.entries(body)) {
-    if (targetsLocation(key, val)) return true;
+    if (targetsField(key, val, name)) return true;
   }
   return false;
 }
 
 function applyLocation(body: VenueBody): string {
-  if (hasOperatorOrDottedLocation(body as unknown as Record<string, unknown>)) {
+  if (hasAlternateFieldUpdate(body, 'location')) {
     return 'location must be a GeoJSON Point of the form { type: "Point", coordinates: [longitude, latitude] }';
   }
   if (body.location === undefined) return '';

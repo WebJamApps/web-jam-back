@@ -37,6 +37,69 @@ describe('Venue Controller', () => {
     (venueModel as any).findOne = vi.fn(() => Promise.resolve(null));
   });
 
+  describe('instagramUsername writes', () => {
+    const id = '507f1f77bcf86cd799439011';
+    const base = { name: 'The Spot', address: '1 Main St', zipCode: '24153' };
+    const invalidValues = ['@venue', 'venue name', 'a'.repeat(31), 'café', 'venue\n', null, 123, {}, []];
+
+    for (const method of ['createVenue', 'updateVenue'] as const) {
+      it.each(invalidValues)(`${method} refuses invalid username %j without writing`, async (instagramUsername) => {
+        const create = vi.fn();
+        const update = vi.fn();
+        c.model.create = create;
+        c.model.findByIdAndUpdate = update;
+        await c[method]({ user: 'a', params: { id }, body: { ...base, instagramUsername } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('instagramUsername');
+        expect(create).not.toHaveBeenCalled();
+        expect(update).not.toHaveBeenCalled();
+      });
+
+      it.each(['Venue.name_123', 'a'.repeat(30), 'a', ''])(`${method} stores valid username %j`, async (instagramUsername) => {
+        c.model.find = vi.fn().mockResolvedValue([]);
+        c.model.findById = vi.fn().mockResolvedValue(null);
+        const create = vi.fn((body: Record<string, unknown>) => Promise.resolve({ _id: id, ...body }));
+        const update = vi.fn((_id: string, body: Record<string, unknown>) => Promise.resolve({ _id, ...body }));
+        c.model.create = create;
+        c.model.findByIdAndUpdate = update;
+        await c[method]({ user: 'a', params: { id }, body: { ...base, instagramUsername } }, resStub);
+        expect(status).toBe(method === 'createVenue' ? 201 : 200);
+        expect(payload.instagramUsername).toBe(instagramUsername);
+        const written = method === 'createVenue' ? create.mock.calls[0][0] : update.mock.calls[0][1];
+        expect(written.instagramUsername).toBe(instagramUsername);
+      });
+
+      it.each([
+        { $set: { instagramUsername: '@bad' } },
+        { $unset: { instagramUsername: '' } },
+        { $rename: { notes: 'instagramUsername' } },
+        { 'instagramUsername.nested': 'bad' },
+      ])(`${method} refuses alternate username update %j`, async (alternate) => {
+        const create = vi.fn();
+        const update = vi.fn();
+        c.model.create = create;
+        c.model.findByIdAndUpdate = update;
+        await c[method]({ user: 'a', params: { id }, body: { ...base, ...alternate } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('instagramUsername');
+        expect(create).not.toHaveBeenCalled();
+        expect(update).not.toHaveBeenCalled();
+      });
+    }
+
+    it.each(['createVenue', 'updateVenue'] as const)('%s preserves a stored username when omitted', async (method) => {
+      const existing = { _id: id, ...base, instagramUsername: 'stored.venue' };
+      c.model.find = vi.fn().mockResolvedValue([existing]);
+      c.model.findById = vi.fn().mockResolvedValue(existing);
+      const update = vi.fn((_id: string, body: Record<string, unknown>) => Promise.resolve({ ...existing, ...body }));
+      c.model.findByIdAndUpdate = update;
+      await c[method]({ user: 'a', params: { id }, body: { ...base } }, resStub);
+      expect(status).toBe(200);
+      expect(payload.instagramUsername).toBe('stored.venue');
+      expect(update.mock.calls[0][1]).not.toHaveProperty('instagramUsername');
+    });
+  });
+
   describe('authorize', () => {
     it('403s when the capability is missing', async () => {
       asAgent(['venue:edit']);
