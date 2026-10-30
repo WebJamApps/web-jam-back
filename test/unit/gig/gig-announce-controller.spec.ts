@@ -1,244 +1,124 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-// Unit tests for POST /gig/:id/announce and GET /gig/promo-default.jpg (#962).
-// The Meta Graph API clients are mocked at the module boundary — meta-publish
-// itself (mocked HTTP) is covered separately in test/unit/lib/meta-publish.spec.ts.
-// NEVER a real network/Meta call here, per the repo's hard safety rule.
-import mongoose from 'mongoose';
-import fs from 'fs';
+import type { Request, Response } from 'express';
+import fs from 'node:fs';
 import controller from '#src/model/gig/gig-controller.js';
 import userModel from '#src/model/user/user-facade.js';
-import * as metaPublish from '#src/lib/meta-publish.js';
-
-vi.mock('#src/lib/meta-publish.js', () => ({
-  publishToInstagram: vi.fn(),
-  publishToFacebookPage: vi.fn(),
-  isMetaFullyUnconfigured: vi.fn(() => false),
-}));
-
-const c = controller as any;
-const mp = metaPublish as any;
-
-describe('GigController — announce (#962)', () => {
-  let status = 0;
-  let payload: any;
-  const resStub: any = {
-    status: (s: number) => {
-      status = s;
-      return { json: (obj: any) => { payload = obj; return obj; } };
-    },
-  };
-
-  // Default: an admin identity holding the announce capability.
-  const asAgent = (privileges = ['gig:announce']) => {
-    (userModel as any).findById = vi.fn(() => Promise.resolve({ privileges }));
-  };
-
+import { getInstagramKey } from '#src/lib/instagram-key.js';
+import { publishToInstagram } from '#src/lib/meta-publish.js';
+vi.mock('#src/lib/instagram-key.js', () => ({ getInstagramKey: vi.fn() }));
+vi.mock('#src/lib/meta-publish.js', () => ({ publishToInstagram: vi.fn() }));
+const c = controller as unknown as {
+  model: { findById(id: string): Promise<unknown>; findByIdAndUpdate(id: string, changes: unknown): Promise<unknown> };
+  announce(req: Request, res: Response): Promise<unknown>;
+  getDefaultPromoImage(req: Request, res: Response): Promise<unknown>;
+};
+const id = '507f1f77bcf86cd799439011';
+const key = { userId: 'account', accessToken: 'fixture-key', issuedAt: new Date() };
+describe('Gig announce', () => {
+  let res: Response;
   beforeEach(() => {
-    status = 0;
-    payload = undefined;
-    asAgent();
-    mp.isMetaFullyUnconfigured.mockReturnValue(false);
-    mp.publishToInstagram.mockResolvedValue({ ok: true, id: 'ig-1' });
-    mp.publishToFacebookPage.mockResolvedValue({ ok: true, id: 'fb-1' });
+    res = { status: vi.fn().mockReturnThis(), json: vi.fn(), sendFile: vi.fn() } as unknown as Response;
+    vi.spyOn(userModel, 'findById').mockResolvedValue({ privileges: ['gig:announce'] });
+    vi.spyOn(c.model, 'findById').mockResolvedValue({ promoImageUrl: 'https://example.com/promo.png' });
+    vi.spyOn(c.model, 'findByIdAndUpdate').mockResolvedValue({});
+    vi.mocked(getInstagramKey).mockResolvedValue(key);
+    vi.mocked(publishToInstagram).mockResolvedValue({ ok: true, id: 'post' });
   });
-
-  describe('authorize', () => {
-    it('403s when the capability is missing', async () => {
-      asAgent(['unrelated:cap']);
-      const id = new mongoose.Types.ObjectId().toString();
-      await c.announce({
-        user: 'a', params: { id }, body: { caption: '<p>Hi</p>' },
-      }, resStub);
-      expect(status).toBe(403);
-      expect(payload.message).toContain('gig:announce');
-    });
-
-    it('401s when the user is not found', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.resolve(null));
-      const id = new mongoose.Types.ObjectId().toString();
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(401);
-    });
-
-    it('500s when the user lookup itself errors', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.reject(new Error('db down')));
-      const id = new mongoose.Types.ObjectId().toString();
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(500);
-    });
-
-    it('403s a privilege-less user whose role is not in the admin allow-list', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.resolve({ userType: 'user', privileges: [] }));
-      const id = new mongoose.Types.ObjectId().toString();
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(403);
-      expect(payload.message).toContain('not authorized for gig:announce');
-    });
-
-    it('allows a privilege-less admin via role fallback', async () => {
-      (userModel as any).findById = vi.fn(() => Promise.resolve({ userType: 'JaM-admin', privileges: [] }));
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve({ _id: id }));
-      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({ _id: id }));
-      await c.announce({
-        user: 'a', params: { id }, body: { caption: 'Hi' }, protocol: 'http', get: () => 'localhost',
-      }, resStub);
-      expect(status).toBe(200);
-    });
+  afterEach(() => vi.restoreAllMocks());
+  const announce = (body: unknown, gigId = id) => c.announce({
+    user: 'admin', params: { id: gigId }, body, protocol: 'http', get: () => 'localhost:7000',
+  } as unknown as Request, res);
+  it('saves the source before publishing the public JPEG with both tags', async () => {
+    await announce({ caption: '<p>Hi <a href="https://example.com">there</a></p>', imageUrl: 'https://example.com/custom.png',
+      userTags: ['chemmariasherman', 'venue.name'] });
+    expect(c.model.findByIdAndUpdate).toHaveBeenNthCalledWith(1, id, { announceImageUrl: 'https://example.com/custom.png' });
+    expect(publishToInstagram).toHaveBeenCalledWith('Hi https://example.com', `http://localhost:7000/gig/${id}/announce-image.jpg`, [
+      { username: 'chemmariasherman', x: 0.25, y: 0.85 }, { username: 'venue.name', x: 0.75, y: 0.85 },
+    ], key);
+    expect(c.model.findByIdAndUpdate).toHaveBeenNthCalledWith(2, id, { announcedAt: expect.any(Date) });
+    expect(res.json).toHaveBeenCalledWith({ instagram: { ok: true, id: 'post' } });
   });
-
-  describe('validation', () => {
-    it('rejects an invalid id', async () => {
-      await c.announce({ user: 'a', params: { id: 'nope' }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(400);
-      expect(payload.message).toContain('invalid');
-    });
-
-    it('rejects a missing caption', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      await c.announce({ user: 'a', params: { id }, body: {} }, resStub);
-      expect(status).toBe(400);
-      expect(payload.message).toContain('caption is required');
-    });
-
-    it('rejects a blank caption', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      await c.announce({ user: 'a', params: { id }, body: { caption: '   ' } }, resStub);
-      expect(status).toBe(400);
-    });
-
-    it('500s with a clear message when Meta is fully unconfigured', async () => {
-      mp.isMetaFullyUnconfigured.mockReturnValue(true);
-      const id = new mongoose.Types.ObjectId().toString();
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(500);
-      expect(payload.message).toContain('META_IG_USER_ID');
-      expect(payload.message).toContain('META_FB_PAGE_ACCESS_TOKEN');
-      expect(mp.publishToInstagram).not.toHaveBeenCalled();
-    });
-
-    it('500s when the gig lookup errors', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.reject(new Error('db down')));
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(500);
-    });
-
-    it('400s when the gig does not exist', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve(null));
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(400);
-    });
+  it('uses the gig source and preserves the venue position when Maria is cleared', async () => {
+    await announce({ caption: 'Hi', userTags: ['', 'venue'] });
+    expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(id, { announceImageUrl: 'https://example.com/promo.png' });
+    expect(publishToInstagram).toHaveBeenCalledWith('Hi', expect.any(String), [{ username: 'venue', x: 0.75, y: 0.85 }], key);
   });
-
-  describe('image fallback chain', () => {
-    const req = (id: string, body: any) => ({
-      user: 'a', params: { id }, body, protocol: 'http', get: (h: string) => (h === 'host' ? 'localhost:7000' : undefined),
-    });
-
-    it('prefers an explicit body.imageUrl', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, promoImageUrl: 'https://gig.example/promo.jpg' }));
-      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({}));
-      await c.announce(req(id, { caption: 'Hi', imageUrl: 'https://explicit.example/img.jpg' }), resStub);
-      expect(mp.publishToInstagram).toHaveBeenCalledWith(expect.any(String), 'https://explicit.example/img.jpg');
-      expect(mp.publishToFacebookPage).toHaveBeenCalledWith(expect.any(String), 'https://explicit.example/img.jpg');
-    });
-
-    it('falls back to the gig promoImageUrl when no imageUrl given', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, promoImageUrl: 'https://gig.example/promo.jpg' }));
-      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({}));
-      await c.announce(req(id, { caption: 'Hi' }), resStub);
-      expect(mp.publishToInstagram).toHaveBeenCalledWith(expect.any(String), 'https://gig.example/promo.jpg');
-    });
-
-    it('falls back to the default promo image URL when neither is set', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve({ _id: id }));
-      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({}));
-      await c.announce(req(id, { caption: 'Hi' }), resStub);
-      expect(mp.publishToInstagram).toHaveBeenCalledWith(expect.any(String), 'http://localhost:7000/gig/promo-default.jpg');
-    });
+  it('uses the default source and accepts omitted tags', async () => {
+    vi.mocked(c.model.findById).mockResolvedValue({});
+    await announce({ caption: 'Hi' });
+    expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(id, { announceImageUrl: 'http://localhost:7000/gig/promo-default.jpg' });
+    expect(publishToInstagram).toHaveBeenCalledWith('Hi', expect.any(String), [], key);
   });
-
-  describe('caption conversion', () => {
-    it('converts the TinyMCE HTML caption to plain text before publishing', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, promoImageUrl: 'https://gig.example/promo.jpg' }));
-      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({}));
-      await c.announce({
-        user: 'a', params: { id }, body: { caption: '<p>Big show <a href="https://x.example">tonight</a>!</p>' },
-      }, resStub);
-      expect(mp.publishToInstagram).toHaveBeenCalledWith('Big show https://x.example!', expect.any(String));
-      expect(mp.publishToFacebookPage).toHaveBeenCalledWith('Big show https://x.example!', expect.any(String));
-    });
+  it.each([
+    {}, { caption: 1 }, { caption: ' ' }, { caption: 'Hi', imageUrl: {} },
+    { caption: 'Hi', imageUrl: 'not-a-url' }, { caption: 'Hi', imageUrl: 'ftp://example.com/image.jpg' }, { caption: 'Hi', imageUrl: '' },
+    ...['@venue', 'bad name', 'a'.repeat(31), 1, null, {}].map((tag) => ({ caption: 'Hi', userTags: [tag] })),
+    { caption: 'Hi', userTags: 'venue' }, { caption: 'Hi', userTags: ['a', 'b', 'c'] },
+  ])('refuses malformed input without publishing: %j', async (body) => {
+    await announce(body);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(publishToInstagram).not.toHaveBeenCalled();
   });
-
-  describe('per-leg isolation + announcedAt stamping', () => {
-    it('stamps announcedAt when both legs succeed', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, promoImageUrl: 'https://gig.example/promo.jpg' }));
-      const upd = vi.fn(() => Promise.resolve({}));
-      c.model.findByIdAndUpdate = upd;
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(200);
-      expect(payload).toEqual({ instagram: { ok: true, id: 'ig-1' }, facebook: { ok: true, id: 'fb-1' } });
-      expect(upd).toHaveBeenCalledWith(id, { announcedAt: expect.any(Date) });
-    });
-
-    it('reports partial failure without failing the request, and still stamps on one success', async () => {
-      mp.publishToInstagram.mockResolvedValue({ ok: false, error: 'token expired' });
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, promoImageUrl: 'https://gig.example/promo.jpg' }));
-      const upd = vi.fn(() => Promise.resolve({}));
-      c.model.findByIdAndUpdate = upd;
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(200);
-      expect(payload.instagram).toEqual({ ok: false, error: 'token expired' });
-      expect(payload.facebook).toEqual({ ok: true, id: 'fb-1' });
-      expect(upd).toHaveBeenCalled();
-    });
-
-    it('does not stamp announcedAt when both legs fail', async () => {
-      mp.publishToInstagram.mockResolvedValue({ ok: false, error: 'down' });
-      mp.publishToFacebookPage.mockResolvedValue({ ok: false, error: 'down' });
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, promoImageUrl: 'https://gig.example/promo.jpg' }));
-      const upd = vi.fn(() => Promise.resolve({}));
-      c.model.findByIdAndUpdate = upd;
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(200);
-      expect(payload).toEqual({ instagram: { ok: false, error: 'down' }, facebook: { ok: false, error: 'down' } });
-      expect(upd).not.toHaveBeenCalled();
-    });
-
-    it('never lets a stamping failure mask the publish result', async () => {
-      const id = new mongoose.Types.ObjectId().toString();
-      c.model.findById = vi.fn(() => Promise.resolve({ _id: id, promoImageUrl: 'https://gig.example/promo.jpg' }));
-      c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('stamp write failed')));
-      await c.announce({ user: 'a', params: { id }, body: { caption: 'Hi' } }, resStub);
-      expect(status).toBe(200);
-      expect(payload.instagram.ok).toBe(true);
-      expect(payload.facebook.ok).toBe(true);
-    });
+  it('rejects invalid ids', async () => {
+    await announce({ caption: 'Hi' }, 'invalid');
+    expect(res.status).toHaveBeenCalledWith(400);
   });
-
-  describe('getDefaultPromoImage', () => {
-    it('serves the bundled asset via sendFile', async () => {
-      vi.spyOn(fs, 'existsSync').mockReturnValue(true);
-      const sendFile = vi.fn();
-      await c.getDefaultPromoImage({}, { ...resStub, sendFile });
-      expect(sendFile).toHaveBeenCalled();
-      vi.restoreAllMocks();
-    });
-
-    it('404s when the asset is missing on disk', async () => {
-      vi.spyOn(fs, 'existsSync').mockReturnValue(false);
-      await c.getDefaultPromoImage({}, resStub);
-      expect(status).toBe(404);
-      vi.restoreAllMocks();
-    });
+  it.each([[null, 401], [{ privileges: ['other'] }, 403], [{ userType: 'user' }, 403]])('refuses unauthorized users', async (user, status) => {
+    vi.mocked(userModel.findById).mockResolvedValue(user);
+    await announce({ caption: 'Hi' });
+    expect(res.status).toHaveBeenCalledWith(status);
+    expect(publishToInstagram).not.toHaveBeenCalled();
+  });
+  it('allows the admin role fallback', async () => {
+    vi.mocked(userModel.findById).mockResolvedValue({ userType: 'JaM-admin' });
+    await announce({ caption: 'Hi' });
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+  it('reports an authorization lookup error', async () => {
+    vi.mocked(userModel.findById).mockRejectedValue(new Error('db unavailable'));
+    await announce({ caption: 'Hi' });
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+  it('reports absent configuration without publishing', async () => {
+    vi.mocked(getInstagramKey).mockResolvedValue(null);
+    await announce({ caption: 'Hi' });
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Instagram announce is not configured' });
+    expect(publishToInstagram).not.toHaveBeenCalled();
+  });
+  it('handles an unreadable key without publishing', async () => {
+    vi.mocked(getInstagramKey).mockRejectedValue(new Error('db unavailable'));
+    await announce({ caption: 'Hi' });
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(publishToInstagram).not.toHaveBeenCalled();
+  });
+  it.each([null, new Error('lookup failed')])('handles a missing or unreadable gig', async (result) => {
+    if (result instanceof Error) vi.mocked(c.model.findById).mockRejectedValue(result);
+    else vi.mocked(c.model.findById).mockResolvedValue(result);
+    await announce({ caption: 'Hi' });
+    expect(res.status).toHaveBeenCalledWith(result ? 500 : 400);
+    expect(publishToInstagram).not.toHaveBeenCalled();
+  });
+  it('does not publish when saving the source fails', async () => {
+    vi.mocked(c.model.findByIdAndUpdate).mockRejectedValue(new Error('db unavailable'));
+    await announce({ caption: 'Hi' });
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(publishToInstagram).not.toHaveBeenCalled();
+  });
+  it('passes through refusal without stamping announcedAt', async () => {
+    vi.mocked(publishToInstagram).mockResolvedValue({ ok: false, error: 'tag refused' });
+    await announce({ caption: 'Hi' });
+    expect(c.model.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+    expect(res.json).toHaveBeenCalledWith({ instagram: { ok: false, error: 'tag refused' } });
+  });
+  it('preserves success when the stamp fails', async () => {
+    vi.mocked(c.model.findByIdAndUpdate).mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('db unavailable'));
+    await announce({ caption: 'Hi' });
+    expect(res.json).toHaveBeenCalledWith({ instagram: { ok: true, id: 'post' } });
+  });
+  it.each([true, false])('serves the default photo or returns 404', async (exists) => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(exists);
+    await c.getDefaultPromoImage({} as Request, res);
+    if (exists) expect(res.sendFile).toHaveBeenCalled();
+    else expect(res.status).toHaveBeenCalledWith(404);
   });
 });
