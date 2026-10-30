@@ -57,6 +57,16 @@ function selfBaseUrl(req: Request): string {
   return `${proto}://${req.get('host') ?? ''}`;
 }
 
+function isValidHttpUrl(str: unknown): str is string {
+  if (typeof str !== 'string' || !str) return false;
+  try {
+    const url = new URL(str);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 // Resolve the bundled default promo image (Josh & Maria's template footer
 // photo, reused here as the announce-endpoint's image-of-last-resort) on
 // disk. Mirrors template-controller's/outreach-controller's
@@ -116,8 +126,8 @@ class GigController extends ArtistController {
       || usernames.some((name) => typeof name !== 'string' || (name !== '' && !/^[a-zA-Z0-9._]{1,30}$/.test(name)))) {
       return res.status(400).json({ message: 'userTags must contain at most two Instagram usernames without @' });
     }
-    if (body.imageUrl !== undefined && typeof body.imageUrl !== 'string') {
-      return res.status(400).json({ message: 'imageUrl must be a string' });
+    if (body.imageUrl !== undefined && !isValidHttpUrl(body.imageUrl)) {
+      return res.status(400).json({ message: 'imageUrl must be a valid http or https URL' });
     }
     const tags: InstagramTag[] = usernames.flatMap((username: string, index: number) => (
       username ? [{ username, x: index === 0 ? 0.25 : 0.75, y: 0.85 }] : []
