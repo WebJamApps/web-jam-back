@@ -1,3 +1,4 @@
+import sharp from 'sharp';
 import app from '#src/index.js';
 import GigModel from '#src/model/gig/gig-facade.js';
 import userModel from '#src/model/user/user-facade.js';
@@ -5,6 +6,8 @@ import keyModel from '#src/lib/instagram-key-schema.js';
 import { getInstagramKey } from '#src/lib/instagram-key.js';
 import authUtils from '#src/auth/authUtils.js';
 import request, { type ApiResponse } from '../helpers/api.js';
+
+const realFetch = globalThis.fetch.bind(globalThis);
 
 describe('The Gig API', () => {
   let r: ApiResponse, newUser: { _id: string; userType: string }, adminUser: { _id: string }, nonAdminUser: { _id: string };
@@ -91,6 +94,139 @@ describe('The Gig API', () => {
       .get('/gig/promo-default.jpg')
       .set({ origin: allowedUrl });
     expect(r.status).toBe(200);
+  });
+
+  describe('GET /gig/:id/announce-image.jpg (#1202)', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('404s for an unknown gig id', async () => {
+      r = await request(app)
+        .get('/gig/6ae4fa4e3ad5019fd1248d7b/announce-image.jpg')
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(404);
+      expect(r.body.message).toBe('gig not found');
+    });
+
+    it('404s for an invalid ObjectId', async () => {
+      r = await request(app)
+        .get('/gig/not-a-valid-id/announce-image.jpg')
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(404);
+      expect(r.body.message).toBe('gig not found');
+    });
+
+    it('serves public JPEG without auth when gig has announceImageUrl', async () => {
+      const pngImage = await sharp({
+        create: {
+          width: 120, height: 120, channels: 3, background: { r: 10, g: 20, b: 30 },
+        },
+      }).png().toBuffer();
+      const gig = await GigModel.create({ venue: 'Announce Venue', announceImageUrl: 'https://example.com/source.png' });
+      vi.spyOn(global, 'fetch').mockImplementation((url, init) => {
+        if (String(url) === 'https://example.com/source.png') {
+          return Promise.resolve(new Response(pngImage));
+        }
+        return realFetch(url, init);
+      });
+
+      r = await request(app)
+        .get(`/gig/${gig._id}/announce-image.jpg`)
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      expect(r.headers['content-type']).toContain('image/jpeg');
+    });
+
+    it('pads too-tall source image without cropping', async () => {
+      const tallImage = await sharp({
+        create: {
+          width: 100, height: 300, channels: 3, background: { r: 10, g: 20, b: 30 },
+        },
+      }).png().toBuffer();
+      const gig = await GigModel.create({ venue: 'Announce Venue', promoImageUrl: 'https://example.com/tall.png' });
+      vi.spyOn(global, 'fetch').mockImplementation((url, init) => {
+        if (String(url) === 'https://example.com/tall.png') {
+          return Promise.resolve(new Response(tallImage));
+        }
+        return realFetch(url, init);
+      });
+
+      r = await request(app)
+        .get(`/gig/${gig._id}/announce-image.jpg`)
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      expect(r.headers['content-type']).toContain('image/jpeg');
+    });
+
+    it('pads too-wide source image without cropping', async () => {
+      const wideImage = await sharp({
+        create: {
+          width: 300, height: 100, channels: 3, background: { r: 10, g: 20, b: 30 },
+        },
+      }).png().toBuffer();
+      const gig = await GigModel.create({ venue: 'Announce Venue', promoImageUrl: 'https://example.com/wide.png' });
+      vi.spyOn(global, 'fetch').mockImplementation((url, init) => {
+        if (String(url) === 'https://example.com/wide.png') {
+          return Promise.resolve(new Response(wideImage));
+        }
+        return realFetch(url, init);
+      });
+
+      r = await request(app)
+        .get(`/gig/${gig._id}/announce-image.jpg`)
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      expect(r.headers['content-type']).toContain('image/jpeg');
+    });
+
+    it('502s when source image fetch fails', async () => {
+      const gig = await GigModel.create({ venue: 'Announce Venue', announceImageUrl: 'https://example.com/missing.jpg' });
+      vi.spyOn(global, 'fetch').mockImplementation((url, init) => {
+        if (String(url) === 'https://example.com/missing.jpg') {
+          return Promise.resolve(new Response('Not Found', { status: 404 }));
+        }
+        return realFetch(url, init);
+      });
+
+      r = await request(app)
+        .get(`/gig/${gig._id}/announce-image.jpg`)
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(502);
+      expect(r.body.message).toBe('source image could not be fetched or read');
+    });
+
+    it('502s when source image contains unreadable bytes', async () => {
+      const gig = await GigModel.create({ venue: 'Announce Venue', announceImageUrl: 'https://example.com/corrupt.jpg' });
+      vi.spyOn(global, 'fetch').mockImplementation((url, init) => {
+        if (String(url) === 'https://example.com/corrupt.jpg') {
+          return Promise.resolve(new Response(Buffer.from('corrupt non-image')));
+        }
+        return realFetch(url, init);
+      });
+
+      r = await request(app)
+        .get(`/gig/${gig._id}/announce-image.jpg`)
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(502);
+      expect(r.body.message).toBe('source image could not be fetched or read');
+    });
+
+    it('serves default promo image when gig has neither announceImageUrl nor promoImageUrl', async () => {
+      const gig = await GigModel.create({ venue: 'Announce Venue' });
+      r = await request(app)
+        .get(`/gig/${gig._id}/announce-image.jpg`)
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      expect(r.headers['content-type']).toContain('image/jpeg');
+    });
+
+    it('500s when database query throws', async () => {
+      vi.spyOn(GigModel, 'findById').mockRejectedValueOnce(new Error('db error'));
+      r = await request(app)
+        .get('/gig/6ae4fa4e3ad5019fd1248d7b/announce-image.jpg')
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(500);
+      expect(r.body.message).toBe('db error');
+    });
   });
 
   describe('POST /gig/:id/announce (#962)', () => {

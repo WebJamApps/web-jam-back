@@ -10,6 +10,7 @@ import userModel from '../user/user-facade.js';
 import { getInstagramKey } from '../../lib/instagram-key.js';
 import { htmlCaptionToText } from '#src/lib/caption-text.js';
 import { publishToInstagram, type InstagramTag } from '#src/lib/meta-publish.js';
+import { fetchAndProcessAnnounceImage } from '../../lib/announce-image.js';
 
 // Role fallback for human admins who authorize by role (no privileges array).
 // Mirrors TemplateController/VenueController/PromoController (#819/#822).
@@ -31,6 +32,7 @@ interface AnnounceBody {
 
 interface GigDoc {
   _id?: unknown;
+  announceImageUrl?: string;
   promoImageUrl?: string;
 }
 
@@ -110,6 +112,35 @@ class GigController extends ArtistController {
     const assetPath = resolveDefaultPromoAsset();
     if (!assetPath) return res.status(404).json({ message: 'default promo image not found' });
     return res.sendFile(assetPath);
+  }
+
+  // GET /gig/:id/announce-image.jpg — public, no auth (#1202). Serves the gig's
+  // announce image converted to JPEG and padded to an allowed Instagram
+  // aspect ratio (4:5 to 1.91:1) without cropping.
+  async getAnnounceImage(req: Request<{ id: string }>, res: Response): Promise<unknown> {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'gig not found' });
+    }
+
+    let gig: GigDoc | null;
+    try {
+      gig = await this.model.findById(req.params.id) as unknown as GigDoc | null;
+    } catch (e) {
+      return res.status(500).json({ message: (e as Error).message });
+    }
+    if (!gig) return res.status(404).json({ message: 'gig not found' });
+
+    const sourceUrl = gig.announceImageUrl
+      || gig.promoImageUrl
+      || `${selfBaseUrl(req)}/gig/promo-default.jpg`;
+
+    try {
+      const jpegBuffer = await fetchAndProcessAnnounceImage(sourceUrl, resolveDefaultPromoAsset());
+      res.type('image/jpeg');
+      return res.send(jpegBuffer);
+    } catch {
+      return res.status(502).json({ message: 'source image could not be fetched or read' });
+    }
   }
 
   // Publish the approved caption and tags to the Josh Sherman Instagram.
