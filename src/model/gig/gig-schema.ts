@@ -35,7 +35,8 @@ const gigSchema = new Schema({
   venueId: {
     type: Schema.Types.ObjectId, ref: 'Venue', required: false,
   },
-  // Stamped by POST /gig/:id/announce (#962) on any Instagram/Facebook leg
+  announceImageUrl: { type: String, required: false },
+  // Stamped by POST /gig/:id/announce on Instagram
   // success. Re-announcing later just overwrites the stamp — this is a "last
   // announced" marker, not a history log.
   announcedAt: { type: Date, required: false },

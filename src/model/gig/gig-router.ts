@@ -30,6 +30,11 @@ router.route('/:id/announce')
     void action();
   });
 
+// GET /gig/:id/announce-image.jpg is public, no auth (#1202): Instagram's
+// publishing API fetches the image directly over HTTP(S) from this URL.
+router.route('/:id/announce-image.jpg')
+  .get((req, res) => { (async () => { await controller.getAnnounceImage(req, res); })(); });
+
 routeUtils.byId(router, controller, authUtils);
 
 export default router;

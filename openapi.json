@@ -23,6 +23,10 @@
     {
       "name": "setlists",
       "description": "Setlist records and ordered song items."
+    },
+    {
+      "name": "venues",
+      "description": "Venue records and booking details."
     }
   ],
   "security": [],
@@ -148,6 +152,48 @@
           },
           "404": {
             "$ref": "#/components/responses/MessageNotFound"
+          }
+        }
+      }
+    },
+    "/gig/{id}/announce-image.jpg": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/GigId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "gigs"
+        ],
+        "operationId": "getAnnounceImage",
+        "summary": "Public padded-JPEG image that Instagram fetches",
+        "description": "Public. Serves the gig announce image converted to JPEG and padded to an allowed Instagram aspect ratio (4:5 to 1.91:1) without cropping.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The image.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/MessageNotFound"
+          },
+          "502": {
+            "description": "Source image could not be fetched or read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
           }
         }
       }
@@ -317,8 +363,8 @@
           "gigs"
         ],
         "operationId": "announceGig",
-        "summary": "Announce a gig on Instagram and the Web Jam LLC Facebook Page",
-        "description": "Publishes the caption and image to both. One failing never stops the other. When either succeeds the gig's announcedAt is set to now. The image is the body's imageUrl, else the gig's promoImageUrl, else /gig/promo-default.jpg.",
+        "summary": "Announce a gig on the Josh Sherman Instagram",
+        "description": "Converts the caption to plain text, saves the chosen image source as announceImageUrl, and publishes the public /gig/{id}/announce-image.jpg with tags through Instagram v25.0. Success sets announcedAt. The image source is imageUrl, else promoImageUrl, else /gig/promo-default.jpg. Requires the separately provided public JPEG route.",
         "security": [
           {
             "bearerAuth": []
@@ -344,6 +390,16 @@
                   "imageUrl": {
                     "type": "string",
                     "format": "uri"
+                  },
+                  "userTags": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "description": "Maria username first (x=0.25), venue username second (x=0.75); y=0.85. Empty strings clear a tag while preserving positions. Omitted means no tags.",
+                    "items": {
+                      "type": "string",
+                      "maxLength": 30,
+                      "pattern": "^[a-zA-Z0-9._]*$"
+                    }
                   }
                 }
               }
@@ -352,16 +408,13 @@
         },
         "responses": {
           "200": {
-            "description": "The result of each publish.",
+            "description": "The Instagram publish result, including Instagram error text on refusal.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "instagram": {
-                      "$ref": "#/components/schemas/LegResult"
-                    },
-                    "facebook": {
                       "$ref": "#/components/schemas/LegResult"
                     }
                   }
@@ -370,7 +423,7 @@
             }
           },
           "400": {
-            "description": "\"Find id is invalid\", \"caption is required\" or \"nothing found with id provided\".",
+            "description": "Invalid gig id, caption, imageUrl or userTags, or gig not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -386,7 +439,7 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "500": {
-            "description": "Announcing is not configured on the server, or the gig could not be read.",
+            "description": "Instagram announce is not configured, or its key or gig could not be read, or the image source could not be saved.",
             "content": {
               "application/json": {
                 "schema": {
@@ -632,6 +685,192 @@
           }
         }
       }
+    },
+    "/venue": {
+      "post": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "createVenue",
+        "summary": "Create or update a matching venue",
+        "description": "Matches an existing venue by name, city and normalized street address, otherwise creates a new record. instagramUsername is checked before writes: only letters, numbers, periods and underscores, at most 30 characters, without @. Empty string clears it; omission leaves an existing username unchanged. Operator and dotted updates targeting instagramUsername are refused.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "venue:create"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VenueInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Venue"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The created venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Venue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid venue fields, including instagramUsername; nothing is written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/venue/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "patch": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "updateVenue",
+        "summary": "Update one venue",
+        "description": "Merges only the submitted fields into the selected venue. instagramUsername is checked before writes: only letters, numbers, periods and underscores, at most 30 characters, without @. Empty string clears it; omission leaves an existing username unchanged. Operator and dotted updates targeting instagramUsername are refused.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "venue:edit"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VenueUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Venue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid venue fields, including instagramUsername; nothing is written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "getVenue",
+        "summary": "Read one venue",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "venue:create",
+          "venue:edit",
+          "venue:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "The venue, including instagramUsername when set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Venue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or unknown venue id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -805,6 +1044,11 @@
                 "type": "string",
                 "format": "date-time"
               },
+              "announceImageUrl": {
+                "type": "string",
+                "format": "uri",
+                "description": "The chosen source image saved for the public announce JPEG route."
+              },
               "created_at": {
                 "type": "string",
                 "format": "date-time"
@@ -932,6 +1176,77 @@
                 "items": {
                   "$ref": "#/components/schemas/SetlistItem"
                 }
+              }
+            }
+          }
+        ]
+      },
+      "VenueUpdateInput": {
+        "type": "object",
+        "description": "Partial venue fields; other existing venue fields are also accepted.",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "zipCode": {
+            "type": "string"
+          },
+          "usState": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "website": {
+            "type": "string"
+          },
+          "instagramUsername": {
+            "type": "string",
+            "maxLength": 30,
+            "pattern": "^[A-Za-z0-9._]{0,30}(?![\\s\\S])",
+            "description": "Optional Instagram username without @. Empty string clears the username; omission preserves the stored value on updates.",
+            "examples": [
+              "venue.name_1",
+              ""
+            ]
+          }
+        }
+      },
+      "VenueInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/VenueUpdateInput"
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "address",
+              "zipCode"
+            ]
+          }
+        ]
+      },
+      "Venue": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/VenueUpdateInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "_id": {
+                "type": "string",
+                "readOnly": true
               }
             }
           }

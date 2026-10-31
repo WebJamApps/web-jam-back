@@ -19,6 +19,54 @@ describe('Venue Router (PATCH /venue/:id)', () => {
     agentUser = { _id: createdUser._id.toString() };
   });
 
+  describe('Instagram username persistence', () => {
+    const base = { name: 'Instagram Venue', address: '1 Main St', city: 'Salem', zipCode: '24153' };
+    const headers = () => ({ origin: allowedUrl, Authorization: `Bearer ${authUtils.createJWT({ _id: agentUser._id })}` });
+
+    it('stores on POST and PATCH, returns on GET, and preserves omission on both write paths', async () => {
+      const created = await request(app).post('/venue').set(headers()).send({ ...base, instagramUsername: 'Venue.name_1' });
+      expect(created.status).toBe(201);
+      const id = String(created.body._id);
+      const read = await request(app).get(`/venue/${id}`).set(headers());
+      expect(read.body.instagramUsername).toBe('Venue.name_1');
+      const updated = await request(app).patch(`/venue/${id}`).set(headers()).send({ instagramUsername: 'a'.repeat(30) });
+      expect(updated.status).toBe(200);
+      expect(updated.body.instagramUsername).toBe('a'.repeat(30));
+      const patched = await request(app).patch(`/venue/${id}`).set(headers()).send({ notes: 'unchanged username' });
+      expect(patched.status).toBe(200);
+      expect(patched.body.instagramUsername).toBe('a'.repeat(30));
+      const upserted = await request(app).post('/venue').set(headers()).send(base);
+      expect(upserted.status).toBe(200);
+      expect(upserted.body.instagramUsername).toBe('a'.repeat(30));
+      const cleared = await request(app).patch(`/venue/${id}`).set(headers()).send({ instagramUsername: '' });
+      expect(cleared.status).toBe(200);
+      const stored = await venueModel.findById(id) as unknown as { instagramUsername: string };
+      expect(stored.instagramUsername).toBe('');
+    });
+
+    it('creates successfully when the optional username is omitted', async () => {
+      const created = await request(app).post('/venue').set(headers()).send(base);
+      expect(created.status).toBe(201);
+      expect(created.body).not.toHaveProperty('instagramUsername');
+    });
+
+    it.each(['@venue', 'venue name', 'a'.repeat(31), null, 123])('rejects %j on POST and PATCH without changing storage', async (instagramUsername) => {
+      const existing = await venueModel.create({ ...base, instagramUsername: 'stored.venue' }) as unknown as { _id: { toString(): string } };
+      const id = existing._id.toString();
+      for (const method of ['post', 'patch'] as const) {
+        const response = await request(app)[method](method === 'post' ? '/venue' : `/venue/${id}`)
+          .set(headers()).send({ ...base, name: 'Rejected write', instagramUsername });
+        expect(response.status).toBe(400);
+        expect(response.body.message).toContain('instagramUsername');
+        const stored = await venueModel.findById(id) as unknown as { name: string; instagramUsername: string };
+        expect(stored.name).toBe(base.name);
+        expect(stored.instagramUsername).toBe('stored.venue');
+        const venues = await venueModel.find({}) as unknown as unknown[];
+        expect(venues).toHaveLength(1);
+      }
+    });
+  });
+
   it('updates a venue using PATCH /venue/:id with partial-merge semantics (#990)', async () => {
     const venue = await venueModel.create({
       name: 'The Spot on Kirk',

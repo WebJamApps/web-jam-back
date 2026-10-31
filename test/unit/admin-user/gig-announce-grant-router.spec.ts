@@ -3,13 +3,14 @@ import GigModel from '#src/model/gig/gig-facade.js';
 import userModel from '#src/model/user/user-facade.js';
 import authUtils from '#src/auth/authUtils.js';
 import * as metaPublish from '#src/lib/meta-publish.js';
+import { getInstagramKey } from '#src/lib/instagram-key.js';
 import request from '../../helpers/api.js';
 
 vi.mock('#src/lib/meta-publish.js', () => ({
   publishToInstagram: vi.fn(),
-  publishToFacebookPage: vi.fn(),
-  isMetaFullyUnconfigured: vi.fn(),
 }));
+vi.mock('#src/lib/instagram-key.js', () => ({ getInstagramKey: vi.fn(), startInstagramRefresh: vi.fn() }));
+const key = { userId: 'account', accessToken: 'fixture-key', issuedAt: new Date() };
 
 describe('Granting gig:announce through /admin/user', () => {
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
@@ -20,9 +21,8 @@ describe('Granting gig:announce through /admin/user', () => {
     await userModel.deleteMany({ email: { $in: emails } });
     const admin = await userModel.create({ name: 'Grant admin', email: emails[0], userType: 'Developer' });
     adminId = String(admin._id);
-    vi.mocked(metaPublish.isMetaFullyUnconfigured).mockReturnValue(false);
+    vi.mocked(getInstagramKey).mockResolvedValue(key);
     vi.mocked(metaPublish.publishToInstagram).mockResolvedValue({ ok: true, id: 'grant-ig' });
-    vi.mocked(metaPublish.publishToFacebookPage).mockResolvedValue({ ok: true, id: 'grant-fb' });
   });
 
   afterEach(async () => {
@@ -55,9 +55,9 @@ describe('Granting gig:announce through /admin/user', () => {
       .set('Authorization', `Bearer ${authUtils.createJWT({ _id: String(grant.body._id) })}`)
       .send({ caption: 'Test announcement' });
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ instagram: { ok: true, id: 'grant-ig' }, facebook: { ok: true, id: 'grant-fb' } });
-    expect(metaPublish.publishToInstagram).toHaveBeenCalledExactlyOnceWith('Test announcement', 'https://example.com/grant.jpg');
-    expect(metaPublish.publishToFacebookPage).toHaveBeenCalledExactlyOnceWith('Test announcement', 'https://example.com/grant.jpg');
+    expect(response.body).toEqual({ instagram: { ok: true, id: 'grant-ig' } });
+    expect(metaPublish.publishToInstagram).toHaveBeenCalledExactlyOnceWith('Test announcement',
+      expect.stringContaining(`/gig/${gig._id}/announce-image.jpg`), [], key);
     expect((await GigModel.findById(String(gig._id)))?.announcedAt).toBeTruthy();
   });
 });

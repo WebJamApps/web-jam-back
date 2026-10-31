@@ -15,6 +15,7 @@ import routes from './routes.js';
 import songData from './model/song/reset-song.js';
 import songModel from './model/song/song-schema.js';
 import { seedSongsIfEmpty, type SongSeedTarget } from './model/song/seed-songs.js';
+import { startInstagramRefresh } from './lib/instagram-key.js';
 import { startFacebookRefresh } from './model/facebook/FacebookController.js';
 import { startBackupScheduler } from './model/backup/backup-scheduler.js';
 
@@ -71,6 +72,7 @@ routes(app);
 // Prime the CollegeLutheran Facebook feed cache and start the hourly refresh.
 // No-ops under NODE_ENV=test (so unit tests don't hit the network).
 startFacebookRefresh();
+startInstagramRefresh();
 startBackupScheduler();
 app.get('/*splat', (_req: Request, res: Response) => {
   res.sendFile(path.normalize(path.join(import.meta.dirname, '../../JaMmusic/dist/index.html')));
