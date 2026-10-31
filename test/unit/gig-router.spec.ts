@@ -178,6 +178,27 @@ describe('The Gig API', () => {
       expect(r.headers['content-type']).toContain('image/jpeg');
     });
 
+    it('normalizes EXIF orientation and pads rotated source image without cropping', async () => {
+      const rotatedImage = await sharp({
+        create: {
+          width: 300, height: 100, channels: 3, background: { r: 10, g: 20, b: 30 },
+        },
+      }).withMetadata({ orientation: 6 }).jpeg().toBuffer();
+      const gig = await GigModel.create({ venue: 'Announce Venue', promoImageUrl: 'https://example.com/rotated.jpg' });
+      vi.spyOn(global, 'fetch').mockImplementation((url, init) => {
+        if (String(url) === 'https://example.com/rotated.jpg') {
+          return Promise.resolve(new Response(rotatedImage));
+        }
+        return realFetch(url, init);
+      });
+
+      r = await request(app)
+        .get(`/gig/${gig._id}/announce-image.jpg`)
+        .set({ origin: allowedUrl });
+      expect(r.status).toBe(200);
+      expect(r.headers['content-type']).toContain('image/jpeg');
+    });
+
     it('502s when source image fetch fails', async () => {
       const gig = await GigModel.create({ venue: 'Announce Venue', announceImageUrl: 'https://example.com/missing.jpg' });
       vi.spyOn(global, 'fetch').mockImplementation((url, init) => {

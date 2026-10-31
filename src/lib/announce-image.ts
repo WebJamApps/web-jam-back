@@ -15,10 +15,14 @@ export async function padAndConvertToJpeg(input: Buffer | Uint8Array): Promise<B
     throw new Error('Image metadata missing width or height');
   }
 
-  const { width, height } = meta;
+  // EXIF orientation tags 5-8 indicate 90 or 270 degree rotation, which swaps visual width and height.
+  // Phone photos often store landscape pixel dimensions with an EXIF tag instructing display in portrait.
+  const isRotated = typeof meta.orientation === 'number' && meta.orientation >= 5 && meta.orientation <= 8;
+  const width = isRotated ? meta.height : meta.width;
+  const height = isRotated ? meta.width : meta.height;
   const aspect = width / height;
 
-  let pipeline = sharp(input);
+  let pipeline = sharp(input).autoOrient();
 
   // If source has alpha channel, flatten transparent pixels to white background
   if (meta.hasAlpha) {

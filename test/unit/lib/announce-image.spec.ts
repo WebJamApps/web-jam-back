@@ -78,6 +78,59 @@ describe('announce-image lib', () => {
       expect((meta.width ?? 0) / (meta.height ?? 1)).toBeLessThanOrEqual(MAX_INSTAGRAM_ASPECT);
     });
 
+    it('normalizes EXIF orientation and calculates padding from oriented dimensions (orientation 6)', async () => {
+      // 300x100 raw with orientation 6 displays visually as 100x300 (portrait, aspect 0.33 < 0.8)
+      // Preserving appearance and padding to reach 0.8 aspect ratio should produce 240x300 JPEG
+      const input = await sharp({
+        create: {
+          width: 300, height: 100, channels: 3, background: { r: 0, g: 255, b: 0 },
+        },
+      }).withMetadata({ orientation: 6 }).jpeg().toBuffer();
+
+      const output = await padAndConvertToJpeg(input);
+      const meta = await sharp(output).metadata();
+
+      expect(meta.format).toBe('jpeg');
+      expect(meta.width).toBe(240);
+      expect(meta.height).toBe(300);
+      expect(meta.orientation).toBeUndefined();
+    });
+
+    it('normalizes EXIF orientation and calculates padding from oriented dimensions (orientation 8)', async () => {
+      // 100x300 raw with orientation 8 displays visually as 300x100 (landscape, aspect 3.0 > 1.91)
+      // Preserving appearance and padding to reach 1.91 aspect ratio should produce 300x158 JPEG
+      const input = await sharp({
+        create: {
+          width: 100, height: 300, channels: 3, background: { r: 0, g: 0, b: 255 },
+        },
+      }).withMetadata({ orientation: 8 }).jpeg().toBuffer();
+
+      const output = await padAndConvertToJpeg(input);
+      const meta = await sharp(output).metadata();
+
+      expect(meta.format).toBe('jpeg');
+      expect(meta.width).toBe(300);
+      expect(meta.height).toBe(158);
+      expect(meta.orientation).toBeUndefined();
+    });
+
+    it('normalizes EXIF orientation 3 (180 deg) without swapping width and height', async () => {
+      // 300x100 raw with orientation 3 displays visually as 300x100 upside down (landscape, aspect 3.0 > 1.91)
+      const input = await sharp({
+        create: {
+          width: 300, height: 100, channels: 3, background: { r: 255, g: 255, b: 0 },
+        },
+      }).withMetadata({ orientation: 3 }).jpeg().toBuffer();
+
+      const output = await padAndConvertToJpeg(input);
+      const meta = await sharp(output).metadata();
+
+      expect(meta.format).toBe('jpeg');
+      expect(meta.width).toBe(300);
+      expect(meta.height).toBe(158);
+      expect(meta.orientation).toBeUndefined();
+    });
+
     it('throws when input buffer is invalid or corrupt', async () => {
       await expect(padAndConvertToJpeg(Buffer.from('corrupt non-image data'))).rejects.toThrow();
     });
