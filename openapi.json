@@ -156,6 +156,48 @@
         }
       }
     },
+    "/gig/{id}/announce-image.jpg": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/GigId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "gigs"
+        ],
+        "operationId": "getAnnounceImage",
+        "summary": "Public padded-JPEG image that Instagram fetches",
+        "description": "Public. Serves the gig announce image converted to JPEG and padded to an allowed Instagram aspect ratio (4:5 to 1.91:1) without cropping.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The image.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/MessageNotFound"
+          },
+          "502": {
+            "description": "Source image could not be fetched or read.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/gig/{id}": {
       "parameters": [
         {
