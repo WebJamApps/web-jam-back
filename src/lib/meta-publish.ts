@@ -1,9 +1,16 @@
-import type { InstagramKey } from './instagram-key-schema.js';
+const GRAPH = 'https://graph.facebook.com/v25.0';
 
-const GRAPH = 'https://graph.instagram.com/v25.0';
 export interface LegResult { ok: boolean; id?: string; error?: string }
 export interface InstagramTag { username: string; x: number; y: number }
+export interface InstagramKey { userId: string; accessToken: string }
 interface GraphResponse { id?: string; error?: { message?: string } }
+
+export function getInstagramKey(): InstagramKey | null {
+  const userId = process.env.META_IG_USER_ID;
+  const accessToken = process.env.META_IG_ACCESS_TOKEN;
+  if (!userId || !accessToken) return null;
+  return { userId, accessToken };
+}
 
 async function postForm(url: string, params: Record<string, string>): Promise<GraphResponse> {
   const response = await fetch(url, {
