@@ -2,17 +2,15 @@ import type { Request, Response } from 'express';
 import fs from 'node:fs';
 import controller from '#src/model/gig/gig-controller.js';
 import userModel from '#src/model/user/user-facade.js';
-import { getInstagramKey } from '#src/lib/instagram-key.js';
-import { publishToInstagram } from '#src/lib/meta-publish.js';
-vi.mock('#src/lib/instagram-key.js', () => ({ getInstagramKey: vi.fn() }));
-vi.mock('#src/lib/meta-publish.js', () => ({ publishToInstagram: vi.fn() }));
+import { getInstagramKey, publishToInstagram } from '#src/lib/meta-publish.js';
+vi.mock('#src/lib/meta-publish.js', () => ({ getInstagramKey: vi.fn(), publishToInstagram: vi.fn() }));
 const c = controller as unknown as {
   model: { findById(id: string): Promise<unknown>; findByIdAndUpdate(id: string, changes: unknown): Promise<unknown> };
   announce(req: Request, res: Response): Promise<unknown>;
   getDefaultPromoImage(req: Request, res: Response): Promise<unknown>;
 };
 const id = '507f1f77bcf86cd799439011';
-const key = { userId: 'account', accessToken: 'fixture-key', issuedAt: new Date() };
+const key = { userId: 'account', accessToken: 'fixture-key' };
 describe('Gig announce', () => {
   let res: Response;
   beforeEach(() => {
@@ -20,7 +18,7 @@ describe('Gig announce', () => {
     vi.spyOn(userModel, 'findById').mockResolvedValue({ privileges: ['gig:announce'] });
     vi.spyOn(c.model, 'findById').mockResolvedValue({ promoImageUrl: 'https://example.com/promo.png' });
     vi.spyOn(c.model, 'findByIdAndUpdate').mockResolvedValue({});
-    vi.mocked(getInstagramKey).mockResolvedValue(key);
+    vi.mocked(getInstagramKey).mockReturnValue(key);
     vi.mocked(publishToInstagram).mockResolvedValue({ ok: true, id: 'post' });
   });
   afterEach(() => vi.restoreAllMocks());
@@ -79,16 +77,10 @@ describe('Gig announce', () => {
     expect(res.status).toHaveBeenCalledWith(500);
   });
   it('reports absent configuration without publishing', async () => {
-    vi.mocked(getInstagramKey).mockResolvedValue(null);
+    vi.mocked(getInstagramKey).mockReturnValue(null);
     await announce({ caption: 'Hi' });
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ message: 'Instagram announce is not configured' });
-    expect(publishToInstagram).not.toHaveBeenCalled();
-  });
-  it('handles an unreadable key without publishing', async () => {
-    vi.mocked(getInstagramKey).mockRejectedValue(new Error('db unavailable'));
-    await announce({ caption: 'Hi' });
-    expect(res.status).toHaveBeenCalledWith(500);
     expect(publishToInstagram).not.toHaveBeenCalled();
   });
   it.each([null, new Error('lookup failed')])('handles a missing or unreadable gig', async (result) => {

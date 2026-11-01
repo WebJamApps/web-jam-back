@@ -3,14 +3,13 @@ import GigModel from '#src/model/gig/gig-facade.js';
 import userModel from '#src/model/user/user-facade.js';
 import authUtils from '#src/auth/authUtils.js';
 import * as metaPublish from '#src/lib/meta-publish.js';
-import { getInstagramKey } from '#src/lib/instagram-key.js';
 import request from '../../helpers/api.js';
 
 vi.mock('#src/lib/meta-publish.js', () => ({
   publishToInstagram: vi.fn(),
+  getInstagramKey: vi.fn(),
 }));
-vi.mock('#src/lib/instagram-key.js', () => ({ getInstagramKey: vi.fn(), startInstagramRefresh: vi.fn() }));
-const key = { userId: 'account', accessToken: 'fixture-key', issuedAt: new Date() };
+const key = { userId: 'account', accessToken: 'fixture-key' };
 
 describe('Granting gig:announce through /admin/user', () => {
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
@@ -21,7 +20,7 @@ describe('Granting gig:announce through /admin/user', () => {
     await userModel.deleteMany({ email: { $in: emails } });
     const admin = await userModel.create({ name: 'Grant admin', email: emails[0], userType: 'Developer' });
     adminId = String(admin._id);
-    vi.mocked(getInstagramKey).mockResolvedValue(key);
+    vi.mocked(metaPublish.getInstagramKey).mockReturnValue(key);
     vi.mocked(metaPublish.publishToInstagram).mockResolvedValue({ ok: true, id: 'grant-ig' });
   });
 
