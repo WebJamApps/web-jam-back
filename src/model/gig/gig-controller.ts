@@ -7,9 +7,8 @@ import ArtistController from '../../lib/artist-controller.js';
 import gigModel from './gig-facade.js';
 import { Icontroller } from '../../lib/routeUtils.js';
 import userModel from '../user/user-facade.js';
-import { getInstagramKey } from '../../lib/instagram-key.js';
 import { htmlCaptionToText } from '#src/lib/caption-text.js';
-import { publishToInstagram, type InstagramTag } from '#src/lib/meta-publish.js';
+import { getInstagramKey, publishToInstagram, type InstagramTag } from '#src/lib/meta-publish.js';
 import { fetchAndProcessAnnounceImage } from '../../lib/announce-image.js';
 
 // Role fallback for human admins who authorize by role (no privileges array).
@@ -163,10 +162,7 @@ class GigController extends ArtistController {
     const tags: InstagramTag[] = usernames.flatMap((username: string, index: number) => (
       username ? [{ username, x: index === 0 ? 0.25 : 0.75, y: 0.85 }] : []
     ));
-    let key: Awaited<ReturnType<typeof getInstagramKey>>;
-    try { key = await getInstagramKey(); } catch {
-      return res.status(500).json({ message: 'Instagram key could not be read' });
-    }
+    const key = getInstagramKey();
     if (!key) return res.status(500).json({ message: 'Instagram announce is not configured' });
 
     let gig: GigDoc | null;

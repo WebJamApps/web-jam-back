@@ -2,8 +2,7 @@ import sharp from 'sharp';
 import app from '#src/index.js';
 import GigModel from '#src/model/gig/gig-facade.js';
 import userModel from '#src/model/user/user-facade.js';
-import keyModel from '#src/lib/instagram-key-schema.js';
-import { getInstagramKey } from '#src/lib/instagram-key.js';
+import { getInstagramKey } from '#src/lib/meta-publish.js';
 import authUtils from '#src/auth/authUtils.js';
 import request, { type ApiResponse } from '../helpers/api.js';
 
@@ -255,7 +254,6 @@ describe('The Gig API', () => {
     let originalEnv: Record<string, string | undefined>;
 
     beforeEach(async () => {
-      await keyModel.deleteMany({});
       originalEnv = {};
       for (const k of META_ENV_KEYS) originalEnv[k] = process.env[k];
       process.env.META_IG_USER_ID = 'ig-user-1';
@@ -263,7 +261,6 @@ describe('The Gig API', () => {
     });
 
     afterEach(async () => {
-      await keyModel.deleteMany({});
       for (const k of META_ENV_KEYS) {
         if (originalEnv[k] === undefined) delete process.env[k];
         else process.env[k] = originalEnv[k];
@@ -298,7 +295,7 @@ describe('The Gig API', () => {
       const realFetch = global.fetch;
       vi.spyOn(global, 'fetch').mockImplementation((url, init) => {
         const urlStr = String(url);
-        if (urlStr.startsWith('https://graph.instagram.com/v25.0/')) {
+        if (urlStr.startsWith('https://graph.facebook.com/v25.0/')) {
           return Promise.resolve(Response.json({ id: urlStr.endsWith('/media_publish') ? 'media-1' : 'container-1' }));
         }
         return realFetch(url, init);
@@ -312,7 +309,7 @@ describe('The Gig API', () => {
 
       expect(r.status).toBe(200);
       expect(r.body).toEqual({ instagram: { ok: true, id: 'media-1' } });
-      const calls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).startsWith('https://graph.instagram.com/'));
+      const calls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).startsWith('https://graph.facebook.com/'));
       expect(calls).toHaveLength(2);
       const form = new URLSearchParams(calls[0][1]?.body as string);
       expect(form.get('image_url')).toMatch(/\/gig\/[^/]+\/announce-image\.jpg$/);
@@ -327,6 +324,21 @@ describe('The Gig API', () => {
 
     it('500s with a clear message when Meta is fully unconfigured', async () => {
       for (const k of META_ENV_KEYS) delete process.env[k];
+      const gig = await GigModel.create({ venue: 'Announce Venue' });
+      r = await request(app)
+        .post(`/gig/${gig._id}/announce`)
+        .set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${authUtils.createJWT({ _id: adminUser._id })}`)
+        .send({ caption: '<p>Hi</p>' });
+      expect(r.status).toBe(500);
+      expect(r.body.message).toBe('Instagram announce is not configured');
+    });
+
+    it.each([
+      ['META_IG_USER_ID'],
+      ['META_IG_ACCESS_TOKEN'],
+    ])('500s with a clear message when %s is absent', async (missingKey) => {
+      delete process.env[missingKey];
       const gig = await GigModel.create({ venue: 'Announce Venue' });
       r = await request(app)
         .post(`/gig/${gig._id}/announce`)
@@ -362,13 +374,10 @@ describe('The Gig API', () => {
       expect((await GigModel.findById(String(gig._id)))?.announcedAt).toBeUndefined();
     });
 
-    it('seeds one record under concurrent first use and never replaces it from environment settings', async () => {
-      const keys = await Promise.all([getInstagramKey(), getInstagramKey()]);
-      expect(keys.map((key) => key?.userId)).toEqual(['ig-user-1', 'ig-user-1']);
-      expect(await keyModel.countDocuments()).toBe(1);
+    it('reads both settings from the environment each time without database storage', async () => {
+      expect(getInstagramKey()).toEqual({ userId: 'ig-user-1', accessToken: 'ig-token' });
       process.env.META_IG_ACCESS_TOKEN = 'obsolete-fixture-key';
-      expect((await getInstagramKey())?.accessToken).toBe('ig-token');
-      expect((await keyModel.findById('instagram'))?.accessToken).toBeUndefined();
+      expect(getInstagramKey()?.accessToken).toBe('obsolete-fixture-key');
     });
   });
 
