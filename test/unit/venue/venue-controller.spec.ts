@@ -160,6 +160,27 @@ describe('Venue Controller', () => {
     });
   });
 
+  describe('discoverPlace (#1219)', () => {
+    it('refuses when authorizeAdminOnly fails', async () => {
+      vi.spyOn(c, 'authorizeAdminOnly').mockResolvedValueOnce({ status: 403, message: 'admin role required' });
+      await c.discoverPlace({ user: 'a', query: { q: 'Salem' } }, resStub);
+      expect(status).toBe(403);
+      expect(payload.message).toBe('admin role required');
+    });
+
+    it('returns 200 with empty object when q is missing or whitespace', async () => {
+      vi.spyOn(c, 'authorizeAdminOnly').mockResolvedValueOnce(null);
+      await c.discoverPlace({ user: 'a', query: {} }, resStub);
+      expect(status).toBe(200);
+      expect(payload).toEqual({});
+
+      vi.spyOn(c, 'authorizeAdminOnly').mockResolvedValueOnce(null);
+      await c.discoverPlace({ user: 'a', query: { q: '   ' } }, resStub);
+      expect(status).toBe(200);
+      expect(payload).toEqual({});
+    });
+  });
+
   describe('createVenue', () => {
     it('rejects a missing name', async () => {
       await c.createVenue({ user: 'a', body: {} }, resStub);

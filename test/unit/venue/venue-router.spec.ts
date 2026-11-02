@@ -328,4 +328,15 @@ describe('Venue Router (PATCH /venue/:id)', () => {
     expect(rDetails.status).toBe(403);
     expect(rDetails.body.message).not.toBe('Find id is invalid');
   });
+
+  it('does not capture /venue/discover/place as /venue/:id (#1219)', async () => {
+    // If captured by /:id, "discover" is treated as an invalid ObjectId and returns 400 "Find id is invalid"
+    const rDiscover = await request(app)
+      .get('/venue/discover/place')
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`);
+
+    expect(rDiscover.status).toBe(403);
+    expect(rDiscover.body.message).not.toBe('Find id is invalid');
+  });
 });
