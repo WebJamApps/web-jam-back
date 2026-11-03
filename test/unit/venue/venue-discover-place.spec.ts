@@ -250,7 +250,7 @@ describe('Nominatim Place Discovery Route — GET /venue/discover/place (#1219)'
         .set('Authorization', `Bearer ${token}`);
 
       expect(r.status).toBe(502);
-      expect(r.body.message).toContain('Network error');
+      expect(r.body.message).toBe('Nominatim unreachable');
     });
 
     it('returns 502 when Nominatim request times out', async () => {
@@ -265,7 +265,7 @@ describe('Nominatim Place Discovery Route — GET /venue/discover/place (#1219)'
         .set('Authorization', `Bearer ${token}`);
 
       expect(r.status).toBe(502);
-      expect(r.body.message).toContain('timed out');
+      expect(r.body.message).toBe('Nominatim request timed out');
     });
 
     it('returns 502 when Nominatim payload is unparseable JSON', async () => {
@@ -282,7 +282,7 @@ describe('Nominatim Place Discovery Route — GET /venue/discover/place (#1219)'
         .set('Authorization', `Bearer ${token}`);
 
       expect(r.status).toBe(502);
-      expect(r.body.message).toContain('Unexpected token');
+      expect(r.body.message).toBe('Nominatim unreachable');
     });
 
     it('returns 200 with no position when Nominatim returns non-numeric coordinates', async () => {
@@ -364,6 +364,17 @@ describe('Nominatim Place Discovery Route — GET /venue/discover/place (#1219)'
         .set('Authorization', `Bearer ${token}`);
       expect(r61.status).toBe(429);
       expect(r61.body).toContain('Too many requests');
+    });
+
+    it('does not re-invoke a scheduled task when fn rejects (#1219)', async () => {
+      let callCount = 0;
+      const failingFn = vi.fn().mockImplementation(() => {
+        callCount += 1;
+        return Promise.reject(new Error('task failed'));
+      });
+
+      await expect(nominatimThrottle.schedule(failingFn)).rejects.toThrow('task failed');
+      expect(callCount).toBe(1);
     });
   });
 });

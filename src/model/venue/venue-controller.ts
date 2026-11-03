@@ -597,7 +597,7 @@ export const nominatimThrottle = {
       return fn();
     };
 
-    const next = nominatimQueue.then(run).catch(run);
+    const next = nominatimQueue.then(run);
     nominatimQueue = next.then(() => {}).catch(() => {});
     return next;
   },
@@ -614,14 +614,14 @@ export async function fetchNominatimPlace(
       response = await fetch(url, {
         method: 'GET',
         headers: {
-          'User-Agent': 'web-jam-back/2.32.0 (admin place lookup; https://web-jam.com)',
+          'User-Agent': 'web-jam-back (admin place lookup; https://web-jam.com)',
           Accept: 'application/json',
         },
         signal: AbortSignal.timeout(5000),
       });
     } catch (err) {
       const isTimeout = (err as Error).name === 'TimeoutError';
-      const msg = isTimeout ? 'Nominatim request timed out' : ((err as Error).message || 'Nominatim unreachable');
+      const msg = isTimeout ? 'Nominatim request timed out' : 'Nominatim unreachable';
       return { errorStatus: 502, errorMessage: msg };
     }
 
@@ -632,8 +632,8 @@ export async function fetchNominatimPlace(
     try {
       const data = (await response.json()) as NominatimResultRaw[];
       return { data };
-    } catch (e) {
-      return { errorStatus: 502, errorMessage: (e as Error).message || 'Invalid JSON from Nominatim' };
+    } catch {
+      return { errorStatus: 502, errorMessage: 'Nominatim unreachable' };
     }
   });
 }
