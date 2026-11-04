@@ -1105,6 +1105,7 @@ class VenueController extends Controller {
     if (body.location !== undefined || !hasVenueAddressUpdate(body)) return {};
     try {
       const current = await this.model.findById(id);
+      if (!current) return {};
       return await censusLocationUpdate(body, current);
     } catch {
       // If the old address cannot be read, do not retain a possibly stale pin

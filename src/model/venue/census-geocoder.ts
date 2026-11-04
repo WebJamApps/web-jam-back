@@ -12,6 +12,10 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function country(value: unknown): string {
+  return (text(value) || 'US').toUpperCase();
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' ? value as Record<string, unknown> : {};
 }
@@ -29,7 +33,7 @@ function readPoint(payload: unknown): Point | undefined {
 // A failed lookup is optional data, never a failed venue save. The deadline
 // covers both receiving the headers and consuming the response body.
 export async function findCensusPosition(venue: VenueAddress): Promise<Point | undefined> {
-  if ((text(venue.country) || 'US').toUpperCase() !== 'US' || !text(venue.address)) return undefined;
+  if (country(venue.country) !== 'US' || !text(venue.address)) return undefined;
   const url = new URL('https://geocoding.geo.census.gov/geocoder/locations/address');
   url.search = new URLSearchParams({
     street: text(venue.address), city: text(venue.city), state: text(venue.usState), zip: text(venue.zipCode),
@@ -67,7 +71,10 @@ export async function censusLocationUpdate(
   existing: (VenueAddress & { location?: unknown }) | null,
 ): Promise<Record<string, unknown>> {
   if (body.location !== undefined) return {};
-  if (existing && !ADDRESS_FIELDS.some((key) => Object.hasOwn(body, key) && text(body[key]) !== text(existing[key]))) return {};
+  if (existing && !ADDRESS_FIELDS.some((key) => {
+    if (!Object.hasOwn(body, key)) return false;
+    return key === 'country' ? country(body[key]) !== country(existing[key]) : text(body[key]) !== text(existing[key]);
+  })) return {};
   const location = await findCensusPosition({ ...existing, ...body });
   if (location) return { location };
   return existing ? { $unset: { location: 1 } } : {};

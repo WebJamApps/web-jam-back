@@ -128,6 +128,48 @@ describe('venue saves with Census', () => {
     expect(venueModel.findByIdAndUpdate).toHaveBeenCalledWith(id, expect.not.objectContaining({ $unset: expect.anything() }));
   });
 
+  describe.each(['post', 'patch'] as const)('%s with equivalent US countries', (method) => {
+    describe.each([undefined, 'US', 'us', ''])('stored country = %j', (country) => {
+      it.each([
+        { name: 'Renamed', ...address, country: 'US' }, { country: 'us' }, { country: '' },
+      ])('preserves the saved pin for %j', async (body) => {
+        const existing = { _id: id, name: 'Venue', ...address, country, location: point };
+        vi.mocked(venueModel.findById).mockResolvedValue(existing);
+        vi.mocked(venueModel.find).mockResolvedValue([existing]);
+        vi.mocked(venueModel.findByIdAndUpdate).mockImplementation(async (_id, update) => ({ ...existing, ...update }));
+        censusFetch.mockResolvedValue(Response.json({ result: { addressMatches: [] } }));
+
+        const saved = await request(app)[method](method === 'post' ? '/venue' : `/venue/${id}`)
+          .send(method === 'post' ? { name: 'Venue', ...address, ...body } : body);
+
+        expect(saved.status).toBe(200);
+        expect(saved.body.location).toEqual(point);
+        expect(censusFetch).not.toHaveBeenCalled();
+        const update = vi.mocked(venueModel.findByIdAndUpdate).mock.calls[0][1];
+        expect(update).not.toHaveProperty('$unset');
+        expect(update).not.toHaveProperty('location');
+        expect(venueModel.create).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  it('geocodes when the country changes from non-US to US', async () => {
+    vi.mocked(venueModel.findById).mockResolvedValue({ _id: id, ...address, country: 'CA' });
+    const saved = await request(app).patch(`/venue/${id}`).send({ country: 'us' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.location).toEqual(point);
+    expect(censusFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('PATCH for a missing venue returns immediately without calling Census', async () => {
+    vi.mocked(venueModel.findById).mockResolvedValue(null);
+    vi.mocked(venueModel.findByIdAndUpdate).mockResolvedValue(null);
+    const saved = await request(app).patch(`/venue/${id}`).send({ city: 'Roanoke' });
+    expect(saved.status).toBe(400);
+    expect(saved.body.message).toBe('Id Not Found');
+    expect(censusFetch).not.toHaveBeenCalled();
+  });
+
   it.each(['post', 'patch'] as const)('%s still saves when Census finds no match', async (method) => {
     censusFetch.mockResolvedValue(Response.json({ result: { addressMatches: [] } }));
     const saved = await request(app)[method](method === 'post' ? '/venue' : `/venue/${id}`)
