@@ -2,8 +2,16 @@ import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
 import Debug from 'debug';
+import { MAP_LISTING_COLLECTION } from '#src/model/venue/map-listing-schema.js';
 
 const debug = Debug('web-jam-back:backup-export');
+
+// Collections reconstructed from public external sources (such as Overture Maps
+// business listings, web-jam-back#1214) are skipped by daily backup exports,
+// copy-to-dev, and restore so backups stay small and restores leave them intact.
+export const SKIPPED_BACKUP_COLLECTIONS: ReadonlySet<string> = new Set([
+  MAP_LISTING_COLLECTION,
+]);
 
 // mongoose re-exports the driver's BSON module (mongoose.mongo.BSON), so EJSON
 // is available without adding `bson` as a direct dependency (it's already a
@@ -80,6 +88,7 @@ export async function exportConnection(db: DbLike, outDir: string): Promise<Reco
   const counts: Record<string, number> = {};
   const collections = await db.listCollections().toArray();
   for (const { name } of collections) {
+    if (SKIPPED_BACKUP_COLLECTIONS.has(name)) continue;
     // eslint-disable-next-line no-await-in-loop
     counts[name] = await exportOneCollection(db, name, outDir);
   }
