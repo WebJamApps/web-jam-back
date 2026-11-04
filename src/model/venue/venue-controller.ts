@@ -633,7 +633,7 @@ export async function fetchNominatimPlace(
       const data = (await response.json()) as NominatimResultRaw[];
       return { data };
     } catch {
-      return { errorStatus: 502, errorMessage: 'Nominatim unreachable' };
+      return { errorStatus: 502, errorMessage: 'Bad response from Nominatim' };
     }
   });
 }

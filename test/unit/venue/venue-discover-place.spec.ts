@@ -282,7 +282,7 @@ describe('Nominatim Place Discovery Route — GET /venue/discover/place (#1219)'
         .set('Authorization', `Bearer ${token}`);
 
       expect(r.status).toBe(502);
-      expect(r.body.message).toBe('Nominatim unreachable');
+      expect(r.body.message).toBe('Bad response from Nominatim');
     });
 
     it('returns 200 with no position when Nominatim returns non-numeric coordinates', async () => {
