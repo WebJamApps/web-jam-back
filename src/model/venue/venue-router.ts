@@ -62,6 +62,14 @@ router.route('/places/:placeId')
     void action();
   });
 
+// GET /venue/discover/place?q=<text> — turn a place name into a position (#1219).
+// Registered BEFORE /:id so Express does not read "discover" as a venue id.
+router.route('/discover/place')
+  .get(placesRateLimiter, (req, res) => {
+    const action = routeUtils.makeAction(req, res, 'discoverPlace', controller, authUtils);
+    void action();
+  });
+
 router.route('/:id')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'getVenue', controller, authUtils);

@@ -570,6 +570,74 @@ function mapPlaceDetails(data: PlaceDetailsRaw): Record<string, unknown> {
   };
 }
 
+interface NominatimResultRaw {
+  lat?: string;
+  lon?: string;
+  display_name?: string;
+}
+
+let lastNominatimRequestTime = 0;
+let nominatimQueue: Promise<unknown> = Promise.resolve();
+
+export const nominatimThrottle = {
+  minIntervalMs: 1000,
+  reset() {
+    lastNominatimRequestTime = 0;
+    nominatimQueue = Promise.resolve();
+  },
+  async schedule<T>(fn: () => Promise<T>): Promise<T> {
+    const run = async () => {
+      const now = Date.now();
+      const elapsed = now - lastNominatimRequestTime;
+      const wait = Math.max(0, this.minIntervalMs - elapsed);
+      if (wait > 0) {
+        await new Promise((resolve) => { setTimeout(resolve, wait); });
+      }
+      lastNominatimRequestTime = Date.now();
+      return fn();
+    };
+
+    const next = nominatimQueue.then(run);
+    nominatimQueue = next.then(() => {}).catch(() => {});
+    return next;
+  },
+};
+
+export async function fetchNominatimPlace(
+  query: string,
+): Promise<{ data?: NominatimResultRaw[]; errorStatus?: number; errorMessage?: string }> {
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=jsonv2&limit=1&countrycodes=us`;
+
+  return nominatimThrottle.schedule(async () => {
+    let response: globalThis.Response;
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'web-jam-back (admin place lookup; https://web-jam.com)',
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (err) {
+      const isTimeout = (err as Error).name === 'TimeoutError';
+      const msg = isTimeout ? 'Nominatim request timed out' : 'Nominatim unreachable';
+      return { errorStatus: 502, errorMessage: msg };
+    }
+
+    if (!response.ok) {
+      return { errorStatus: 502, errorMessage: `Nominatim error: ${response.status} ${response.statusText}`.trim() };
+    }
+
+    try {
+      const data = (await response.json()) as NominatimResultRaw[];
+      return { data };
+    } catch {
+      return { errorStatus: 502, errorMessage: 'Bad response from Nominatim' };
+    }
+  });
+}
+
 class VenueController extends Controller {
   // Load the token's user, then apply the access gate. Every venue route runs
   // ensureAuthenticated first (valid token → req.user); this adds authorization.
@@ -1143,6 +1211,39 @@ class VenueController extends Controller {
 
     if (errorStatus) return res.status(errorStatus).json({ message: errorMessage });
     return res.status(200).json(mapPlaceDetails(data || {}));
+  }
+
+  // GET /venue/discover/place?q=<text> — turn a place name into a position (#1219).
+  async discoverPlace(req: Request, res: Response): Promise<unknown> {
+    const guardErr = await this.authorizeAdminOnly(req as AuthRequest);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+
+    const queryParam = req.query.q;
+    const q = typeof queryParam === 'string' ? queryParam.trim() : '';
+    if (!q) {
+      return res.status(200).json({});
+    }
+
+    const { data, errorStatus, errorMessage } = await fetchNominatimPlace(q);
+    if (errorStatus) return res.status(errorStatus).json({ message: errorMessage });
+
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return res.status(200).json({});
+    }
+
+    const first = data[0];
+    const lat = typeof first.lat === 'string' ? Number.parseFloat(first.lat) : Number(first.lat);
+    const lng = typeof first.lon === 'string' ? Number.parseFloat(first.lon) : Number(first.lon);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(200).json({});
+    }
+
+    return res.status(200).json({
+      lat,
+      lng,
+      displayName: first.display_name || '',
+    });
   }
 }
 
