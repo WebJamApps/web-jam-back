@@ -17,6 +17,7 @@ export const DEFAULT_REFRESH_LOCK_TTL_MS = 30 * 60 * 1000;
 
 const RELEASE_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
 const BULK_WRITE_BATCH_SIZE = 1000;
+let lastRefreshTimestampMs = 0;
 const OPTIONAL_LISTING_FIELDS = [
   'city',
   'state',
@@ -66,7 +67,13 @@ export interface OvertureDownloadAnswer {
 
 export interface MapListingBulkOperation {
   updateOne: {
-    filter: { listingId: string };
+    filter: {
+      listingId: string;
+      $or: Array<
+        | { downloadedAt: { $lte: Date } }
+        | { downloadedAt: { $exists: false } }
+      >;
+    };
     update: {
       $set: MapListingRecord;
       $unset?: Record<string, 1>;
@@ -274,7 +281,13 @@ function buildUpsertOperation(record: MapListingRecord): MapListingBulkOperation
   }
   return {
     updateOne: {
-      filter: { listingId: record.listingId },
+      filter: {
+        listingId: record.listingId,
+        $or: [
+          { downloadedAt: { $lte: record.downloadedAt } },
+          { downloadedAt: { $exists: false } },
+        ],
+      },
       update,
       upsert: true,
     },
@@ -292,7 +305,7 @@ async function acquireRefreshLock(
   ownerId: string,
   acquiredAt: Date,
   lockTtlMs: number,
-): Promise<void> {
+): Promise<number> {
   const expiresAt = new Date(acquiredAt.getTime() + lockTtlMs);
   let lockDoc: Record<string, unknown> | null = null;
   try {
@@ -311,6 +324,9 @@ async function acquireRefreshLock(
           lockedAt: acquiredAt,
           lockExpiresAt: expiresAt,
         },
+        $inc: {
+          lockEpoch: 1,
+        },
       },
       {
         upsert: true,
@@ -328,19 +344,114 @@ async function acquireRefreshLock(
   if (!lockDoc || lockDoc.lockOwner !== ownerId) {
     throw new Error('Refusing to refresh mapListing: another refresh is already in progress.');
   }
+  return typeof lockDoc.lockEpoch === 'number' ? lockDoc.lockEpoch : 1;
+}
+
+async function assertRefreshLockHeld(
+  model: MapListingModelLike,
+  ownerId: string,
+  lockEpoch: number,
+  currentTime: Date,
+  lockTtlMs: number,
+): Promise<void> {
+  const expiresAt = new Date(currentTime.getTime() + lockTtlMs);
+  const lockDoc = await model.findOneAndUpdate(
+    {
+      listingId: MAP_LISTING_LOCK_ID,
+      lockOwner: ownerId,
+      lockEpoch,
+      lockExpiresAt: { $gt: currentTime },
+    },
+    {
+      $set: {
+        lockExpiresAt: expiresAt,
+      },
+    },
+    {
+      upsert: false,
+      returnDocument: 'after',
+      lean: true,
+      strict: false,
+    },
+  );
+  if (!lockDoc || lockDoc.lockOwner !== ownerId || lockDoc.lockEpoch !== lockEpoch) {
+    throw new Error('Refusing to refresh mapListing: refresh lock expired or ownership was lost.');
+  }
 }
 
 async function releaseRefreshLock(
   model: MapListingModelLike,
   ownerId: string,
+  lockEpoch: number,
 ): Promise<void> {
   await model.deleteMany(
     {
       listingId: MAP_LISTING_LOCK_ID,
       lockOwner: ownerId,
+      lockEpoch,
     },
     { strict: false },
   );
+}
+
+function resolveRefreshTimestamp(rawDownloadedAt: Date, lockEpoch: number): Date {
+  const resolved = lockEpoch > 1 && rawDownloadedAt.getTime() <= lastRefreshTimestampMs
+    ? new Date(lastRefreshTimestampMs + 1)
+    : rawDownloadedAt;
+  lastRefreshTimestampMs = resolved.getTime();
+  return resolved;
+}
+
+function validateAndNormalizeAnswer(
+  answer: OvertureDownloadAnswer,
+  downloadedAt: Date,
+): { release: string; listings: MapListingRecord[] } {
+  const release = answer.release?.trim();
+  if (!release || !RELEASE_PATTERN.test(release)) {
+    throw new Error(`Refusing to refresh mapListing: invalid Overture release "${answer.release}".`);
+  }
+  if (!Array.isArray(answer.rows)) {
+    throw new TypeError('Refusing to refresh mapListing: downloaded rows payload is not an array.');
+  }
+  const byId = new Map<string, MapListingRecord>();
+  for (const rawRow of answer.rows) {
+    const normalized = normalizeMapListing(rawRow, release, downloadedAt);
+    if (normalized) {
+      byId.set(normalized.listingId, normalized);
+    }
+  }
+  return { release, listings: [...byId.values()] };
+}
+
+function assertAnswerMeetsThreshold(listingCount: number, previousCount: number): void {
+  if (listingCount === 0) {
+    throw new Error(
+      `Refusing to refresh mapListing: answer contained 0 valid listings (existing copy holds ${previousCount}).`,
+    );
+  }
+  if (previousCount > 0 && listingCount < previousCount / 2) {
+    throw new Error(
+      `Refusing to refresh mapListing: answer contained ${listingCount} listings, under half of the ${previousCount} listings currently held.`,
+    );
+  }
+}
+
+async function rollbackStaleBatchIfSuperseded(
+  model: MapListingModelLike,
+  wroteAnyBatch: boolean,
+  downloadedAt: Date | undefined,
+): Promise<void> {
+  if (!wroteAnyBatch || !downloadedAt) return;
+  const newerCount = await model.countDocuments({
+    listingId: { $ne: MAP_LISTING_LOCK_ID },
+    downloadedAt: { $gt: downloadedAt },
+  });
+  if (newerCount > 0) {
+    await model.deleteMany({
+      listingId: { $ne: MAP_LISTING_LOCK_ID },
+      downloadedAt,
+    });
+  }
 }
 
 export async function refreshMapListings(
@@ -352,53 +463,41 @@ export async function refreshMapListings(
   const ownerId = options.ownerId ?? crypto.randomUUID();
   const lockTtlMs = options.lockTtlMs ?? DEFAULT_REFRESH_LOCK_TTL_MS;
 
-  await acquireRefreshLock(model, ownerId, now(), lockTtlMs);
+  const lockEpoch = await acquireRefreshLock(model, ownerId, now(), lockTtlMs);
+  let downloadedAt: Date | undefined;
+  let wroteAnyBatch = false;
   try {
     const answer = await options.fetchAnswer();
-    const release = answer.release?.trim();
-    if (!release || !RELEASE_PATTERN.test(release)) {
-      throw new Error(`Refusing to refresh mapListing: invalid Overture release "${answer.release}".`);
-    }
-    if (!Array.isArray(answer.rows)) {
-      throw new TypeError('Refusing to refresh mapListing: downloaded rows payload is not an array.');
-    }
+    const rawDownloadedAt = now();
+    downloadedAt = resolveRefreshTimestamp(rawDownloadedAt, lockEpoch);
+    await assertRefreshLockHeld(model, ownerId, lockEpoch, rawDownloadedAt, lockTtlMs);
 
-    const downloadedAt = now();
-    const byId = new Map<string, MapListingRecord>();
-    for (const rawRow of answer.rows) {
-      const normalized = normalizeMapListing(rawRow, release, downloadedAt);
-      if (normalized) {
-        byId.set(normalized.listingId, normalized);
-      }
-    }
-
-    const listings = [...byId.values()];
+    const { release, listings } = validateAndNormalizeAnswer(answer, downloadedAt);
     const previousCount = await model.countDocuments({
       listingId: { $ne: MAP_LISTING_LOCK_ID },
     });
-
-    if (listings.length === 0) {
-      throw new Error(
-        `Refusing to refresh mapListing: answer contained 0 valid listings (existing copy holds ${previousCount}).`,
-      );
-    }
-    if (previousCount > 0 && listings.length < previousCount / 2) {
-      throw new Error(
-        `Refusing to refresh mapListing: answer contained ${listings.length} listings, under half of the ${previousCount} listings currently held.`,
-      );
-    }
+    assertAnswerMeetsThreshold(listings.length, previousCount);
 
     for (let i = 0; i < listings.length; i += batchSize) {
+      // eslint-disable-next-line no-await-in-loop
+      await assertRefreshLockHeld(model, ownerId, lockEpoch, now(), lockTtlMs);
       const slice = listings.slice(i, i + batchSize);
       const ops = slice.map(buildUpsertOperation);
+      wroteAnyBatch = true;
       // eslint-disable-next-line no-await-in-loop
       await model.bulkWrite(ops, { ordered: false });
     }
 
+    await assertRefreshLockHeld(model, ownerId, lockEpoch, now(), lockTtlMs);
     const keptIds = [...listings.map((item) => item.listingId), MAP_LISTING_LOCK_ID];
     const deleteResult = await model.deleteMany({
       listingId: { $nin: keptIds },
+      $or: [
+        { downloadedAt: { $lte: downloadedAt } },
+        { downloadedAt: { $exists: false } },
+      ],
     });
+    await assertRefreshLockHeld(model, ownerId, lockEpoch, now(), lockTtlMs);
 
     return {
       release,
@@ -407,7 +506,10 @@ export async function refreshMapListings(
       written: listings.length,
       removed: deleteResult.deletedCount ?? 0,
     };
+  } catch (err) {
+    await rollbackStaleBatchIfSuperseded(model, wroteAnyBatch, downloadedAt);
+    throw err;
   } finally {
-    await releaseRefreshLock(model, ownerId);
+    await releaseRefreshLock(model, ownerId, lockEpoch);
   }
 }

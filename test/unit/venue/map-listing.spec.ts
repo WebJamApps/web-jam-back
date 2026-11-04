@@ -24,6 +24,7 @@ import {
 interface StoredLockDoc {
   listingId: string;
   lockOwner: string;
+  lockEpoch: number;
   lockedAt: Date;
   lockExpiresAt: Date;
 }
@@ -37,6 +38,12 @@ class InMemoryMapListingStore implements MapListingModelLike {
 
   deleteManyCalls: Record<string, unknown>[] = [];
 
+  onBeforeBulkWrite?: (ops: MapListingBulkOperation[]) => Promise<void>;
+
+  onAfterBulkWrite?: (ops: MapListingBulkOperation[]) => Promise<void>;
+
+  onBeforeDeleteMany?: (filter: Record<string, unknown>) => Promise<void>;
+
   constructor(initial: MapListingRecord[] = []) {
     for (const item of initial) {
       this.docs.set(item.listingId, { ...item });
@@ -46,10 +53,27 @@ class InMemoryMapListingStore implements MapListingModelLike {
   findOneAndUpdate(
     filter: Record<string, unknown>,
     update: Record<string, unknown>,
+    options?: Record<string, unknown>,
   ): Promise<Record<string, unknown> | null> {
     if (filter.listingId !== MAP_LISTING_LOCK_ID) {
       return Promise.resolve(null);
     }
+    const isUpsert = options?.upsert === true;
+    if (!isUpsert) {
+      const gtDate = (filter.lockExpiresAt as { $gt?: Date } | undefined)?.$gt;
+      if (
+        !this.lockDoc
+        || this.lockDoc.lockOwner !== filter.lockOwner
+        || (typeof filter.lockEpoch === 'number' && this.lockDoc.lockEpoch !== filter.lockEpoch)
+        || (gtDate && this.lockDoc.lockExpiresAt <= gtDate)
+      ) {
+        return Promise.resolve(null);
+      }
+      const setFields = (update.$set ?? {}) as Partial<StoredLockDoc>;
+      this.lockDoc = { ...this.lockDoc, ...setFields };
+      return Promise.resolve({ ...this.lockDoc });
+    }
+
     const orClauses = filter.$or as Array<{ lockExpiresAt?: { $lte?: Date } }> | undefined;
     const cutoff = orClauses?.[0]?.lockExpiresAt?.$lte;
     if (this.lockDoc && cutoff && this.lockDoc.lockExpiresAt > cutoff) {
@@ -59,52 +83,106 @@ class InMemoryMapListingStore implements MapListingModelLike {
       );
       return Promise.reject(dupErr);
     }
-    const setFields = (update.$set ?? {}) as unknown as StoredLockDoc;
-    this.lockDoc = { ...setFields };
+    const setFields = (update.$set ?? {}) as Omit<StoredLockDoc, 'lockEpoch'>;
+    const incEpoch = ((update.$inc as { lockEpoch?: number } | undefined)?.lockEpoch ?? 1);
+    const nextEpoch = (this.lockDoc?.lockEpoch ?? 0) + incEpoch;
+    this.lockDoc = {
+      ...setFields,
+      lockEpoch: nextEpoch,
+    };
     return Promise.resolve({ ...this.lockDoc });
   }
 
-  countDocuments(): Promise<number> {
+  countDocuments(filter?: Record<string, unknown>): Promise<number> {
+    const gtDate = (filter?.downloadedAt as { $gt?: Date } | undefined)?.$gt;
+    if (gtDate) {
+      let count = 0;
+      for (const doc of this.docs.values()) {
+        if (doc.downloadedAt > gtDate) {
+          count += 1;
+        }
+      }
+      return Promise.resolve(count);
+    }
     return Promise.resolve(this.docs.size);
   }
 
-  bulkWrite(ops: MapListingBulkOperation[]): Promise<unknown> {
+  async bulkWrite(ops: MapListingBulkOperation[]): Promise<unknown> {
+    if (this.onBeforeBulkWrite) {
+      await this.onBeforeBulkWrite(ops);
+    }
     this.bulkWriteCalls.push(ops);
+    let dupError: Error | null = null;
     for (const op of ops) {
       const id = op.updateOne.filter.listingId;
+      const lteDate = (op.updateOne.filter.$or?.[0] as { downloadedAt?: { $lte?: Date } } | undefined)
+        ?.downloadedAt?.$lte;
       const existing = this.docs.get(id);
-      const merged: MapListingRecord = existing
-        ? { ...existing, ...op.updateOne.update.$set }
-        : { ...op.updateOne.update.$set };
-      if (op.updateOne.update.$unset) {
-        for (const key of Object.keys(op.updateOne.update.$unset)) {
-          delete (merged as unknown as Record<string, unknown>)[key];
+      if (existing && lteDate && existing.downloadedAt > lteDate) {
+        dupError = Object.assign(
+          new Error(`E11000 duplicate key error collection: webjamsalem.mapListing index: listingId_1 (${id})`),
+          { code: 11000 },
+        );
+      } else {
+        const merged: MapListingRecord = existing
+          ? { ...existing, ...op.updateOne.update.$set }
+          : { ...op.updateOne.update.$set };
+        if (op.updateOne.update.$unset) {
+          for (const key of Object.keys(op.updateOne.update.$unset)) {
+            delete (merged as unknown as Record<string, unknown>)[key];
+          }
         }
+        this.docs.set(id, merged);
       }
-      this.docs.set(id, merged);
     }
-    return Promise.resolve({ ok: 1 });
+    if (dupError) {
+      throw dupError;
+    }
+    if (this.onAfterBulkWrite) {
+      await this.onAfterBulkWrite(ops);
+    }
+    return { ok: 1 };
   }
 
-  deleteMany(filter: Record<string, unknown>): Promise<{ deletedCount?: number }> {
+  async deleteMany(filter: Record<string, unknown>): Promise<{ deletedCount?: number }> {
     if (filter.listingId === MAP_LISTING_LOCK_ID) {
-      if (this.lockDoc && this.lockDoc.lockOwner === filter.lockOwner) {
+      if (
+        this.lockDoc
+        && this.lockDoc.lockOwner === filter.lockOwner
+        && (typeof filter.lockEpoch !== 'number' || this.lockDoc.lockEpoch === filter.lockEpoch)
+      ) {
         this.lockDoc = null;
-        return Promise.resolve({ deletedCount: 1 });
+        return { deletedCount: 1 };
       }
-      return Promise.resolve({ deletedCount: 0 });
+      return { deletedCount: 0 };
+    }
+    if (this.onBeforeDeleteMany) {
+      await this.onBeforeDeleteMany(filter);
     }
     this.deleteManyCalls.push(filter);
+    if (filter.downloadedAt instanceof Date) {
+      let deletedCount = 0;
+      for (const [id, doc] of [...this.docs.entries()]) {
+        if (doc.downloadedAt.getTime() === filter.downloadedAt.getTime()) {
+          this.docs.delete(id);
+          deletedCount += 1;
+        }
+      }
+      return { deletedCount };
+    }
     const ninSpec = filter.listingId as { $nin?: string[] } | undefined;
     const kept = new Set(ninSpec?.$nin ?? []);
+    const orClauses = filter.$or as Array<{ downloadedAt?: { $lte?: Date } }> | undefined;
+    const maxDownloadedAt = orClauses?.[0]?.downloadedAt?.$lte;
     let deletedCount = 0;
-    for (const id of [...this.docs.keys()]) {
-      if (!kept.has(id)) {
+    for (const [id, doc] of [...this.docs.entries()]) {
+      const withinCutoff = !maxDownloadedAt || doc.downloadedAt <= maxDownloadedAt;
+      if (!kept.has(id) && withinCutoff) {
         this.docs.delete(id);
         deletedCount += 1;
       }
     }
-    return Promise.resolve({ deletedCount });
+    return { deletedCount };
   }
 
   snapshot(): MapListingRecord[] {
@@ -560,6 +638,7 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
     store.lockDoc = {
       listingId: MAP_LISTING_LOCK_ID,
       lockOwner: 'crashed-writer',
+      lockEpoch: 1,
       lockedAt: new Date('2026-11-02T05:00:00.000Z'),
       lockExpiresAt: new Date('2026-11-02T05:30:00.000Z'),
     };
@@ -603,5 +682,229 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
         fetchAnswer: () => Promise.resolve({ release: SAMPLE_RELEASE, rows: [sampleRow()] }),
       }),
     ).rejects.toThrow('Mongo network timeout');
+  });
+
+  it('prevents an expired lock owner from pruning or overwriting after another writer reclaims the lease', async () => {
+    const store = new InMemoryMapListingStore([]);
+    let currentClockMs = SAMPLE_DOWNLOADED_AT.getTime();
+    const now = () => new Date(currentClockMs);
+
+    let notifyWriterAPausedAfterUpsert: () => void = () => undefined;
+    const writerAPausedAfterUpsert = new Promise<void>((resolve) => {
+      notifyWriterAPausedAfterUpsert = resolve;
+    });
+    let resumeWriterA: () => void = () => undefined;
+    const writerACanResume = new Promise<void>((resolve) => {
+      resumeWriterA = resolve;
+    });
+
+    // Pause Writer A right after it finishes upserting {A, B}, before its prune step:
+    store.onAfterBulkWrite = async () => {
+      store.onAfterBulkWrite = undefined;
+      notifyWriterAPausedAfterUpsert();
+      await writerACanResume;
+    };
+
+    const writerAPromise = refreshMapListings({
+      model: store,
+      ownerId: 'writer-A',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-A', name: 'Venue A' }),
+          sampleRow({ listingId: 'ov-B', name: 'Venue B' }),
+        ],
+      }),
+    });
+
+    await writerAPausedAfterUpsert;
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-A', 'ov-B']);
+
+    // Advance clock past the default 30-minute lease (1,800,000 ms):
+    currentClockMs += 1_800_000 + 1000;
+
+    // Writer B acquires the expired lock, upserts {B, C}, and prunes {A}:
+    const writerBResult = await refreshMapListings({
+      model: store,
+      ownerId: 'writer-B',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-B', name: 'Venue B Updated' }),
+          sampleRow({ listingId: 'ov-C', name: 'Venue C' }),
+        ],
+      }),
+    });
+    expect(writerBResult).toMatchObject({ written: 2, removed: 1 });
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+
+    // Resume Writer A; it must fail closed on lost/expired lock ownership and leave {B, C} intact:
+    resumeWriterA();
+    await expect(writerAPromise).rejects.toThrow(/refresh lock expired or ownership was lost/);
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+    expect(store.docs.get('ov-B')?.name).toBe('Venue B Updated');
+  });
+
+  it('fences in-flight deleteMany and bulkWrite calls by downloadedAt when a writer stalls mid-operation past lease expiry', async () => {
+    const store = new InMemoryMapListingStore([]);
+    let currentClockMs = SAMPLE_DOWNLOADED_AT.getTime();
+    const now = () => new Date(currentClockMs);
+
+    // Case 1: Writer A stalls right inside deleteMany (after the pre-deleteMany lock check)
+    let notifyStalledInDelete: () => void = () => undefined;
+    const stalledInDelete = new Promise<void>((resolve) => {
+      notifyStalledInDelete = resolve;
+    });
+    let resumeDelete: () => void = () => undefined;
+    const canFinishDelete = new Promise<void>((resolve) => {
+      resumeDelete = resolve;
+    });
+
+    store.onBeforeDeleteMany = async () => {
+      store.onBeforeDeleteMany = undefined;
+      notifyStalledInDelete();
+      await canFinishDelete;
+    };
+
+    const writerAPromise = refreshMapListings({
+      model: store,
+      ownerId: 'writer-A',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-A', name: 'Venue A' }),
+          sampleRow({ listingId: 'ov-B', name: 'Venue B' }),
+        ],
+      }),
+    });
+
+    await stalledInDelete;
+    currentClockMs += 1_800_000 + 1000;
+
+    const writerBResult = await refreshMapListings({
+      model: store,
+      ownerId: 'writer-B',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-B', name: 'Venue B From B' }),
+          sampleRow({ listingId: 'ov-C', name: 'Venue C From B' }),
+        ],
+      }),
+    });
+    expect(writerBResult).toMatchObject({ written: 2, removed: 1 });
+
+    // Resume Writer A's in-flight deleteMany: downloadedAt filter prevents deleting C, and post-check rejects A
+    resumeDelete();
+    await expect(writerAPromise).rejects.toThrow(/refresh lock expired or ownership was lost/);
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+
+    // Case 2: Writer A stalls right inside bulkWrite (after the pre-bulkWrite lock check)
+    let notifyStalledInBulkWrite: () => void = () => undefined;
+    const stalledInBulkWrite = new Promise<void>((resolve) => {
+      notifyStalledInBulkWrite = resolve;
+    });
+    let resumeBulkWrite: () => void = () => undefined;
+    const canFinishBulkWrite = new Promise<void>((resolve) => {
+      resumeBulkWrite = resolve;
+    });
+
+    store.onBeforeBulkWrite = async () => {
+      store.onBeforeBulkWrite = undefined;
+      notifyStalledInBulkWrite();
+      await canFinishBulkWrite;
+    };
+
+    const writerCPromise = refreshMapListings({
+      model: store,
+      ownerId: 'writer-C',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-A', name: 'Stale Venue A' }),
+          sampleRow({ listingId: 'ov-B', name: 'Stale Venue B' }),
+        ],
+      }),
+    });
+
+    await stalledInBulkWrite;
+    currentClockMs += 1_800_000 + 1000;
+
+    await refreshMapListings({
+      model: store,
+      ownerId: 'writer-D',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-B', name: 'Fresh Venue B' }),
+          sampleRow({ listingId: 'ov-C', name: 'Fresh Venue C' }),
+        ],
+      }),
+    });
+
+    resumeBulkWrite();
+    await expect(writerCPromise).rejects.toThrow(/E11000|duplicate key/);
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+    expect(store.docs.get('ov-B')?.name).toBe('Fresh Venue B');
+
+    // Case 3: Ownership replacement without advancing the clock (frozen clock) while Writer E is paused after batch 1
+    let notifyBatch1Done: () => void = () => undefined;
+    const batch1Done = new Promise<void>((resolve) => {
+      notifyBatch1Done = resolve;
+    });
+    let resumeAfterBatch1: () => void = () => undefined;
+    const canResumeAfterBatch1 = new Promise<void>((resolve) => {
+      resumeAfterBatch1 = resolve;
+    });
+
+    store.onAfterBulkWrite = async () => {
+      store.onAfterBulkWrite = undefined;
+      notifyBatch1Done();
+      await canResumeAfterBatch1;
+    };
+
+    const writerEPromise = refreshMapListings({
+      model: store,
+      ownerId: 'writer-E',
+      batchSize: 1,
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-A', name: 'Replaced A' }),
+          sampleRow({ listingId: 'ov-B', name: 'Replaced B' }),
+        ],
+      }),
+    });
+
+    await batch1Done;
+    // Force lock expiration in-place without advancing `currentClockMs` to simulate direct ownership replacement:
+    if (store.lockDoc) {
+      store.lockDoc.lockExpiresAt = new Date(currentClockMs - 1);
+    }
+
+    await refreshMapListings({
+      model: store,
+      ownerId: 'writer-F',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-B', name: 'Owner F Venue B' }),
+          sampleRow({ listingId: 'ov-C', name: 'Owner F Venue C' }),
+        ],
+      }),
+    });
+
+    resumeAfterBatch1();
+    await expect(writerEPromise).rejects.toThrow(/refresh lock expired or ownership was lost/);
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+    expect(store.docs.get('ov-B')?.name).toBe('Owner F Venue B');
   });
 });
