@@ -5,6 +5,7 @@ import { Icontroller } from '#src/lib/routeUtils.js';
 import { isValidEmail } from '#src/lib/email.js';
 import venueModel from './venue-facade.js';
 import { normalizeAddress } from './normalize-address.js';
+import { censusLocationUpdate, hasVenueAddressUpdate } from './census-geocoder.js';
 import userModel from '../user/user-facade.js';
 import gigModel from '../gig/gig-facade.js';
 import {
@@ -946,6 +947,7 @@ class VenueController extends Controller {
     const resolved = await this.resolveExistingForCreate(body);
     if ('error' in resolved) return res.status(resolved.error.status).json({ message: resolved.error.message });
     const { existing } = resolved;
+    const locationUpdate = await censusLocationUpdate(body, existing);
 
     // #983/#985 — non-blocking "email also on '<venueName>'" notice: never
     // awaited in a way that could fail the create, and never used to
@@ -974,12 +976,12 @@ class VenueController extends Controller {
       let updated;
       try {
         updated = await this.model.findByIdAndUpdate(String(existing._id), {
-          ...body, status: body.status || 'active', lastModifiedBy: actor,
+          ...body, ...locationUpdate, status: body.status || 'active', lastModifiedBy: actor,
         });
       } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
       return res.status(200).json(updated);
     }
-    const createBody: Record<string, unknown> = { ...body, status: body.status || 'active', lastModifiedBy: actor };
+    const createBody: Record<string, unknown> = { ...body, ...locationUpdate, status: body.status || 'active', lastModifiedBy: actor };
     if (emailNote) createBody.notes = VenueController.appendNote(body.notes, emailNote);
     let doc;
     try {
@@ -1090,12 +1092,25 @@ class VenueController extends Controller {
     const zipErr = await this.applyZipCodeUpdate(req.params.id, body);
     if (zipErr) return res.status(zipErr.status).json({ message: zipErr.message });
     await this.applyFamilyNearbyUpdate(req.params.id, body);
+    const locationUpdate = await this.resolveCensusUpdate(req.params.id, body);
     let doc;
     try {
-      doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, lastModifiedBy: resolveActor(req, body) });
+      doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, ...locationUpdate, lastModifiedBy: resolveActor(req, body) });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     if (!doc) return res.status(400).json({ message: 'Id Not Found' });
     return res.status(200).json(doc);
+  }
+
+  async resolveCensusUpdate(id: string, body: VenueBody): Promise<Record<string, unknown>> {
+    if (body.location !== undefined || !hasVenueAddressUpdate(body)) return {};
+    try {
+      const current = await this.model.findById(id);
+      return await censusLocationUpdate(body, current);
+    } catch {
+      // If the old address cannot be read, do not retain a possibly stale pin
+      // or guess the missing address parts. The save itself still proceeds.
+      return { $unset: { location: 1 } };
+    }
   }
 
   // POST /venue/:id/touch — append one timeline event (#898). Gated by
