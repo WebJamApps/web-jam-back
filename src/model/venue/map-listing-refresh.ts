@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import MapListing, {
   MAP_LISTING_KINDS,
   type MapListingKind,
@@ -11,6 +12,8 @@ export const SALEM_VA_COORDINATES = {
   longitude: -80.0548,
 } as const;
 export const MAP_LISTING_MAX_RADIUS_MILES = 200;
+export const MAP_LISTING_LOCK_ID = '__overture_refresh_lock__';
+export const DEFAULT_REFRESH_LOCK_TTL_MS = 30 * 60 * 1000;
 
 const RELEASE_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
 const BULK_WRITE_BATCH_SIZE = 1000;
@@ -73,9 +76,17 @@ export interface MapListingBulkOperation {
 }
 
 export interface MapListingModelLike {
+  findOneAndUpdate(
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null>;
   countDocuments(filter?: Record<string, unknown>): Promise<number>;
   bulkWrite(ops: MapListingBulkOperation[], options?: { ordered?: boolean }): Promise<unknown>;
-  deleteMany(filter: Record<string, unknown>): Promise<{ deletedCount?: number }>;
+  deleteMany(
+    filter: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ): Promise<{ deletedCount?: number }>;
 }
 
 export interface RefreshMapListingsOptions {
@@ -83,6 +94,8 @@ export interface RefreshMapListingsOptions {
   model?: MapListingModelLike;
   now?: () => Date;
   batchSize?: number;
+  ownerId?: string;
+  lockTtlMs?: number;
 }
 
 export interface RefreshMapListingsResult {
@@ -205,7 +218,7 @@ export function normalizeMapListing(
   const listingId = cleanOptionalString(raw.listingId ?? raw.id);
   const name = cleanOptionalString(raw.name);
   const street = cleanOptionalString(raw.street);
-  if (!listingId || !name || !street) {
+  if (!listingId || listingId === MAP_LISTING_LOCK_ID || !name || !street) {
     return null;
   }
 
@@ -268,62 +281,133 @@ function buildUpsertOperation(record: MapListingRecord): MapListingBulkOperation
   };
 }
 
+function isDuplicateKeyError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const maybeErr = err as { code?: number; message?: string };
+  return maybeErr.code === 11000 || /E11000|duplicate key/i.test(maybeErr.message ?? '');
+}
+
+async function acquireRefreshLock(
+  model: MapListingModelLike,
+  ownerId: string,
+  acquiredAt: Date,
+  lockTtlMs: number,
+): Promise<void> {
+  const expiresAt = new Date(acquiredAt.getTime() + lockTtlMs);
+  let lockDoc: Record<string, unknown> | null = null;
+  try {
+    lockDoc = await model.findOneAndUpdate(
+      {
+        listingId: MAP_LISTING_LOCK_ID,
+        $or: [
+          { lockExpiresAt: { $lte: acquiredAt } },
+          { lockExpiresAt: { $exists: false } },
+        ],
+      },
+      {
+        $set: {
+          listingId: MAP_LISTING_LOCK_ID,
+          lockOwner: ownerId,
+          lockedAt: acquiredAt,
+          lockExpiresAt: expiresAt,
+        },
+      },
+      {
+        upsert: true,
+        returnDocument: 'after',
+        lean: true,
+        strict: false,
+      },
+    );
+  } catch (err) {
+    if (isDuplicateKeyError(err)) {
+      throw new Error('Refusing to refresh mapListing: another refresh is already in progress.');
+    }
+    throw err;
+  }
+  if (!lockDoc || lockDoc.lockOwner !== ownerId) {
+    throw new Error('Refusing to refresh mapListing: another refresh is already in progress.');
+  }
+}
+
+async function releaseRefreshLock(
+  model: MapListingModelLike,
+  ownerId: string,
+): Promise<void> {
+  await model.deleteMany(
+    {
+      listingId: MAP_LISTING_LOCK_ID,
+      lockOwner: ownerId,
+    },
+    { strict: false },
+  );
+}
+
 export async function refreshMapListings(
   options: RefreshMapListingsOptions,
 ): Promise<RefreshMapListingsResult> {
   const model = (options.model ?? (MapListing as unknown as MapListingModelLike));
   const now = options.now ?? (() => new Date());
   const batchSize = options.batchSize ?? BULK_WRITE_BATCH_SIZE;
+  const ownerId = options.ownerId ?? crypto.randomUUID();
+  const lockTtlMs = options.lockTtlMs ?? DEFAULT_REFRESH_LOCK_TTL_MS;
 
-  const answer = await options.fetchAnswer();
-  const release = answer.release?.trim();
-  if (!release || !RELEASE_PATTERN.test(release)) {
-    throw new Error(`Refusing to refresh mapListing: invalid Overture release "${answer.release}".`);
-  }
-  if (!Array.isArray(answer.rows)) {
-    throw new TypeError('Refusing to refresh mapListing: downloaded rows payload is not an array.');
-  }
-
-  const downloadedAt = now();
-  const byId = new Map<string, MapListingRecord>();
-  for (const rawRow of answer.rows) {
-    const normalized = normalizeMapListing(rawRow, release, downloadedAt);
-    if (normalized) {
-      byId.set(normalized.listingId, normalized);
+  await acquireRefreshLock(model, ownerId, now(), lockTtlMs);
+  try {
+    const answer = await options.fetchAnswer();
+    const release = answer.release?.trim();
+    if (!release || !RELEASE_PATTERN.test(release)) {
+      throw new Error(`Refusing to refresh mapListing: invalid Overture release "${answer.release}".`);
     }
+    if (!Array.isArray(answer.rows)) {
+      throw new TypeError('Refusing to refresh mapListing: downloaded rows payload is not an array.');
+    }
+
+    const downloadedAt = now();
+    const byId = new Map<string, MapListingRecord>();
+    for (const rawRow of answer.rows) {
+      const normalized = normalizeMapListing(rawRow, release, downloadedAt);
+      if (normalized) {
+        byId.set(normalized.listingId, normalized);
+      }
+    }
+
+    const listings = [...byId.values()];
+    const previousCount = await model.countDocuments({
+      listingId: { $ne: MAP_LISTING_LOCK_ID },
+    });
+
+    if (listings.length === 0) {
+      throw new Error(
+        `Refusing to refresh mapListing: answer contained 0 valid listings (existing copy holds ${previousCount}).`,
+      );
+    }
+    if (previousCount > 0 && listings.length < previousCount / 2) {
+      throw new Error(
+        `Refusing to refresh mapListing: answer contained ${listings.length} listings, under half of the ${previousCount} listings currently held.`,
+      );
+    }
+
+    for (let i = 0; i < listings.length; i += batchSize) {
+      const slice = listings.slice(i, i + batchSize);
+      const ops = slice.map(buildUpsertOperation);
+      // eslint-disable-next-line no-await-in-loop
+      await model.bulkWrite(ops, { ordered: false });
+    }
+
+    const keptIds = [...listings.map((item) => item.listingId), MAP_LISTING_LOCK_ID];
+    const deleteResult = await model.deleteMany({
+      listingId: { $nin: keptIds },
+    });
+
+    return {
+      release,
+      downloadedAt,
+      previousCount,
+      written: listings.length,
+      removed: deleteResult.deletedCount ?? 0,
+    };
+  } finally {
+    await releaseRefreshLock(model, ownerId);
   }
-
-  const listings = [...byId.values()];
-  const previousCount = await model.countDocuments({});
-
-  if (listings.length === 0) {
-    throw new Error(
-      `Refusing to refresh mapListing: answer contained 0 valid listings (existing copy holds ${previousCount}).`,
-    );
-  }
-  if (previousCount > 0 && listings.length < previousCount / 2) {
-    throw new Error(
-      `Refusing to refresh mapListing: answer contained ${listings.length} listings, under half of the ${previousCount} listings currently held.`,
-    );
-  }
-
-  for (let i = 0; i < listings.length; i += batchSize) {
-    const slice = listings.slice(i, i + batchSize);
-    const ops = slice.map(buildUpsertOperation);
-    // eslint-disable-next-line no-await-in-loop
-    await model.bulkWrite(ops, { ordered: false });
-  }
-
-  const keptIds = listings.map((item) => item.listingId);
-  const deleteResult = await model.deleteMany({
-    listingId: { $nin: keptIds },
-  });
-
-  return {
-    release,
-    downloadedAt,
-    previousCount,
-    written: listings.length,
-    removed: deleteResult.deletedCount ?? 0,
-  };
 }

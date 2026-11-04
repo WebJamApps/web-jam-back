@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: refresh-overture-map-listings
+  cancel-in-progress: false
+
 jobs:
   refresh-map-listings:
     runs-on: ubuntu-latest

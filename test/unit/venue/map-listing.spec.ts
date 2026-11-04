@@ -6,6 +6,7 @@ import MapListing, {
   type MapListingRecord,
 } from '#src/model/venue/map-listing-schema.js';
 import {
+  MAP_LISTING_LOCK_ID,
   MAP_LISTING_MAX_RADIUS_MILES,
   OVERTURE_STAC_CATALOG_URL,
   SALEM_VA_COORDINATES,
@@ -20,8 +21,17 @@ import {
   type RawOvertureListingRow,
 } from '#src/model/venue/map-listing-refresh.js';
 
+interface StoredLockDoc {
+  listingId: string;
+  lockOwner: string;
+  lockedAt: Date;
+  lockExpiresAt: Date;
+}
+
 class InMemoryMapListingStore implements MapListingModelLike {
   docs = new Map<string, MapListingRecord>();
+
+  lockDoc: StoredLockDoc | null = null;
 
   bulkWriteCalls: MapListingBulkOperation[][] = [];
 
@@ -31,6 +41,27 @@ class InMemoryMapListingStore implements MapListingModelLike {
     for (const item of initial) {
       this.docs.set(item.listingId, { ...item });
     }
+  }
+
+  findOneAndUpdate(
+    filter: Record<string, unknown>,
+    update: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    if (filter.listingId !== MAP_LISTING_LOCK_ID) {
+      return Promise.resolve(null);
+    }
+    const orClauses = filter.$or as Array<{ lockExpiresAt?: { $lte?: Date } }> | undefined;
+    const cutoff = orClauses?.[0]?.lockExpiresAt?.$lte;
+    if (this.lockDoc && cutoff && this.lockDoc.lockExpiresAt > cutoff) {
+      const dupErr = Object.assign(
+        new Error('E11000 duplicate key error collection: webjamsalem.mapListing index: listingId_1'),
+        { code: 11000 },
+      );
+      return Promise.reject(dupErr);
+    }
+    const setFields = (update.$set ?? {}) as unknown as StoredLockDoc;
+    this.lockDoc = { ...setFields };
+    return Promise.resolve({ ...this.lockDoc });
   }
 
   countDocuments(): Promise<number> {
@@ -56,6 +87,13 @@ class InMemoryMapListingStore implements MapListingModelLike {
   }
 
   deleteMany(filter: Record<string, unknown>): Promise<{ deletedCount?: number }> {
+    if (filter.listingId === MAP_LISTING_LOCK_ID) {
+      if (this.lockDoc && this.lockDoc.lockOwner === filter.lockOwner) {
+        this.lockDoc = null;
+        return Promise.resolve({ deletedCount: 1 });
+      }
+      return Promise.resolve({ deletedCount: 0 });
+    }
     this.deleteManyCalls.push(filter);
     const ninSpec = filter.listingId as { $nin?: string[] } | undefined;
     const kept = new Set(ninSpec?.$nin ?? []);
@@ -278,6 +316,9 @@ describe('map-listing-refresh.ts: normalizeMapListing', () => {
     expect(normalizeMapListing(sampleRow({ street: undefined }), SAMPLE_RELEASE, SAMPLE_DOWNLOADED_AT)).toBeNull();
     expect(normalizeMapListing(sampleRow({ name: '   ' }), SAMPLE_RELEASE, SAMPLE_DOWNLOADED_AT)).toBeNull();
     expect(normalizeMapListing(sampleRow({ listingId: '' }), SAMPLE_RELEASE, SAMPLE_DOWNLOADED_AT)).toBeNull();
+    expect(
+      normalizeMapListing(sampleRow({ listingId: MAP_LISTING_LOCK_ID }), SAMPLE_RELEASE, SAMPLE_DOWNLOADED_AT),
+    ).toBeNull();
     expect(normalizeMapListing(sampleRow({ kind: 'hospital' }), SAMPLE_RELEASE, SAMPLE_DOWNLOADED_AT)).toBeNull();
     expect(normalizeMapListing(sampleRow({ longitude: Number.NaN }), SAMPLE_RELEASE, SAMPLE_DOWNLOADED_AT)).toBeNull();
     expect(normalizeMapListing(sampleRow({ latitude: 95 }), SAMPLE_RELEASE, SAMPLE_DOWNLOADED_AT)).toBeNull();
@@ -437,5 +478,130 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
     expect(store.bulkWriteCalls).toEqual([]);
     expect(store.deleteManyCalls).toEqual([]);
     expect(store.snapshot()).toEqual(initial);
+  });
+
+  it('prevents overlapping writers from interleaving upserts and prunes, preserving a complete answer', async () => {
+    const store = new InMemoryMapListingStore([
+      sampleStoredRecord({ listingId: 'ov-A', name: 'Venue A' }),
+      sampleStoredRecord({ listingId: 'ov-B', name: 'Venue B' }),
+    ]);
+
+    let releaseWriter1Fetch: () => void = () => undefined;
+    const writer1FetchEntered = new Promise<void>((resolve) => {
+      releaseWriter1Fetch = resolve;
+    });
+
+    let resumeWriter1: () => void = () => undefined;
+    const writer1CanFinishFetch = new Promise<void>((resolve) => {
+      resumeWriter1 = resolve;
+    });
+
+    const writer1Promise = refreshMapListings({
+      model: store,
+      ownerId: 'writer-1',
+      now: () => SAMPLE_DOWNLOADED_AT,
+      fetchAnswer: async () => {
+        releaseWriter1Fetch();
+        await writer1CanFinishFetch;
+        return {
+          release: SAMPLE_RELEASE,
+          rows: [
+            sampleRow({ listingId: 'ov-A', name: 'Venue A' }),
+            sampleRow({ listingId: 'ov-B', name: 'Venue B' }),
+          ],
+        };
+      },
+    });
+
+    await writer1FetchEntered;
+    expect(store.lockDoc?.lockOwner).toBe('writer-1');
+
+    // Overlapping Writer 2 attempts to refresh with {B, C} while Writer 1 holds the lock:
+    const writer2Fetch = vi.fn().mockResolvedValue({
+      release: SAMPLE_RELEASE,
+      rows: [
+        sampleRow({ listingId: 'ov-B', name: 'Venue B' }),
+        sampleRow({ listingId: 'ov-C', name: 'Venue C' }),
+      ],
+    });
+
+    await expect(
+      refreshMapListings({
+        model: store,
+        ownerId: 'writer-2',
+        now: () => SAMPLE_DOWNLOADED_AT,
+        fetchAnswer: writer2Fetch,
+      }),
+    ).rejects.toThrow(/another refresh is already in progress/);
+
+    expect(writer2Fetch).not.toHaveBeenCalled();
+
+    // Let Writer 1 complete; its answer {A, B} is written intact and the lock is released:
+    resumeWriter1();
+    const writer1Result = await writer1Promise;
+    expect(writer1Result.written).toBe(2);
+    expect(store.lockDoc).toBeNull();
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-A', 'ov-B']);
+
+    // Once Writer 1 has finished and released the lock, a subsequent sequential run with {B, C} succeeds:
+    const sequentialResult = await refreshMapListings({
+      model: store,
+      ownerId: 'writer-3',
+      now: () => SAMPLE_DOWNLOADED_AT,
+      fetchAnswer: writer2Fetch,
+    });
+    expect(sequentialResult).toMatchObject({ written: 2, removed: 1 });
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+    expect(store.lockDoc).toBeNull();
+  });
+
+  it('reclaims an expired refresh lock and propagates non-duplicate lock errors', async () => {
+    const store = new InMemoryMapListingStore([sampleStoredRecord({ listingId: 'ov-1' })]);
+    store.lockDoc = {
+      listingId: MAP_LISTING_LOCK_ID,
+      lockOwner: 'crashed-writer',
+      lockedAt: new Date('2026-11-02T05:00:00.000Z'),
+      lockExpiresAt: new Date('2026-11-02T05:30:00.000Z'),
+    };
+
+    const result = await refreshMapListings({
+      model: store,
+      ownerId: 'recovered-writer',
+      now: () => SAMPLE_DOWNLOADED_AT,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [sampleRow({ listingId: 'ov-1' })],
+      }),
+    });
+    expect(result.written).toBe(1);
+    expect(store.lockDoc).toBeNull();
+
+    // When findOneAndUpdate returns null or a mismatched owner without throwing, refuse:
+    const nullLockStore: MapListingModelLike = {
+      findOneAndUpdate: () => Promise.resolve(null),
+      countDocuments: () => Promise.resolve(0),
+      bulkWrite: () => Promise.resolve({}),
+      deleteMany: () => Promise.resolve({ deletedCount: 0 }),
+    };
+    await expect(
+      refreshMapListings({
+        model: nullLockStore,
+        fetchAnswer: () => Promise.resolve({ release: SAMPLE_RELEASE, rows: [sampleRow()] }),
+      }),
+    ).rejects.toThrow(/another refresh is already in progress/);
+
+    // When findOneAndUpdate throws an unexpected non-11000 error, propagate it:
+    const failingLockStore: MapListingModelLike = {
+      findOneAndUpdate: () => Promise.reject(new Error('Mongo network timeout')),
+      countDocuments: () => Promise.resolve(0),
+      bulkWrite: () => Promise.resolve({}),
+      deleteMany: () => Promise.resolve({ deletedCount: 0 }),
+    };
+    await expect(
+      refreshMapListings({
+        model: failingLockStore,
+        fetchAnswer: () => Promise.resolve({ release: SAMPLE_RELEASE, rows: [sampleRow()] }),
+      }),
+    ).rejects.toThrow('Mongo network timeout');
   });
 });
