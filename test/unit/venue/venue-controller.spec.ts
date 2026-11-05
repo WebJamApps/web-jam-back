@@ -6,6 +6,12 @@ import gigModel from '#src/model/gig/gig-facade.js';
 import venueModel from '#src/model/venue/venue-facade.js';
 import venueSchema from '#src/model/venue/venue-schema.js';
 
+// Census behavior is exercised with real helpers in venue-census.spec.ts.
+vi.mock('#src/model/venue/census-geocoder.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('#src/model/venue/census-geocoder.js')>(),
+  censusLocationUpdate: async () => ({}),
+}));
+
 const c = controller as any;
 
 describe('Venue Controller', () => {

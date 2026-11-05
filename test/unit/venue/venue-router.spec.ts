@@ -4,11 +4,19 @@ import userModel from '#src/model/user/user-facade.js';
 import authUtils from '#src/auth/authUtils.js';
 import request, { type ApiResponse } from '../../helpers/api.js';
 
+const realFetch = globalThis.fetch.bind(globalThis);
+
 describe('Venue Router (PATCH /venue/:id)', () => {
   let r: ApiResponse, agentUser: { _id: string };
   const allowedUrl = JSON.parse(process.env.AllowUrl || '{}').urls[0];
 
   beforeEach(async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((url, init) => {
+      if (String(url).startsWith('https://geocoding.geo.census.gov/')) {
+        return Promise.resolve(Response.json({ result: { addressMatches: [] } }));
+      }
+      return realFetch(url, init);
+    });
     await venueModel.deleteMany({});
     await userModel.deleteMany({ email: 'agent-venue-router@example.com' });
     const createdUser = await userModel.create({
@@ -17,6 +25,21 @@ describe('Venue Router (PATCH /venue/:id)', () => {
       privileges: ['venue:create', 'venue:edit', 'venue:delete'],
     }) as unknown as { _id: { toString(): string } };
     agentUser = { _id: createdUser._id.toString() };
+  });
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('removes a stale map position from MongoDB when Census finds no match', async () => {
+    const venue = await venueModel.create({
+      name: 'Moved venue', address: '1 Main St', city: 'Salem', usState: 'VA', zipCode: '24153',
+      location: { type: 'Point', coordinates: [-80.06, 37.27] },
+    });
+    const updated = await request(app).patch(`/venue/${venue._id}`)
+      .set({ origin: allowedUrl, Authorization: `Bearer ${authUtils.createJWT({ _id: agentUser._id })}` })
+      .send({ address: '2 Main St' });
+    expect(updated.status).toBe(200);
+    expect(updated.body).not.toHaveProperty('location');
+    expect(await venueModel.findById(String(venue._id))).not.toHaveProperty('location');
   });
 
   describe('Instagram username persistence', () => {

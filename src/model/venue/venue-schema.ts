@@ -15,10 +15,10 @@ const touchTargetWeekendSchema = new Schema({
   end: { type: Date, required: false },
 }, { _id: false });
 
-// A venue's exact pin as a GeoJSON Point, `coordinates` ordered [longitude, latitude]
-// (#989). It is only ever the exact position the shared address lookup returned for the
-// administrator's pick — never approximated, never a city centroid, never backfilled — so a
-// venue either carries a complete pin or no `location` at all. `coordinates` has no default:
+// A venue's GeoJSON Point, `coordinates` ordered [longitude, latitude]: supplied
+// by its listing or found from its street address by US Census. Never estimated
+// from a ZIP code. A venue carries a complete pin or no `location` at all.
+// `coordinates` has no default:
 // Mongoose would otherwise store an empty array, which is not a valid 2dsphere key.
 const locationSchema = new Schema({
   type: { type: String, required: true, enum: ['Point'] },
@@ -264,8 +264,7 @@ const venueSchema = new Schema({
   // The AI agent or human that last wrote this record (#818 `actor` field — one
   // shared agent identity authenticates, but each write records who acted).
   lastModifiedBy: { type: String, required: false },
-  // Exact GeoJSON pin for the radius search (#989); see locationSchema above. Optional, absent
-  // on every existing record, and written only by an explicit create/update carrying a pin.
+  // Optional GeoJSON pin for radius search; see locationSchema above.
   location: { type: locationSchema, required: false },
 }, options);
 
