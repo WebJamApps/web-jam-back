@@ -28,6 +28,7 @@ interface StoredLockDoc {
   lockedAt: Date;
   lockExpiresAt: Date;
   lastIssuedAt?: Date;
+  lastPruningAt?: Date;
   lastCommittedAt?: Date;
 }
 
@@ -45,6 +46,8 @@ class InMemoryMapListingStore implements MapListingModelLike {
   onAfterBulkWrite?: (ops: MapListingBulkOperation[]) => Promise<void>;
 
   onBeforeDeleteMany?: (filter: Record<string, unknown>) => Promise<void>;
+
+  onAfterDeleteMany?: (filter: Record<string, unknown>) => Promise<void>;
 
   constructor(initial: MapListingRecord[] = []) {
     for (const item of initial) {
@@ -64,12 +67,28 @@ class InMemoryMapListingStore implements MapListingModelLike {
     if (!isUpsert) {
       const gtDate = (filter.lockExpiresAt as { $gt?: Date } | undefined)?.$gt;
       const gtCommittedAt = (filter.lastCommittedAt as { $gt?: Date } | undefined)?.$gt;
+      const orClauses = filter.$or as Array<{
+        lastCommittedAt?: { $gt?: Date };
+        lastPruningAt?: { $gt?: Date };
+      }> | undefined;
+      const matchesOr = !orClauses || orClauses.some((clause) => {
+        const committedGt = clause.lastCommittedAt?.$gt;
+        if (committedGt && this.lockDoc?.lastCommittedAt && this.lockDoc.lastCommittedAt > committedGt) {
+          return true;
+        }
+        const pruningGt = clause.lastPruningAt?.$gt;
+        if (pruningGt && this.lockDoc?.lastPruningAt && this.lockDoc.lastPruningAt > pruningGt) {
+          return true;
+        }
+        return false;
+      });
       if (
         !this.lockDoc
         || ('lockOwner' in filter && this.lockDoc.lockOwner !== filter.lockOwner)
         || (typeof filter.lockEpoch === 'number' && this.lockDoc.lockEpoch !== filter.lockEpoch)
         || (gtDate && this.lockDoc.lockExpiresAt <= gtDate)
         || (gtCommittedAt && (!this.lockDoc.lastCommittedAt || this.lockDoc.lastCommittedAt <= gtCommittedAt))
+        || !matchesOr
       ) {
         return Promise.resolve(null);
       }
@@ -112,6 +131,29 @@ class InMemoryMapListingStore implements MapListingModelLike {
     return Promise.resolve(this.docs.size);
   }
 
+  private applySingleUpsertOp(op: MapListingBulkOperation): Error | null {
+    const id = op.updateOne.filter.listingId;
+    const lteDate = (op.updateOne.filter.$or?.[0] as { downloadedAt?: { $lte?: Date } } | undefined)
+      ?.downloadedAt?.$lte;
+    const existing = this.docs.get(id);
+    if (existing && lteDate && existing.downloadedAt > lteDate) {
+      return Object.assign(
+        new Error(`E11000 duplicate key error collection: webjamsalem.mapListing index: listingId_1 (${id})`),
+        { code: 11000 },
+      );
+    }
+    const merged: MapListingRecord = existing
+      ? { ...existing, ...op.updateOne.update.$set }
+      : { ...op.updateOne.update.$set };
+    if (op.updateOne.update.$unset) {
+      for (const key of Object.keys(op.updateOne.update.$unset)) {
+        delete (merged as unknown as Record<string, unknown>)[key];
+      }
+    }
+    this.docs.set(id, merged);
+    return null;
+  }
+
   async bulkWrite(ops: MapListingBulkOperation[]): Promise<unknown> {
     if (this.onBeforeBulkWrite) {
       await this.onBeforeBulkWrite(ops);
@@ -119,25 +161,9 @@ class InMemoryMapListingStore implements MapListingModelLike {
     this.bulkWriteCalls.push(ops);
     let dupError: Error | null = null;
     for (const op of ops) {
-      const id = op.updateOne.filter.listingId;
-      const lteDate = (op.updateOne.filter.$or?.[0] as { downloadedAt?: { $lte?: Date } } | undefined)
-        ?.downloadedAt?.$lte;
-      const existing = this.docs.get(id);
-      if (existing && lteDate && existing.downloadedAt > lteDate) {
-        dupError = Object.assign(
-          new Error(`E11000 duplicate key error collection: webjamsalem.mapListing index: listingId_1 (${id})`),
-          { code: 11000 },
-        );
-      } else {
-        const merged: MapListingRecord = existing
-          ? { ...existing, ...op.updateOne.update.$set }
-          : { ...op.updateOne.update.$set };
-        if (op.updateOne.update.$unset) {
-          for (const key of Object.keys(op.updateOne.update.$unset)) {
-            delete (merged as unknown as Record<string, unknown>)[key];
-          }
-        }
-        this.docs.set(id, merged);
+      const err = this.applySingleUpsertOp(op);
+      if (err) {
+        dupError = err;
       }
     }
     if (dupError) {
@@ -149,13 +175,38 @@ class InMemoryMapListingStore implements MapListingModelLike {
     return { ok: 1 };
   }
 
+  private deleteDocsByFilter(filter: Record<string, unknown>): number {
+    if (filter.downloadedAt instanceof Date) {
+      let deletedCount = 0;
+      for (const [id, doc] of this.docs.entries()) {
+        if (doc.downloadedAt.getTime() !== filter.downloadedAt.getTime()) continue;
+        this.docs.delete(id);
+        deletedCount += 1;
+      }
+      return deletedCount;
+    }
+    const ninSpec = filter.listingId as { $nin?: string[] } | undefined;
+    const kept = new Set(ninSpec?.$nin);
+    const orClauses = filter.$or as Array<{ downloadedAt?: { $lte?: Date } }> | undefined;
+    const maxDownloadedAt = orClauses?.[0]?.downloadedAt?.$lte;
+    let deletedCount = 0;
+    for (const [id, doc] of this.docs.entries()) {
+      const withinCutoff = !maxDownloadedAt || doc.downloadedAt <= maxDownloadedAt;
+      if (kept.has(id) || !withinCutoff) continue;
+      this.docs.delete(id);
+      deletedCount += 1;
+    }
+    return deletedCount;
+  }
+
   async deleteMany(filter: Record<string, unknown>): Promise<{ deletedCount?: number }> {
     if (filter.listingId === MAP_LISTING_LOCK_ID) {
-      if (
+      const canDeleteLock = Boolean(
         this.lockDoc
         && this.lockDoc.lockOwner === filter.lockOwner
-        && (typeof filter.lockEpoch !== 'number' || this.lockDoc.lockEpoch === filter.lockEpoch)
-      ) {
+        && (typeof filter.lockEpoch !== 'number' || this.lockDoc.lockEpoch === filter.lockEpoch),
+      );
+      if (canDeleteLock) {
         this.lockDoc = null;
         return { deletedCount: 1 };
       }
@@ -165,29 +216,20 @@ class InMemoryMapListingStore implements MapListingModelLike {
       await this.onBeforeDeleteMany(filter);
     }
     this.deleteManyCalls.push(filter);
-    if (filter.downloadedAt instanceof Date) {
-      let deletedCount = 0;
-      for (const [id, doc] of [...this.docs.entries()]) {
-        if (doc.downloadedAt.getTime() === filter.downloadedAt.getTime()) {
-          this.docs.delete(id);
-          deletedCount += 1;
-        }
-      }
-      return { deletedCount };
-    }
-    const ninSpec = filter.listingId as { $nin?: string[] } | undefined;
-    const kept = new Set(ninSpec?.$nin ?? []);
-    const orClauses = filter.$or as Array<{ downloadedAt?: { $lte?: Date } }> | undefined;
-    const maxDownloadedAt = orClauses?.[0]?.downloadedAt?.$lte;
-    let deletedCount = 0;
-    for (const [id, doc] of [...this.docs.entries()]) {
-      const withinCutoff = !maxDownloadedAt || doc.downloadedAt <= maxDownloadedAt;
-      if (!kept.has(id) && withinCutoff) {
-        this.docs.delete(id);
-        deletedCount += 1;
-      }
+    const deletedCount = this.deleteDocsByFilter(filter);
+    if (this.onAfterDeleteMany) {
+      await this.onAfterDeleteMany(filter);
     }
     return { deletedCount };
+  }
+
+  createModelHandle(): MapListingModelLike {
+    return {
+      findOneAndUpdate: (filter, update, options) => this.findOneAndUpdate(filter, update, options),
+      countDocuments: (filter) => this.countDocuments(filter),
+      bulkWrite: (ops) => this.bulkWrite(ops),
+      deleteMany: (filter) => this.deleteMany(filter),
+    };
   }
 
   snapshot(): MapListingRecord[] {
@@ -1012,14 +1054,8 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
     const isolatedModule = await import('#src/model/venue/map-listing-refresh.js');
 
     const store = new InMemoryMapListingStore([]);
-    const createModelHandle = (): MapListingModelLike => ({
-      findOneAndUpdate: (filter, update, options) => store.findOneAndUpdate(filter, update, options),
-      countDocuments: (filter) => store.countDocuments(filter),
-      bulkWrite: (ops) => store.bulkWrite(ops),
-      deleteMany: (filter) => store.deleteMany(filter),
-    });
-    const modelA = createModelHandle();
-    const modelB = createModelHandle();
+    const modelA = store.createModelHandle();
+    const modelB = store.createModelHandle();
 
     let currentClockMs = SAMPLE_DOWNLOADED_AT.getTime();
     const now = () => new Date(currentClockMs);
@@ -1080,5 +1116,119 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
     await expect(writerAPromise).rejects.toThrow(/E11000|duplicate key/);
     expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
     expect(store.docs.get('ov-B')?.name).toBe('Process B Venue B');
+  });
+
+  it('cleans up stale reinsertions when an expired writer finishes during the replacement prune-to-commit window', async () => {
+    vi.resetModules();
+    const isolatedModule = await import('#src/model/venue/map-listing-refresh.js');
+
+    const store = new InMemoryMapListingStore([]);
+    const modelA = store.createModelHandle();
+    const modelB = store.createModelHandle();
+
+    let currentClockMs = SAMPLE_DOWNLOADED_AT.getTime();
+    const now = () => new Date(currentClockMs);
+
+    // 1. Start from a loaded {A, B}:
+    await refreshMapListings({
+      model: modelA,
+      ownerId: 'initial-loader',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-A', name: 'Initial Venue A' }),
+          sampleRow({ listingId: 'ov-B', name: 'Initial Venue B' }),
+        ],
+      }),
+    });
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-A', 'ov-B']);
+    const initialCommittedAt = store.lockDoc?.lastCommittedAt;
+    expect(initialCommittedAt).toBeInstanceOf(Date);
+
+    currentClockMs += 60_000;
+
+    // 2. Pause Writer A inside bulkWrite for {A, B}:
+    let notifyWriterAPausedInBulkWrite: () => void = () => undefined;
+    const writerAPausedInBulkWrite = new Promise<void>((resolve) => {
+      notifyWriterAPausedInBulkWrite = resolve;
+    });
+    let resumeWriterABulkWrite: () => void = () => undefined;
+    const writerACanFinishBulkWrite = new Promise<void>((resolve) => {
+      resumeWriterABulkWrite = resolve;
+    });
+
+    store.onBeforeBulkWrite = async () => {
+      store.onBeforeBulkWrite = undefined;
+      notifyWriterAPausedInBulkWrite();
+      await writerACanFinishBulkWrite;
+    };
+
+    const writerAPromise = refreshMapListings({
+      model: modelA,
+      ownerId: 'writer-A',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-A', name: 'Stale Writer A Venue A' }),
+          sampleRow({ listingId: 'ov-B', name: 'Stale Writer A Venue B' }),
+        ],
+      }),
+    });
+
+    await writerAPausedInBulkWrite;
+
+    // 3. Expire Writer A's default 30-minute lease:
+    currentClockMs += 1_800_000 + 1000;
+
+    // 4. Let Writer B write {B, C} and finish pruning A, then pause B before its final commit-marker update:
+    let notifyWriterBPausedAfterPrune: () => void = () => undefined;
+    const writerBPausedAfterPrune = new Promise<void>((resolve) => {
+      notifyWriterBPausedAfterPrune = resolve;
+    });
+    let resumeWriterBAfterPrune: () => void = () => undefined;
+    const writerBCanFinishCommit = new Promise<void>((resolve) => {
+      resumeWriterBAfterPrune = resolve;
+    });
+
+    store.onAfterDeleteMany = async () => {
+      store.onAfterDeleteMany = undefined;
+      notifyWriterBPausedAfterPrune();
+      await writerBCanFinishCommit;
+    };
+
+    const writerBPromise = isolatedModule.refreshMapListings({
+      model: modelB,
+      ownerId: 'writer-B',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-B', name: 'Replacement Venue B' }),
+          sampleRow({ listingId: 'ov-C', name: 'Replacement Venue C' }),
+        ],
+      }),
+    });
+
+    await writerBPausedAfterPrune;
+    // Verify B has finished pruning A, but has NOT yet updated lastCommittedAt past initialCommittedAt:
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+    expect(store.lockDoc?.lastCommittedAt).toEqual(initialCommittedAt);
+    expect(store.lockDoc?.lastPruningAt?.getTime()).toBeGreaterThan(initialCommittedAt!.getTime());
+
+    // 5. Resume Writer A during B's prune-to-commit window: its unordered batch reinserts A and gets
+    // E11000 on B, and cleanup sees lastPruningAt > A's downloadedAt and removes A:
+    resumeWriterABulkWrite();
+    await expect(writerAPromise).rejects.toThrow(/E11000|duplicate key/);
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+
+    // 6. Resume Writer B: it records its commit and returns { written: 2, removed: 1 }, with final collection {B, C}:
+    resumeWriterBAfterPrune();
+    const writerBResult = await writerBPromise;
+    expect(writerBResult).toMatchObject({ written: 2, removed: 1 });
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+    expect(store.docs.get('ov-B')?.name).toBe('Replacement Venue B');
+    expect(store.docs.get('ov-C')?.name).toBe('Replacement Venue C');
   });
 });

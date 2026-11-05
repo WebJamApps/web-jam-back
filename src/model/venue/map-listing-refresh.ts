@@ -21,6 +21,7 @@ const BULK_WRITE_BATCH_SIZE = 1000;
 interface AcquiredRefreshLock {
   lockEpoch: number;
   lastIssuedAt?: Date;
+  lastPruningAt?: Date;
   lastCommittedAt?: Date;
 }
 
@@ -365,6 +366,7 @@ async function acquireRefreshLock(
   return {
     lockEpoch: typeof lockDoc.lockEpoch === 'number' ? lockDoc.lockEpoch : 1,
     lastIssuedAt: toValidDate(lockDoc.lastIssuedAt),
+    lastPruningAt: toValidDate(lockDoc.lastPruningAt),
     lastCommittedAt: toValidDate(lockDoc.lastCommittedAt),
   };
 }
@@ -436,6 +438,7 @@ function resolveRefreshTimestamp(
   const rawMs = rawDownloadedAt.getTime();
   const minFloorMs = Math.max(
     priorLock.lastIssuedAt ? priorLock.lastIssuedAt.getTime() + 1 : 0,
+    priorLock.lastPruningAt ? priorLock.lastPruningAt.getTime() + 1 : 0,
     priorLock.lastCommittedAt ? priorLock.lastCommittedAt.getTime() + 1 : 0,
   );
   return new Date(Math.max(rawMs, minFloorMs));
@@ -484,7 +487,10 @@ async function rollbackStaleBatchIfSuperseded(
   const lockDoc = await model.findOneAndUpdate(
     {
       listingId: MAP_LISTING_LOCK_ID,
-      lastCommittedAt: { $gt: downloadedAt },
+      $or: [
+        { lastCommittedAt: { $gt: downloadedAt } },
+        { lastPruningAt: { $gt: downloadedAt } },
+      ],
     },
     {
       $set: {
@@ -499,7 +505,12 @@ async function rollbackStaleBatchIfSuperseded(
     },
   );
   const lastCommittedAt = toValidDate(lockDoc?.lastCommittedAt);
-  if (!lastCommittedAt || lastCommittedAt <= downloadedAt) {
+  const lastPruningAt = toValidDate(lockDoc?.lastPruningAt);
+  const supersededAt = Math.max(
+    lastCommittedAt ? lastCommittedAt.getTime() : 0,
+    lastPruningAt ? lastPruningAt.getTime() : 0,
+  );
+  if (supersededAt <= downloadedAt.getTime()) {
     return;
   }
   await model.deleteMany({
@@ -545,7 +556,9 @@ export async function refreshMapListings(
       await model.bulkWrite(ops, { ordered: false });
     }
 
-    await assertRefreshLockHeld(model, ownerId, lockEpoch, now(), lockTtlMs);
+    await assertRefreshLockHeld(model, ownerId, lockEpoch, now(), lockTtlMs, {
+      lastPruningAt: downloadedAt,
+    });
     const keptIds = [...listings.map((item) => item.listingId), MAP_LISTING_LOCK_ID];
     const deleteResult = await model.deleteMany({
       listingId: { $nin: keptIds },
