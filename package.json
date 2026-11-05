@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.33.0",
+  "version": "2.34.0",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -35,6 +35,7 @@
     "migrate:josh-to-jammusic": "node build/src/scripts/migrate-josh-to-jammusic.js",
     "apply-venue-pay-figures": "node build/src/scripts/apply-venue-pay-figures.js",
     "restore:backup": "node scripts/restore-backup.mjs",
+    "refresh:map-listings": "node scripts/refresh-map-listings.mjs",
     "ts-watch": "tsc -w",
     "ts-start": "DEBUG=web-jam-back:* node --watch --trace-deprecation build/src/index.js",
     "installglobals": "npm install -g npm@latest && npm install -g snyk",

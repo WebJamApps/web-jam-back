@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import mongoose from 'mongoose';
+import { SKIPPED_BACKUP_COLLECTIONS } from '#src/lib/backup-export.js';
 import dropbox from '#src/lib/dropbox.js';
 import facebookTokenModel from '../facebook/facebook-schema.js';
 import {
@@ -172,7 +173,9 @@ async function readBack(db: DevDbLike): Promise<ReadBackResult> {
   try {
     const found: string[] = [];
     const own = new Set<string>();
-    const names = (await db.listCollections().toArray()).map((c) => c.name).filter((n) => !n.startsWith('system.'));
+    const names = (await db.listCollections().toArray())
+      .map((c) => c.name)
+      .filter((n) => !n.startsWith('system.') && !SKIPPED_BACKUP_COLLECTIONS.has(n));
     for (const name of names) {
       // eslint-disable-next-line no-await-in-loop, no-restricted-syntax
       for await (const doc of db.collection(name).find({})) {
@@ -249,8 +252,11 @@ export async function copyToDev(opts: CopyToDevOptions): Promise<CopyResult> {
     progress('checking the chosen run');
     const token = await accessTokenOf(client);
     const manifest = await checkChosenRun(client, token, opts.runName);
-    const counts = manifest.databases[DATABASE]?.collections;
-    if (!counts) throw new RestoreRefusal('files', `${opts.runName} holds no ${DATABASE} collections`);
+    const rawCounts = manifest.databases[DATABASE]?.collections;
+    if (!rawCounts) throw new RestoreRefusal('files', `${opts.runName} holds no ${DATABASE} collections`);
+    const counts = Object.fromEntries(
+      Object.entries(rawCounts).filter(([name]) => !SKIPPED_BACKUP_COLLECTIONS.has(name)),
+    );
 
     progress('downloading and checking the run files');
     await downloadAndVerify(client, token, opts.runName, counts, scratch);

@@ -6,7 +6,7 @@ import { pathToFileURL } from 'url';
 import Debug from 'debug';
 import mongoose from 'mongoose';
 import dropbox, { BACKUP_ROOT } from '#src/lib/dropbox.js';
-import type { BackupManifest } from '#src/lib/backup-export.js';
+import { SKIPPED_BACKUP_COLLECTIONS, type BackupManifest } from '#src/lib/backup-export.js';
 
 // Restore of a chosen backup run (web-jam-tools#1083, web-jam-back#1144).
 // One module, two callers: POST /admin/backup/runs/:name/restore (the production
@@ -113,6 +113,7 @@ async function countRecords(file: string): Promise<number> {
 // the number of records the manifest says. Any difference refuses, nothing changed.
 export async function verifyFolderCounts(folder: string, manifestCounts: Record<string, number>): Promise<void> {
   for (const [name, expected] of Object.entries(manifestCounts)) {
+    if (SKIPPED_BACKUP_COLLECTIONS.has(name)) continue;
     const file = path.join(folder, `${name}.ndjson`);
     let actual: number;
     try {
@@ -309,7 +310,9 @@ function missingIndexesOf(before: Record<string, string[]>, after: Record<string
 export async function replaceFromFolder(opts: ReplaceOptions): Promise<RestoreResult> {
   const { db, folder, manifestCounts, transform } = opts;
   const progress = opts.onProgress || (() => undefined);
-  const files = fs.readdirSync(folder).filter((f) => f.endsWith('.ndjson')).sort();
+  const files = fs.readdirSync(folder)
+    .filter((f) => f.endsWith('.ndjson') && !SKIPPED_BACKUP_COLLECTIONS.has(f.replace(/\.ndjson$/, '')))
+    .sort();
 
   await validateRecords(folder, files);
 
@@ -431,6 +434,7 @@ export async function downloadAndVerify(
   if (!client.downloadFile) throw new RestoreRefusal('files', 'this Dropbox client cannot download files');
   fs.mkdirSync(dest, { recursive: true });
   for (const name of Object.keys(counts)) {
+    if (SKIPPED_BACKUP_COLLECTIONS.has(name)) continue;
     let contents: Buffer | null;
     try {
       // eslint-disable-next-line no-await-in-loop

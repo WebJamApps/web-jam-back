@@ -88,6 +88,19 @@ describe('backup-export.ts', () => {
       expect(fs.existsSync(path.join(tmpDir, 'emptyCollection.ndjson'))).toBe(true);
       expect(fs.readFileSync(path.join(tmpDir, 'emptyCollection.ndjson'), 'utf8')).toBe('');
     });
+
+    it('skips the mapListing collection during backup export', async () => {
+      const db = fakeDb({
+        venue: [{ name: 'The Spot' }],
+        mapListing: [{ listingId: 'ov-1', name: 'Parkway Brewing', street: '739 Kessler Mill Rd' }],
+      });
+
+      const counts = await exportConnection(db, tmpDir);
+
+      expect(counts).toEqual({ venue: 1 });
+      expect(fs.existsSync(path.join(tmpDir, 'venue.ndjson'))).toBe(true);
+      expect(fs.existsSync(path.join(tmpDir, 'mapListing.ndjson'))).toBe(false);
+    });
   });
 
   describe('runFullBackup', () => {

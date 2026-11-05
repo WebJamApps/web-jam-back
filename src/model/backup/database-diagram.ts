@@ -15,6 +15,7 @@ import '#src/model/song/song-schema.js';
 import '#src/model/subscriber/subscriber-schema.js';
 import '#src/model/template/template-schema.js';
 import '#src/model/user/user-schema.js';
+import '#src/model/venue/map-listing-schema.js';
 import '#src/model/venue/venue-schema.js';
 import '#src/model/venue-mining-sweep/venue-mining-sweep-schema.js';
 
