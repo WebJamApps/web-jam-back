@@ -452,4 +452,25 @@ describe('copy-to-dev: the copy', () => {
     expect(rebuild).toHaveBeenCalledWith(expect.arrayContaining(['users', 'venues', 'facebooktokens']));
     expect(result.indexFailures).toEqual([{ collection: 'users', message: 'dup' }]);
   });
+
+  it('skips mapListing during copy-to-dev and leaves existing mapListing documents and emails in DEV untouched', async () => {
+    const existingListing = {
+      listingId: 'ov-1',
+      name: 'Parkway Brewing',
+      street: '739 Kessler Mill Rd',
+      email: 'booking@parkwaybrewing.example',
+    };
+    const s = setup(new FakeDev({ mapListing: [existingListing] }));
+    s.manifests[RUN] = manifestOf({
+      users: 2,
+      venues: VENUES.length,
+      facebooktokens: TOKENS.length,
+      mapListing: 5,
+    });
+    const result = await copyToDev(s.opts);
+    expect(s.dev.data.mapListing).toEqual([existingListing]);
+    expect(result.collections.map((c) => c.collection)).not.toContain('mapListing');
+    expect(result.readBack).toMatchObject({ status: 'none', remaining: 0 });
+    expect(result.clean).toBe(true);
+  });
 });

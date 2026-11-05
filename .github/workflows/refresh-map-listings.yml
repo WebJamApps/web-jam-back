@@ -1,0 +1,51 @@
+name: Refresh Overture Map Listings
+
+on:
+  schedule:
+    # Run once a month on the 2nd at 06:00 UTC
+    - cron: '0 6 2 * *'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Optional Overture release override (e.g. 2026-10-21.0). Leave blank to resolve latest from https://stac.overturemaps.org/catalog.json'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh-overture-map-listings
+  cancel-in-progress: false
+
+jobs:
+  refresh-map-listings:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: 'npm'
+
+      - name: Install DuckDB CLI
+        run: |
+          curl --fail --location --silent --show-error https://install.duckdb.org | sh
+          echo "$HOME/.duckdb/cli/latest" >> "$GITHUB_PATH"
+          "$HOME/.duckdb/cli/latest/duckdb" --version
+          "$HOME/.duckdb/cli/latest/duckdb" -c "INSTALL httpfs; LOAD httpfs;"
+
+      - name: Install dependencies and build backend modules
+        run: |
+          npm ci --ignore-scripts
+          npx tsc -p tsconfig.prod.json
+
+      - name: Refresh mapListing collection from Overture Maps
+        env:
+          MAP_LISTINGS_MONGO_URI: ${{ secrets.MAP_LISTINGS_MONGO_URI }}
+          OVERTURE_RELEASE: ${{ inputs.release || '' }}
+        run: npm run refresh:map-listings

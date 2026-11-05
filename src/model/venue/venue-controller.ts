@@ -5,6 +5,7 @@ import { Icontroller } from '#src/lib/routeUtils.js';
 import { isValidEmail } from '#src/lib/email.js';
 import venueModel from './venue-facade.js';
 import { normalizeAddress } from './normalize-address.js';
+import { censusLocationUpdate, hasVenueAddressUpdate } from './census-geocoder.js';
 import userModel from '../user/user-facade.js';
 import gigModel from '../gig/gig-facade.js';
 import {
@@ -570,6 +571,74 @@ function mapPlaceDetails(data: PlaceDetailsRaw): Record<string, unknown> {
   };
 }
 
+interface NominatimResultRaw {
+  lat?: string;
+  lon?: string;
+  display_name?: string;
+}
+
+let lastNominatimRequestTime = 0;
+let nominatimQueue: Promise<unknown> = Promise.resolve();
+
+export const nominatimThrottle = {
+  minIntervalMs: 1000,
+  reset() {
+    lastNominatimRequestTime = 0;
+    nominatimQueue = Promise.resolve();
+  },
+  async schedule<T>(fn: () => Promise<T>): Promise<T> {
+    const run = async () => {
+      const now = Date.now();
+      const elapsed = now - lastNominatimRequestTime;
+      const wait = Math.max(0, this.minIntervalMs - elapsed);
+      if (wait > 0) {
+        await new Promise((resolve) => { setTimeout(resolve, wait); });
+      }
+      lastNominatimRequestTime = Date.now();
+      return fn();
+    };
+
+    const next = nominatimQueue.then(run);
+    nominatimQueue = next.then(() => {}).catch(() => {});
+    return next;
+  },
+};
+
+export async function fetchNominatimPlace(
+  query: string,
+): Promise<{ data?: NominatimResultRaw[]; errorStatus?: number; errorMessage?: string }> {
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=jsonv2&limit=1&countrycodes=us`;
+
+  return nominatimThrottle.schedule(async () => {
+    let response: globalThis.Response;
+    try {
+      response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'web-jam-back (admin place lookup; https://web-jam.com)',
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+    } catch (err) {
+      const isTimeout = (err as Error).name === 'TimeoutError';
+      const msg = isTimeout ? 'Nominatim request timed out' : 'Nominatim unreachable';
+      return { errorStatus: 502, errorMessage: msg };
+    }
+
+    if (!response.ok) {
+      return { errorStatus: 502, errorMessage: `Nominatim error: ${response.status} ${response.statusText}`.trim() };
+    }
+
+    try {
+      const data = (await response.json()) as NominatimResultRaw[];
+      return { data };
+    } catch {
+      return { errorStatus: 502, errorMessage: 'Bad response from Nominatim' };
+    }
+  });
+}
+
 class VenueController extends Controller {
   // Load the token's user, then apply the access gate. Every venue route runs
   // ensureAuthenticated first (valid token → req.user); this adds authorization.
@@ -878,6 +947,7 @@ class VenueController extends Controller {
     const resolved = await this.resolveExistingForCreate(body);
     if ('error' in resolved) return res.status(resolved.error.status).json({ message: resolved.error.message });
     const { existing } = resolved;
+    const locationUpdate = await censusLocationUpdate(body, existing);
 
     // #983/#985 — non-blocking "email also on '<venueName>'" notice: never
     // awaited in a way that could fail the create, and never used to
@@ -906,12 +976,12 @@ class VenueController extends Controller {
       let updated;
       try {
         updated = await this.model.findByIdAndUpdate(String(existing._id), {
-          ...body, status: body.status || 'active', lastModifiedBy: actor,
+          ...body, ...locationUpdate, status: body.status || 'active', lastModifiedBy: actor,
         });
       } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
       return res.status(200).json(updated);
     }
-    const createBody: Record<string, unknown> = { ...body, status: body.status || 'active', lastModifiedBy: actor };
+    const createBody: Record<string, unknown> = { ...body, ...locationUpdate, status: body.status || 'active', lastModifiedBy: actor };
     if (emailNote) createBody.notes = VenueController.appendNote(body.notes, emailNote);
     let doc;
     try {
@@ -1022,12 +1092,26 @@ class VenueController extends Controller {
     const zipErr = await this.applyZipCodeUpdate(req.params.id, body);
     if (zipErr) return res.status(zipErr.status).json({ message: zipErr.message });
     await this.applyFamilyNearbyUpdate(req.params.id, body);
+    const locationUpdate = await this.resolveCensusUpdate(req.params.id, body);
     let doc;
     try {
-      doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, lastModifiedBy: resolveActor(req, body) });
+      doc = await this.model.findByIdAndUpdate(req.params.id, { ...body, ...locationUpdate, lastModifiedBy: resolveActor(req, body) });
     } catch (e) { return res.status(500).json({ message: (e as Error).message }); }
     if (!doc) return res.status(400).json({ message: 'Id Not Found' });
     return res.status(200).json(doc);
+  }
+
+  async resolveCensusUpdate(id: string, body: VenueBody): Promise<Record<string, unknown>> {
+    if (body.location !== undefined || !hasVenueAddressUpdate(body)) return {};
+    try {
+      const current = await this.model.findById(id);
+      if (!current) return {};
+      return await censusLocationUpdate(body, current);
+    } catch {
+      // If the old address cannot be read, do not retain a possibly stale pin
+      // or guess the missing address parts. The save itself still proceeds.
+      return { $unset: { location: 1 } };
+    }
   }
 
   // POST /venue/:id/touch — append one timeline event (#898). Gated by
@@ -1143,6 +1227,39 @@ class VenueController extends Controller {
 
     if (errorStatus) return res.status(errorStatus).json({ message: errorMessage });
     return res.status(200).json(mapPlaceDetails(data || {}));
+  }
+
+  // GET /venue/discover/place?q=<text> — turn a place name into a position (#1219).
+  async discoverPlace(req: Request, res: Response): Promise<unknown> {
+    const guardErr = await this.authorizeAdminOnly(req as AuthRequest);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+
+    const queryParam = req.query.q;
+    const q = typeof queryParam === 'string' ? queryParam.trim() : '';
+    if (!q) {
+      return res.status(200).json({});
+    }
+
+    const { data, errorStatus, errorMessage } = await fetchNominatimPlace(q);
+    if (errorStatus) return res.status(errorStatus).json({ message: errorMessage });
+
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return res.status(200).json({});
+    }
+
+    const first = data[0];
+    const lat = typeof first.lat === 'string' ? Number.parseFloat(first.lat) : Number(first.lat);
+    const lng = typeof first.lon === 'string' ? Number.parseFloat(first.lon) : Number(first.lon);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(200).json({});
+    }
+
+    return res.status(200).json({
+      lat,
+      lng,
+      displayName: first.display_name || '',
+    });
   }
 }
 

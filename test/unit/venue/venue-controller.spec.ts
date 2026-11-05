@@ -6,6 +6,12 @@ import gigModel from '#src/model/gig/gig-facade.js';
 import venueModel from '#src/model/venue/venue-facade.js';
 import venueSchema from '#src/model/venue/venue-schema.js';
 
+// Census behavior is exercised with real helpers in venue-census.spec.ts.
+vi.mock('#src/model/venue/census-geocoder.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('#src/model/venue/census-geocoder.js')>(),
+  censusLocationUpdate: async () => ({}),
+}));
+
 const c = controller as any;
 
 describe('Venue Controller', () => {
@@ -157,6 +163,27 @@ describe('Venue Controller', () => {
       (userModel as unknown as { findById: ReturnType<typeof vi.fn> }).findById = vi.fn(() => Promise.reject(new Error('db err')));
       const err = await c.authorizeAdminOnly({ user: 'a' });
       expect(err).toEqual({ status: 500, message: 'db err' });
+    });
+  });
+
+  describe('discoverPlace (#1219)', () => {
+    it('refuses when authorizeAdminOnly fails', async () => {
+      vi.spyOn(c, 'authorizeAdminOnly').mockResolvedValueOnce({ status: 403, message: 'admin role required' });
+      await c.discoverPlace({ user: 'a', query: { q: 'Salem' } }, resStub);
+      expect(status).toBe(403);
+      expect(payload.message).toBe('admin role required');
+    });
+
+    it('returns 200 with empty object when q is missing or whitespace', async () => {
+      vi.spyOn(c, 'authorizeAdminOnly').mockResolvedValueOnce(null);
+      await c.discoverPlace({ user: 'a', query: {} }, resStub);
+      expect(status).toBe(200);
+      expect(payload).toEqual({});
+
+      vi.spyOn(c, 'authorizeAdminOnly').mockResolvedValueOnce(null);
+      await c.discoverPlace({ user: 'a', query: { q: '   ' } }, resStub);
+      expect(status).toBe(200);
+      expect(payload).toEqual({});
     });
   });
 

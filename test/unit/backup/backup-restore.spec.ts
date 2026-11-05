@@ -272,6 +272,18 @@ describe('backup-restore.ts: restoreProduction guards', () => {
       await expect(restoreProduction(s.opts)).resolves.toBeDefined();
     });
 
+    it('skips mapListing in the manifest and leaves mapListing in production as it finds it', async () => {
+      const s = setup();
+      s.db.data.mapListing = [{ listingId: 'live-1', name: 'Parkway Brewing', street: '739 Kessler Mill Rd' }];
+      s.manifests[RUN] = manifestOf({ song: SONGS.length, user: USERS.length, mapListing: 42 });
+      const result = await restoreProduction(s.opts);
+      expect(result.collections.map((c) => c.collection)).not.toContain('mapListing');
+      expect(s.db.data.mapListing).toEqual([
+        { listingId: 'live-1', name: 'Parkway Brewing', street: '739 Kessler Mill Rd' },
+      ]);
+      expect(s.db.calls).not.toContain('drop mapListing');
+    });
+
     it('refuses a file whose count differs, changing nothing', async () => {
       const s = setup();
       s.files[`${BACKUP_ROOT}/${RUN}/webjamsalem/song.ndjson`] = ndjson(SONGS.slice(0, 2));
@@ -571,6 +583,21 @@ describe('backup-restore.ts: replaceFromFolder and restoreFromFolder', () => {
     db.dropError = Object.assign(new Error('anything'), { codeName: 'NamespaceNotFound' });
     await expect(replaceFromFolder({ db, folder })).resolves.toBeDefined();
     expect(db.data.song).toEqual(SONGS);
+  });
+
+  it('leaves the mapListing collection as it finds it during a restore', async () => {
+    write('song', SONGS);
+    write('mapListing', [{ listingId: 'from-backup', name: 'Old', street: '1 Main St' }]);
+    const existingListing = [{ listingId: 'live-1', name: 'Parkway Brewing', street: '739 Kessler Mill Rd' }];
+    const db = new FakeDb({ song: [{ title: 'old' }], mapListing: existingListing });
+    const result = await restoreFromFolder({
+      db,
+      folder,
+      manifestCounts: { song: SONGS.length, mapListing: 99 },
+    });
+    expect(result.collections).toEqual([{ collection: 'song', restored: SONGS.length, manifest: SONGS.length }]);
+    expect(db.data.mapListing).toEqual(existingListing);
+    expect(db.calls).not.toContain('drop mapListing');
   });
 });
 
