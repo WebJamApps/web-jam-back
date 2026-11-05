@@ -17,7 +17,22 @@ export const DEFAULT_REFRESH_LOCK_TTL_MS = 30 * 60 * 1000;
 
 const RELEASE_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
 const BULK_WRITE_BATCH_SIZE = 1000;
-let lastRefreshTimestampMs = 0;
+
+interface ModelRefreshState {
+  lastIssuedAtMs: number;
+  lastCommittedAtMs: number;
+}
+
+const modelRefreshStates = new WeakMap<MapListingModelLike, ModelRefreshState>();
+
+function getModelRefreshState(model: MapListingModelLike): ModelRefreshState {
+  let state = modelRefreshStates.get(model);
+  if (!state) {
+    state = { lastIssuedAtMs: 0, lastCommittedAtMs: 0 };
+    modelRefreshStates.set(model, state);
+  }
+  return state;
+}
 const OPTIONAL_LISTING_FIELDS = [
   'city',
   'state',
@@ -394,12 +409,23 @@ async function releaseRefreshLock(
   );
 }
 
-function resolveRefreshTimestamp(rawDownloadedAt: Date, lockEpoch: number): Date {
-  const resolved = lockEpoch > 1 && rawDownloadedAt.getTime() <= lastRefreshTimestampMs
-    ? new Date(lastRefreshTimestampMs + 1)
-    : rawDownloadedAt;
-  lastRefreshTimestampMs = resolved.getTime();
-  return resolved;
+function resolveRefreshTimestamp(
+  model: MapListingModelLike,
+  rawDownloadedAt: Date,
+  lockEpoch: number,
+): Date {
+  const state = getModelRefreshState(model);
+  const rawMs = rawDownloadedAt.getTime();
+  const resolvedMs = (lockEpoch > 1 && rawMs <= state.lastIssuedAtMs) || rawMs < state.lastIssuedAtMs
+    ? state.lastIssuedAtMs + 1
+    : rawMs;
+  state.lastIssuedAtMs = resolvedMs;
+  return new Date(resolvedMs);
+}
+
+function recordCommittedRefresh(model: MapListingModelLike, downloadedAt: Date): void {
+  const state = getModelRefreshState(model);
+  state.lastCommittedAtMs = Math.max(state.lastCommittedAtMs, downloadedAt.getTime());
 }
 
 function validateAndNormalizeAnswer(
@@ -442,16 +468,14 @@ async function rollbackStaleBatchIfSuperseded(
   downloadedAt: Date | undefined,
 ): Promise<void> {
   if (!wroteAnyBatch || !downloadedAt) return;
-  const newerCount = await model.countDocuments({
-    listingId: { $ne: MAP_LISTING_LOCK_ID },
-    downloadedAt: { $gt: downloadedAt },
-  });
-  if (newerCount > 0) {
-    await model.deleteMany({
-      listingId: { $ne: MAP_LISTING_LOCK_ID },
-      downloadedAt,
-    });
+  const state = getModelRefreshState(model);
+  if (state.lastCommittedAtMs <= downloadedAt.getTime()) {
+    return;
   }
+  await model.deleteMany({
+    listingId: { $ne: MAP_LISTING_LOCK_ID },
+    downloadedAt,
+  });
 }
 
 export async function refreshMapListings(
@@ -469,7 +493,7 @@ export async function refreshMapListings(
   try {
     const answer = await options.fetchAnswer();
     const rawDownloadedAt = now();
-    downloadedAt = resolveRefreshTimestamp(rawDownloadedAt, lockEpoch);
+    downloadedAt = resolveRefreshTimestamp(model, rawDownloadedAt, lockEpoch);
     await assertRefreshLockHeld(model, ownerId, lockEpoch, rawDownloadedAt, lockTtlMs);
 
     const { release, listings } = validateAndNormalizeAnswer(answer, downloadedAt);
@@ -498,6 +522,7 @@ export async function refreshMapListings(
       ],
     });
     await assertRefreshLockHeld(model, ownerId, lockEpoch, now(), lockTtlMs);
+    recordCommittedRefresh(model, downloadedAt);
 
     return {
       release,

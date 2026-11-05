@@ -907,4 +907,95 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
     expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
     expect(store.docs.get('ov-B')?.name).toBe('Owner F Venue B');
   });
+
+  it('preserves existing valid rows when a replacement writer fails midway through its batches while the expired owner resumes', async () => {
+    const store = new InMemoryMapListingStore([]);
+    let currentClockMs = SAMPLE_DOWNLOADED_AT.getTime();
+    const now = () => new Date(currentClockMs);
+
+    const fourRows = [
+      sampleRow({ listingId: 'ov-A', name: 'Venue A' }),
+      sampleRow({ listingId: 'ov-B', name: 'Venue B' }),
+      sampleRow({ listingId: 'ov-C', name: 'Venue C' }),
+      sampleRow({ listingId: 'ov-D', name: 'Venue D' }),
+    ];
+
+    // Load initial snapshot {A, B, C, D}:
+    await refreshMapListings({
+      model: store,
+      ownerId: 'initial-loader',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: fourRows,
+      }),
+    });
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-A', 'ov-B', 'ov-C', 'ov-D']);
+
+    currentClockMs += 60_000;
+
+    let notifyWriterAPaused: () => void = () => undefined;
+    const writerAPaused = new Promise<void>((resolve) => {
+      notifyWriterAPaused = resolve;
+    });
+    let resumeWriterA: () => void = () => undefined;
+    const writerACanResume = new Promise<void>((resolve) => {
+      resumeWriterA = resolve;
+    });
+
+    // Writer A rewrites {A, B, C, D} and pauses after its batch:
+    store.onAfterBulkWrite = async () => {
+      store.onAfterBulkWrite = undefined;
+      notifyWriterAPaused();
+      await writerACanResume;
+    };
+
+    const writerAPromise = refreshMapListings({
+      model: store,
+      ownerId: 'writer-A',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: fourRows,
+      }),
+    });
+
+    await writerAPaused;
+
+    // Advance past the default 30-minute lease:
+    currentClockMs += 1_800_000 + 1000;
+
+    // Writer B downloads {B, C}, passes the half-size guard, writes B with batchSize: 1,
+    // and encounters a database failure before writing C:
+    let writerBBatchCount = 0;
+    store.onBeforeBulkWrite = async () => {
+      writerBBatchCount += 1;
+      if (writerBBatchCount === 2) {
+        store.onBeforeBulkWrite = undefined;
+        throw new Error('Database failure before batch 2');
+      }
+    };
+
+    await expect(
+      refreshMapListings({
+        model: store,
+        ownerId: 'writer-B',
+        batchSize: 1,
+        now,
+        fetchAnswer: () => Promise.resolve({
+          release: SAMPLE_RELEASE,
+          rows: [
+            sampleRow({ listingId: 'ov-B', name: 'Venue B Partial' }),
+            sampleRow({ listingId: 'ov-C', name: 'Venue C Partial' }),
+          ],
+        }),
+      }),
+    ).rejects.toThrow('Database failure before batch 2');
+
+    // Resume Writer A; because Writer B failed midway and never committed a replacement copy,
+    // Writer A's catch path must NOT delete {A, C, D}:
+    resumeWriterA();
+    await expect(writerAPromise).rejects.toThrow(/refresh lock expired or ownership was lost/);
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-A', 'ov-B', 'ov-C', 'ov-D']);
+  });
 });
