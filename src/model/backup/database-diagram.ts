@@ -12,6 +12,7 @@ import '#src/model/outreach/outreach-report-schema.js';
 import '#src/model/outreach/outreach-venue-approval-schema.js';
 import '#src/model/setlist/setlist-schema.js';
 import '#src/model/song/song-schema.js';
+import '#src/model/asset/asset-schema.js';
 import '#src/model/subscriber/subscriber-schema.js';
 import '#src/model/template/template-schema.js';
 import '#src/model/user/user-schema.js';

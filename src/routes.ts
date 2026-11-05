@@ -5,6 +5,7 @@ import book from './model/book/book-router.js';
 import inquiry from './model/inquiry/index.js';
 import livestream from './model/livestream/index.js';
 import song from './model/song/song-router.js';
+import asset from './model/asset/asset-router.js';
 import setlist from './model/setlist/setlist-router.js';
 import gig from './model/gig/gig-router.js';
 import subscriber from './model/subscriber/subscriber-router.js';
@@ -28,6 +29,7 @@ export default function route(app: Express): void {
   router.use('/admin/user', adminUser);
   router.use('/book', book);
   router.use('/song', song);
+  router.use('/asset', asset);
   router.use('/setlist', setlist);
   router.use('/gig', gig);
   router.use('/inquiry', inquiry);
