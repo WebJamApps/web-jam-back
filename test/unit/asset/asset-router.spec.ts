@@ -102,20 +102,67 @@ describe('Asset Router (401 without token on all routes, and CRUD + report)', ()
       expect(updated.status).toBe(200);
       expect(updated.body.name).toBe('Test Audio Interface MkII');
 
-      // Yearly report
+      // Partial update without name accepts optional fields per AssetUpdateInput contract
+      const partialUpdated = await request(app).put(`/asset/${_id}`).set(authHeaders).send({
+        notes: 'Made-up partial update note',
+      });
+      expect(partialUpdated.status).toBe(200);
+      expect(partialUpdated.body.name).toBe('Test Audio Interface MkII');
+      expect(partialUpdated.body.notes).toBe('Made-up partial update note');
+
+      // Create a cost-only asset to verify normalization and preservation in report
+      const costAsset = await request(app).post('/asset').set(authHeaders).send({
+        name: 'Made-up Cost Only Device',
+        cost: 1000,
+        businessPercentage: 50,
+        purchaseDate: '2026-06-01T00:00:00.000Z',
+        salemPropertyTax: true,
+      });
+      expect(costAsset.status).toBe(201);
+      expect(costAsset.body.cost).toBe(1000);
+      expect(costAsset.body.purchasePrice).toBe(1000);
+
+      // Create a future year (2027) asset to verify year bounding in report
+      const futureAsset = await request(app).post('/asset').set(authHeaders).send({
+        name: 'Made-up Future 2027 Synth',
+        purchasePrice: 600,
+        purchaseDate: '2027-02-15T00:00:00.000Z',
+        placedInServiceDate: '2027-03-01T00:00:00.000Z',
+        businessPercentage: 100,
+        salemPropertyTax: true,
+      });
+      expect(futureAsset.status).toBe(201);
+
+      // Yearly report for 2026: excludes future 2027 equipment, preserves cost-only asset
       const report = await request(app).get('/asset/report?year=2026').set(authHeaders);
       expect(report.status).toBe(200);
       expect(report.body.year).toBe(2026);
-      expect(report.body.totalAssets).toBe(1);
-      expect(report.body.totalCost).toBe(250);
-      expect(report.body.totalBusinessBasis).toBe(225); // 250 * 0.9
-      expect(report.body.salemPropertyTaxCount).toBe(1);
-      expect(report.body.salemPropertyTaxTotal).toBe(225);
-      expect(report.body.additionsCount).toBe(1);
+      expect(report.body.totalAssets).toBe(2);
+      expect(report.body.totalCost).toBe(1250); // 250 + 1000
+      expect(report.body.totalBusinessBasis).toBe(725); // 225 + 500
+      expect(report.body.salemPropertyTaxCount).toBe(2);
+      expect(report.body.salemPropertyTaxTotal).toBe(725);
+      expect(report.body.additionsCount).toBe(2);
+      expect(report.body.items.map((i: { name: string }) => i.name)).toEqual([
+        'Test Audio Interface MkII',
+        'Made-up Cost Only Device',
+      ]);
+
+      // Yearly report for 2027: includes 2027 gear in inventory and additions
+      const report2027 = await request(app).get('/asset/report?year=2027').set(authHeaders);
+      expect(report2027.status).toBe(200);
+      expect(report2027.body.year).toBe(2027);
+      expect(report2027.body.totalAssets).toBe(3);
+      expect(report2027.body.totalCost).toBe(1850); // 250 + 1000 + 600
+      expect(report2027.body.totalBusinessBasis).toBe(1325); // 225 + 500 + 600
+      expect(report2027.body.additionsCount).toBe(1); // Only the 2027 item
+      expect(report2027.body.additionsCost).toBe(600);
 
       // Delete asset
       const deleted = await request(app).delete(`/asset/${_id}`).set(authHeaders);
       expect(deleted.status).toBe(200);
+      await request(app).delete(`/asset/${costAsset.body._id}`).set(authHeaders);
+      await request(app).delete(`/asset/${futureAsset.body._id}`).set(authHeaders);
 
       // Verify deletion
       const afterDelete = await request(app).get('/asset').set(authHeaders);

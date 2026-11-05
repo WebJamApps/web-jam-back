@@ -1076,7 +1076,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AssetInput"
+                "$ref": "#/components/schemas/AssetUpdateInput"
               }
             }
           }
@@ -1601,6 +1601,56 @@
         "required": [
           "name"
         ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "serialNumber": {
+            "type": "string"
+          },
+          "purchaseDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "purchasePrice": {
+            "type": "number"
+          },
+          "cost": {
+            "type": "number"
+          },
+          "placedInServiceDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "businessPercentage": {
+            "type": "number"
+          },
+          "salemPropertyTax": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "retired",
+              "sold",
+              "disposed"
+            ]
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
+      "AssetUpdateInput": {
+        "type": "object",
+        "description": "Partial asset fields for updates; all fields are optional.",
         "properties": {
           "name": {
             "type": "string"

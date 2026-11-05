@@ -12,7 +12,7 @@ const assetSchema = new Schema({
   description: { type: String, required: false },
   serialNumber: { type: String, required: false },
   purchaseDate: { type: Date, required: false },
-  purchasePrice: { type: Number, required: false, default: 0 },
+  purchasePrice: { type: Number, required: false },
   cost: { type: Number, required: false },
   placedInServiceDate: { type: Date, required: false },
   businessPercentage: { type: Number, required: false, default: 100 },

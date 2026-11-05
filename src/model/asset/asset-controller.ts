@@ -33,6 +33,62 @@ export interface YearlyReport {
   items: AssetReportItem[];
 }
 
+function parseYear(val: unknown): number | undefined {
+  if (!val) return undefined;
+  const d = new Date(val as string | number | Date);
+  return Number.isNaN(d.getTime()) ? undefined : d.getFullYear();
+}
+
+function shouldIncludeInYear(doc: Record<string, unknown>, targetYear: number): boolean {
+  const inServiceYear = parseYear(doc.placedInServiceDate);
+  const purchaseYear = parseYear(doc.purchaseDate);
+
+  if (inServiceYear !== undefined && inServiceYear > targetYear) {
+    return false;
+  }
+  if (inServiceYear === undefined && purchaseYear !== undefined && purchaseYear > targetYear) {
+    return false;
+  }
+  if (purchaseYear !== undefined && purchaseYear > targetYear) {
+    return false;
+  }
+  return true;
+}
+
+function resolveCost(doc: Record<string, unknown>): number {
+  if (doc.purchasePrice !== undefined && doc.purchasePrice !== null && doc.purchasePrice !== 0) {
+    return Number(doc.purchasePrice);
+  }
+  if (doc.cost !== undefined && doc.cost !== null) {
+    return Number(doc.cost);
+  }
+  return Number(doc.purchasePrice ?? 0);
+}
+
+function toReportItem(
+  doc: Record<string, unknown>,
+  cost: number,
+  busPct: number,
+  businessBasis: number,
+  salemTax: boolean,
+): AssetReportItem {
+  return {
+    id: doc._id ? String(doc._id) : undefined,
+    name: String(doc.name || ''),
+    category: doc.category ? String(doc.category) : undefined,
+    description: doc.description ? String(doc.description) : undefined,
+    serialNumber: doc.serialNumber ? String(doc.serialNumber) : undefined,
+    purchaseDate: doc.purchaseDate as Date | string | undefined,
+    purchasePrice: cost,
+    placedInServiceDate: doc.placedInServiceDate as Date | string | undefined,
+    businessPercentage: busPct,
+    businessBasis,
+    salemPropertyTax: salemTax,
+    status: String(doc.status || 'active'),
+    notes: doc.notes ? String(doc.notes) : undefined,
+  };
+}
+
 export function generateYearlyReport(assets: Record<string, unknown>[], year?: number): YearlyReport {
   const targetYear = year ?? new Date().getFullYear();
   let totalCost = 0;
@@ -44,8 +100,14 @@ export function generateYearlyReport(assets: Record<string, unknown>[], year?: n
   let additionsCost = 0;
   let additionsBusinessBasis = 0;
 
-  const items: AssetReportItem[] = assets.map((doc) => {
-    const cost = Number(doc.purchasePrice ?? doc.cost ?? 0);
+  const items: AssetReportItem[] = [];
+
+  for (const doc of assets) {
+    if (!shouldIncludeInYear(doc, targetYear)) {
+      continue;
+    }
+
+    const cost = resolveCost(doc);
     const busPct = doc.businessPercentage !== undefined && doc.businessPercentage !== null
       ? Number(doc.businessPercentage)
       : 100;
@@ -60,37 +122,20 @@ export function generateYearlyReport(assets: Record<string, unknown>[], year?: n
       salemPropertyTaxTotal += businessBasis;
     }
 
-    const inService = doc.placedInServiceDate ?? doc.purchaseDate;
-    if (inService) {
-      const d = new Date(inService as string | number | Date);
-      if (!Number.isNaN(d.getTime()) && d.getFullYear() === targetYear) {
-        additionsCount += 1;
-        additionsCost += cost;
-        additionsBusinessBasis += businessBasis;
-      }
+    const additionYear = parseYear(doc.placedInServiceDate) ?? parseYear(doc.purchaseDate);
+    if (additionYear === targetYear) {
+      additionsCount += 1;
+      additionsCost += cost;
+      additionsBusinessBasis += businessBasis;
     }
 
-    return {
-      id: doc._id ? String(doc._id) : undefined,
-      name: String(doc.name || ''),
-      category: doc.category ? String(doc.category) : undefined,
-      description: doc.description ? String(doc.description) : undefined,
-      serialNumber: doc.serialNumber ? String(doc.serialNumber) : undefined,
-      purchaseDate: doc.purchaseDate as Date | string | undefined,
-      purchasePrice: cost,
-      placedInServiceDate: doc.placedInServiceDate as Date | string | undefined,
-      businessPercentage: busPct,
-      businessBasis,
-      salemPropertyTax: salemTax,
-      status: String(doc.status || 'active'),
-      notes: doc.notes ? String(doc.notes) : undefined,
-    };
-  });
+    items.push(toReportItem(doc, cost, busPct, businessBasis, salemTax));
+  }
 
   return {
     year: targetYear,
     generatedAt: new Date().toISOString(),
-    totalAssets: assets.length,
+    totalAssets: items.length,
     totalCost: Math.round(totalCost * 100) / 100,
     totalBusinessBasis: Math.round(totalBusinessBasis * 100) / 100,
     salemPropertyTaxCount,
@@ -107,7 +152,23 @@ class AssetController extends Controller {
     if (!req.body || !req.body.name) {
       return res.status(400).json({ message: 'Name is required' });
     }
+    if (req.body.cost !== undefined && req.body.purchasePrice === undefined) {
+      req.body.purchasePrice = req.body.cost;
+    } else if (req.body.purchasePrice !== undefined && req.body.cost === undefined) {
+      req.body.cost = req.body.purchasePrice;
+    }
     return super.create(req, res);
+  }
+
+  override findByIdAndUpdate(req: Request<{ id: string }>, res: Response<unknown>): Response<unknown> | Promise<unknown> {
+    if (req.body) {
+      if (req.body.cost !== undefined && req.body.purchasePrice === undefined) {
+        req.body.purchasePrice = req.body.cost;
+      } else if (req.body.purchasePrice !== undefined && req.body.cost === undefined) {
+        req.body.cost = req.body.purchasePrice;
+      }
+    }
+    return super.findByIdAndUpdate(req, res);
   }
 
   async getYearlyReport(req: Request, res: Response): Promise<unknown> {

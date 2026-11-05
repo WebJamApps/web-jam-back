@@ -114,6 +114,89 @@ describe('generateYearlyReport', () => {
     });
   });
 
+  it('bounds report to requested year and excludes future acquisitions/service entries', () => {
+    const mixedYearItems = [
+      {
+        _id: '507f1f77bcf86cd799439021',
+        name: '2025 Acquired Amp',
+        purchaseDate: new Date('2025-05-10T00:00:00.000Z'),
+        purchasePrice: 400,
+        businessPercentage: 100,
+        salemPropertyTax: true,
+      },
+      {
+        _id: '507f1f77bcf86cd799439022',
+        name: '2026 Acquired Guitar',
+        purchaseDate: new Date('2026-02-15T00:00:00.000Z'),
+        placedInServiceDate: new Date('2026-03-01T00:00:00.000Z'),
+        purchasePrice: 800,
+        businessPercentage: 75,
+        salemPropertyTax: true,
+      },
+      {
+        _id: '507f1f77bcf86cd799439023',
+        name: '2027 Future Synth',
+        purchaseDate: new Date('2027-01-20T00:00:00.000Z'),
+        placedInServiceDate: new Date('2027-02-01T00:00:00.000Z'),
+        purchasePrice: 1200,
+        businessPercentage: 100,
+        salemPropertyTax: true,
+      },
+    ];
+
+    // 2026 report must NOT pick up 2027 equipment in inventory or totals
+    const report2026 = generateYearlyReport(mixedYearItems, 2026);
+    expect(report2026.year).toBe(2026);
+    expect(report2026.totalAssets).toBe(2);
+    expect(report2026.totalCost).toBe(1200); // 400 + 800
+    expect(report2026.totalBusinessBasis).toBe(1000); // 400 + (800 * 0.75)
+    expect(report2026.additionsCount).toBe(1); // Only 2026 item
+    expect(report2026.additionsCost).toBe(800);
+    expect(report2026.additionsBusinessBasis).toBe(600);
+    expect(report2026.salemPropertyTaxCount).toBe(2);
+    expect(report2026.salemPropertyTaxTotal).toBe(1000);
+    expect(report2026.items.map((i) => i.name)).toEqual(['2025 Acquired Amp', '2026 Acquired Guitar']);
+
+    // 2027 report includes all three items
+    const report2027 = generateYearlyReport(mixedYearItems, 2027);
+    expect(report2027.year).toBe(2027);
+    expect(report2027.totalAssets).toBe(3);
+    expect(report2027.totalCost).toBe(2400); // 400 + 800 + 1200
+    expect(report2027.totalBusinessBasis).toBe(2200); // 400 + 600 + 1200
+    expect(report2027.additionsCount).toBe(1); // Only 2027 item
+    expect(report2027.additionsCost).toBe(1200);
+    expect(report2027.additionsBusinessBasis).toBe(1200);
+    expect(report2027.items.map((i) => i.name)).toEqual([
+      '2025 Acquired Amp',
+      '2026 Acquired Guitar',
+      '2027 Future Synth',
+    ]);
+  });
+
+  it('preserves cost-only assets even when purchasePrice is 0 or undefined', () => {
+    const costOnlyItems = [
+      {
+        _id: '507f1f77bcf86cd799439031',
+        name: 'Cost Only Microphone',
+        cost: 600,
+        purchasePrice: 0, // Mongoose default or explicit 0 must not mask cost
+        businessPercentage: 50,
+        salemPropertyTax: true,
+        purchaseDate: new Date('2026-05-01T00:00:00.000Z'),
+      },
+    ];
+
+    const report = generateYearlyReport(costOnlyItems, 2026);
+    expect(report.totalAssets).toBe(1);
+    expect(report.totalCost).toBe(600);
+    expect(report.totalBusinessBasis).toBe(300); // 600 * 0.5
+    expect(report.salemPropertyTaxCount).toBe(1);
+    expect(report.salemPropertyTaxTotal).toBe(300);
+    expect(report.additionsCost).toBe(600);
+    expect(report.additionsBusinessBasis).toBe(300);
+    expect(report.items[0].purchasePrice).toBe(600);
+  });
+
   it('defaults to current calendar year when year is omitted', () => {
     const report = generateYearlyReport([]);
     expect(report.year).toBe(new Date().getFullYear());
