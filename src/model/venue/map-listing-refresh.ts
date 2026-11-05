@@ -18,20 +18,23 @@ export const DEFAULT_REFRESH_LOCK_TTL_MS = 30 * 60 * 1000;
 const RELEASE_PATTERN = /^\d{4}-\d{2}-\d{2}\.\d+$/;
 const BULK_WRITE_BATCH_SIZE = 1000;
 
-interface ModelRefreshState {
-  lastIssuedAtMs: number;
-  lastCommittedAtMs: number;
+interface AcquiredRefreshLock {
+  lockEpoch: number;
+  lastIssuedAt?: Date;
+  lastCommittedAt?: Date;
 }
 
-const modelRefreshStates = new WeakMap<MapListingModelLike, ModelRefreshState>();
-
-function getModelRefreshState(model: MapListingModelLike): ModelRefreshState {
-  let state = modelRefreshStates.get(model);
-  if (!state) {
-    state = { lastIssuedAtMs: 0, lastCommittedAtMs: 0 };
-    modelRefreshStates.set(model, state);
+function toValidDate(value: unknown): Date | undefined {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value;
   }
-  return state;
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed;
+    }
+  }
+  return undefined;
 }
 const OPTIONAL_LISTING_FIELDS = [
   'city',
@@ -320,7 +323,7 @@ async function acquireRefreshLock(
   ownerId: string,
   acquiredAt: Date,
   lockTtlMs: number,
-): Promise<number> {
+): Promise<AcquiredRefreshLock> {
   const expiresAt = new Date(acquiredAt.getTime() + lockTtlMs);
   let lockDoc: Record<string, unknown> | null = null;
   try {
@@ -359,7 +362,11 @@ async function acquireRefreshLock(
   if (!lockDoc || lockDoc.lockOwner !== ownerId) {
     throw new Error('Refusing to refresh mapListing: another refresh is already in progress.');
   }
-  return typeof lockDoc.lockEpoch === 'number' ? lockDoc.lockEpoch : 1;
+  return {
+    lockEpoch: typeof lockDoc.lockEpoch === 'number' ? lockDoc.lockEpoch : 1,
+    lastIssuedAt: toValidDate(lockDoc.lastIssuedAt),
+    lastCommittedAt: toValidDate(lockDoc.lastCommittedAt),
+  };
 }
 
 async function assertRefreshLockHeld(
@@ -368,6 +375,7 @@ async function assertRefreshLockHeld(
   lockEpoch: number,
   currentTime: Date,
   lockTtlMs: number,
+  extraSet?: Record<string, unknown>,
 ): Promise<void> {
   const expiresAt = new Date(currentTime.getTime() + lockTtlMs);
   const lockDoc = await model.findOneAndUpdate(
@@ -380,6 +388,7 @@ async function assertRefreshLockHeld(
     {
       $set: {
         lockExpiresAt: expiresAt,
+        ...extraSet,
       },
     },
     {
@@ -399,33 +408,37 @@ async function releaseRefreshLock(
   ownerId: string,
   lockEpoch: number,
 ): Promise<void> {
-  await model.deleteMany(
+  await model.findOneAndUpdate(
     {
       listingId: MAP_LISTING_LOCK_ID,
       lockOwner: ownerId,
       lockEpoch,
     },
-    { strict: false },
+    {
+      $set: {
+        lockOwner: null,
+        lockExpiresAt: new Date(0),
+      },
+    },
+    {
+      upsert: false,
+      returnDocument: 'after',
+      lean: true,
+      strict: false,
+    },
   );
 }
 
 function resolveRefreshTimestamp(
-  model: MapListingModelLike,
   rawDownloadedAt: Date,
-  lockEpoch: number,
+  priorLock: AcquiredRefreshLock,
 ): Date {
-  const state = getModelRefreshState(model);
   const rawMs = rawDownloadedAt.getTime();
-  const resolvedMs = (lockEpoch > 1 && rawMs <= state.lastIssuedAtMs) || rawMs < state.lastIssuedAtMs
-    ? state.lastIssuedAtMs + 1
-    : rawMs;
-  state.lastIssuedAtMs = resolvedMs;
-  return new Date(resolvedMs);
-}
-
-function recordCommittedRefresh(model: MapListingModelLike, downloadedAt: Date): void {
-  const state = getModelRefreshState(model);
-  state.lastCommittedAtMs = Math.max(state.lastCommittedAtMs, downloadedAt.getTime());
+  const minFloorMs = Math.max(
+    priorLock.lastIssuedAt ? priorLock.lastIssuedAt.getTime() + 1 : 0,
+    priorLock.lastCommittedAt ? priorLock.lastCommittedAt.getTime() + 1 : 0,
+  );
+  return new Date(Math.max(rawMs, minFloorMs));
 }
 
 function validateAndNormalizeAnswer(
@@ -468,8 +481,25 @@ async function rollbackStaleBatchIfSuperseded(
   downloadedAt: Date | undefined,
 ): Promise<void> {
   if (!wroteAnyBatch || !downloadedAt) return;
-  const state = getModelRefreshState(model);
-  if (state.lastCommittedAtMs <= downloadedAt.getTime()) {
+  const lockDoc = await model.findOneAndUpdate(
+    {
+      listingId: MAP_LISTING_LOCK_ID,
+      lastCommittedAt: { $gt: downloadedAt },
+    },
+    {
+      $set: {
+        listingId: MAP_LISTING_LOCK_ID,
+      },
+    },
+    {
+      upsert: false,
+      returnDocument: 'after',
+      lean: true,
+      strict: false,
+    },
+  );
+  const lastCommittedAt = toValidDate(lockDoc?.lastCommittedAt);
+  if (!lastCommittedAt || lastCommittedAt <= downloadedAt) {
     return;
   }
   await model.deleteMany({
@@ -487,14 +517,17 @@ export async function refreshMapListings(
   const ownerId = options.ownerId ?? crypto.randomUUID();
   const lockTtlMs = options.lockTtlMs ?? DEFAULT_REFRESH_LOCK_TTL_MS;
 
-  const lockEpoch = await acquireRefreshLock(model, ownerId, now(), lockTtlMs);
+  const acquiredLock = await acquireRefreshLock(model, ownerId, now(), lockTtlMs);
+  const { lockEpoch } = acquiredLock;
   let downloadedAt: Date | undefined;
   let wroteAnyBatch = false;
   try {
     const answer = await options.fetchAnswer();
     const rawDownloadedAt = now();
-    downloadedAt = resolveRefreshTimestamp(model, rawDownloadedAt, lockEpoch);
-    await assertRefreshLockHeld(model, ownerId, lockEpoch, rawDownloadedAt, lockTtlMs);
+    downloadedAt = resolveRefreshTimestamp(rawDownloadedAt, acquiredLock);
+    await assertRefreshLockHeld(model, ownerId, lockEpoch, rawDownloadedAt, lockTtlMs, {
+      lastIssuedAt: downloadedAt,
+    });
 
     const { release, listings } = validateAndNormalizeAnswer(answer, downloadedAt);
     const previousCount = await model.countDocuments({
@@ -521,8 +554,9 @@ export async function refreshMapListings(
         { downloadedAt: { $exists: false } },
       ],
     });
-    await assertRefreshLockHeld(model, ownerId, lockEpoch, now(), lockTtlMs);
-    recordCommittedRefresh(model, downloadedAt);
+    await assertRefreshLockHeld(model, ownerId, lockEpoch, now(), lockTtlMs, {
+      lastCommittedAt: downloadedAt,
+    });
 
     return {
       release,

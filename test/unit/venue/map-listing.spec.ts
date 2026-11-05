@@ -23,10 +23,12 @@ import {
 
 interface StoredLockDoc {
   listingId: string;
-  lockOwner: string;
+  lockOwner: string | null;
   lockEpoch: number;
   lockedAt: Date;
   lockExpiresAt: Date;
+  lastIssuedAt?: Date;
+  lastCommittedAt?: Date;
 }
 
 class InMemoryMapListingStore implements MapListingModelLike {
@@ -61,11 +63,13 @@ class InMemoryMapListingStore implements MapListingModelLike {
     const isUpsert = options?.upsert === true;
     if (!isUpsert) {
       const gtDate = (filter.lockExpiresAt as { $gt?: Date } | undefined)?.$gt;
+      const gtCommittedAt = (filter.lastCommittedAt as { $gt?: Date } | undefined)?.$gt;
       if (
         !this.lockDoc
-        || this.lockDoc.lockOwner !== filter.lockOwner
+        || ('lockOwner' in filter && this.lockDoc.lockOwner !== filter.lockOwner)
         || (typeof filter.lockEpoch === 'number' && this.lockDoc.lockEpoch !== filter.lockEpoch)
         || (gtDate && this.lockDoc.lockExpiresAt <= gtDate)
+        || (gtCommittedAt && (!this.lockDoc.lastCommittedAt || this.lockDoc.lastCommittedAt <= gtCommittedAt))
       ) {
         return Promise.resolve(null);
       }
@@ -87,6 +91,7 @@ class InMemoryMapListingStore implements MapListingModelLike {
     const incEpoch = ((update.$inc as { lockEpoch?: number } | undefined)?.lockEpoch ?? 1);
     const nextEpoch = (this.lockDoc?.lockEpoch ?? 0) + incEpoch;
     this.lockDoc = {
+      ...this.lockDoc,
       ...setFields,
       lockEpoch: nextEpoch,
     };
@@ -618,7 +623,8 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
     resumeWriter1();
     const writer1Result = await writer1Promise;
     expect(writer1Result.written).toBe(2);
-    expect(store.lockDoc).toBeNull();
+    expect(store.lockDoc?.lockOwner).toBeNull();
+    expect(store.lockDoc?.lockExpiresAt).toEqual(new Date(0));
     expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-A', 'ov-B']);
 
     // Once Writer 1 has finished and released the lock, a subsequent sequential run with {B, C} succeeds:
@@ -630,7 +636,8 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
     });
     expect(sequentialResult).toMatchObject({ written: 2, removed: 1 });
     expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
-    expect(store.lockDoc).toBeNull();
+    expect(store.lockDoc?.lockOwner).toBeNull();
+    expect(store.lockDoc?.lockExpiresAt).toEqual(new Date(0));
   });
 
   it('reclaims an expired refresh lock and propagates non-duplicate lock errors', async () => {
@@ -653,7 +660,8 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
       }),
     });
     expect(result.written).toBe(1);
-    expect(store.lockDoc).toBeNull();
+    expect(store.lockDoc?.lockOwner).toBeNull();
+    expect(store.lockDoc?.lockExpiresAt).toEqual(new Date(0));
 
     // When findOneAndUpdate returns null or a mismatched owner without throwing, refuse:
     const nullLockStore: MapListingModelLike = {
@@ -997,5 +1005,80 @@ describe('map-listing-refresh.ts: refreshMapListings outcomes table', () => {
     resumeWriterA();
     await expect(writerAPromise).rejects.toThrow(/refresh lock expired or ownership was lost/);
     expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-A', 'ov-B', 'ov-C', 'ov-D']);
+  });
+
+  it('coordinates committed-refresh rollback and partial-failure preservation across isolated module and model instances', async () => {
+    vi.resetModules();
+    const isolatedModule = await import('#src/model/venue/map-listing-refresh.js');
+
+    const store = new InMemoryMapListingStore([]);
+    const createModelHandle = (): MapListingModelLike => ({
+      findOneAndUpdate: (filter, update, options) => store.findOneAndUpdate(filter, update, options),
+      countDocuments: (filter) => store.countDocuments(filter),
+      bulkWrite: (ops) => store.bulkWrite(ops),
+      deleteMany: (filter) => store.deleteMany(filter),
+    });
+    const modelA = createModelHandle();
+    const modelB = createModelHandle();
+
+    let currentClockMs = SAMPLE_DOWNLOADED_AT.getTime();
+    const now = () => new Date(currentClockMs);
+
+    let notifyWriterAStalledInBulkWrite: () => void = () => undefined;
+    const writerAStalledInBulkWrite = new Promise<void>((resolve) => {
+      notifyWriterAStalledInBulkWrite = resolve;
+    });
+    let resumeWriterABulkWrite: () => void = () => undefined;
+    const writerACanFinishBulkWrite = new Promise<void>((resolve) => {
+      resumeWriterABulkWrite = resolve;
+    });
+
+    // Pause Writer A (module instance 1, model handle A) inside bulkWrite for {A, B}:
+    store.onBeforeBulkWrite = async () => {
+      store.onBeforeBulkWrite = undefined;
+      notifyWriterAStalledInBulkWrite();
+      await writerACanFinishBulkWrite;
+    };
+
+    const writerAPromise = refreshMapListings({
+      model: modelA,
+      ownerId: 'process-A',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-A', name: 'Process A Venue A' }),
+          sampleRow({ listingId: 'ov-B', name: 'Process A Venue B' }),
+        ],
+      }),
+    });
+
+    await writerAStalledInBulkWrite;
+    // Expire Writer A's default 30-minute lease:
+    currentClockMs += 1_800_000 + 1000;
+
+    // Writer B runs in an independently loaded module instance with its own model handle,
+    // successfully loading and pruning {B, C}:
+    const writerBResult = await isolatedModule.refreshMapListings({
+      model: modelB,
+      ownerId: 'process-B',
+      now,
+      fetchAnswer: () => Promise.resolve({
+        release: SAMPLE_RELEASE,
+        rows: [
+          sampleRow({ listingId: 'ov-B', name: 'Process B Venue B' }),
+          sampleRow({ listingId: 'ov-C', name: 'Process B Venue C' }),
+        ],
+      }),
+    });
+    expect(writerBResult).toMatchObject({ written: 2 });
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+
+    // Resume Writer A: its unordered batch inserts A and hits the fenced duplicate-key error on B;
+    // cleanup reads durable lastCommittedAt from the shared store and removes A, leaving {B, C}:
+    resumeWriterABulkWrite();
+    await expect(writerAPromise).rejects.toThrow(/E11000|duplicate key/);
+    expect(store.snapshot().map((d) => d.listingId)).toEqual(['ov-B', 'ov-C']);
+    expect(store.docs.get('ov-B')?.name).toBe('Process B Venue B');
   });
 });
