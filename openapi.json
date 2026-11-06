@@ -31,6 +31,10 @@
     {
       "name": "assets",
       "description": "Private Web Jam LLC equipment and gear asset records."
+    },
+    {
+      "name": "songs",
+      "description": "Public music-page display and authenticated private song catalog."
     }
   ],
   "security": [],
@@ -1151,6 +1155,195 @@
           }
         }
       }
+    },
+    "/song": {
+      "get": {
+        "tags": [
+          "songs"
+        ],
+        "operationId": "listSongs",
+        "summary": "List public song display fields",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Successful song response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SongPublic"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "songs"
+        ],
+        "operationId": "createSong",
+        "summary": "Create a private song catalog record",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful song response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Song"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SongInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/song/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "songs"
+        ],
+        "operationId": "getSong",
+        "summary": "Read private song catalog details",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful song response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Song"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid song id or song not found."
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "songs"
+        ],
+        "operationId": "updateSong",
+        "summary": "Update private song catalog details",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful song response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Song"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid song id or song not found."
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SongUpdateInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "songs"
+        ],
+        "operationId": "deleteSong",
+        "summary": "Delete a song",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful song response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid song id or song not found."
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1801,6 +1994,267 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AssetReportItem"
+            }
+          }
+        }
+      },
+      "SongPublic": {
+        "type": "object",
+        "description": "Explicit public music-page fields. No rights or recording records are returned.",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "composer": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "original",
+              "pub",
+              "mission"
+            ]
+          },
+          "album": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "orderBy": {
+            "type": "number"
+          }
+        }
+      },
+      "SongWriter": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          }
+        }
+      },
+      "SongRecording": {
+        "type": "object",
+        "properties": {
+          "isrc": {
+            "type": "string"
+          },
+          "release": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          }
+        }
+      },
+      "Song": {
+        "type": "object",
+        "description": "Authenticated catalog record; rights remain optional until independently verified, for the applicable song category. No recording or URL is required.",
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "composer": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "original",
+              "pub",
+              "mission"
+            ]
+          },
+          "album": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "orderBy": {
+            "type": "number"
+          },
+          "writers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SongWriter"
+            }
+          },
+          "bmiWorkNumber": {
+            "type": "string"
+          },
+          "iswc": {
+            "type": "string"
+          },
+          "copyrightRegistration": {
+            "type": "string"
+          },
+          "recordings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SongRecording"
+            }
+          }
+        }
+      },
+      "SongInput": {
+        "type": "object",
+        "required": [
+          "title",
+          "artist",
+          "category"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "composer": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "original",
+              "pub",
+              "mission"
+            ]
+          },
+          "album": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "orderBy": {
+            "type": "number"
+          },
+          "writers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SongWriter"
+            }
+          },
+          "bmiWorkNumber": {
+            "type": "string"
+          },
+          "iswc": {
+            "type": "string"
+          },
+          "copyrightRegistration": {
+            "type": "string"
+          },
+          "recordings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SongRecording"
+            }
+          }
+        }
+      },
+      "SongUpdateInput": {
+        "type": "object",
+        "description": "Optional partial catalog fields.",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "composer": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "original",
+              "pub",
+              "mission"
+            ]
+          },
+          "album": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "orderBy": {
+            "type": "number"
+          },
+          "writers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SongWriter"
+            }
+          },
+          "bmiWorkNumber": {
+            "type": "string"
+          },
+          "iswc": {
+            "type": "string"
+          },
+          "copyrightRegistration": {
+            "type": "string"
+          },
+          "recordings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SongRecording"
             }
           }
         }
