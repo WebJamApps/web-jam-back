@@ -41,5 +41,11 @@ rules and do not reconstruct them from memory or from this file.
 - **Verification Never Replaces the Sendability Guards**: Gate 2 verification is a COPY-INTEGRITY check only. It renders with `{ skipDedup: true, requireEligible: false }` so it can fingerprint any venue, so the send loop MUST still resolve every venue — verified or not — through `resolvePitch` with production defaults (`requireEligible: true`, `skipDedup: false`) before mailing it. Reuse the verified rendering as `preRendered` bytes ONLY; never let it stand in for the eligibility (#844) or dedup (#923) checks. Skipping them lets a re-POSTed batch mail every venue twice and mails a venue whose `outreachEligible` was revoked (including permanently, by `not-interested`) after approval.
 - **Deterministic Batch Lookup & Scope**: When querying batch approval records for a target weekend, prefer exact `batchId` matching before falling back to weekend-level matching, and always sort deterministically (`.sort({ createdAt: -1, _id: -1 })`) so multi-batch weekends resolve predictably rather than matching arbitrary documents in natural order.
 
+## Song Catalog & Migration Invariants
+- **Performer vs Writer Separation**: Performers and writers go in separate fields (`artist` / `recordings[].artist` vs `writers`). Website artist credits or release performer credits must NEVER be read or converted into song writers.
+- **Sparse Unique URL Constraint**: Songs not yet recorded omit `url` (`delete payload.url` if falsy) rather than storing empty strings or null, preserving MongoDB's sparse unique index constraint.
+- **Safe-Run Migration & Loader Guard**: Catalog scripts refuse execution against non-local/production databases unless `--force` is passed explicitly.
+- **No `process.env.DROPBOX_` in `src/`**: Files in `src/` must never reference `process.env.DROPBOX_*` (enforced by regression tests). Use domain-specific variable names (e.g. `SONG_ARCHIVE_FILE`) for external paths.
+
 > **Moved to the Obsidian vault (2026-11-05):** Troubleshooting lessons (test typing, guards, storage, schemas, diagrams) now live word for word in `~/Dropbox/web-jam-llms/rules-vault/web-jam-back-AGENTS.md`. Read it before working in that area.
 
