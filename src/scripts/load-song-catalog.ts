@@ -154,25 +154,46 @@ function extractInlineShare(raw: string): { name: string; share?: number } {
   return { name: trimmed };
 }
 
-export function parseWriterCell(writerText: string, shareText?: string): SongWriter[] {
-  if (!writerText || !writerText.trim()) return [];
+function getShareDelimiter(shareText: string): string {
+  if (shareText.includes(';')) return ';';
+  if (shareText.includes('/')) return '/';
+  return ',';
+}
 
+function parseShareItems(shareText?: string): (number | undefined)[] {
+  if (!shareText || !shareText.trim()) return [];
+  const shareDelim = getShareDelimiter(shareText);
+  const rawShareItems = shareText.split(shareDelim).map((s) => s.trim());
   const parsedShares: (number | undefined)[] = [];
-  if (shareText && shareText.trim()) {
-    const rawShareItems = shareText.split(/[,;/]/).map((s) => s.trim()).filter(Boolean);
-    for (const item of rawShareItems) {
+  for (const item of rawShareItems) {
+    if (!item) {
+      parsedShares.push(undefined);
+    } else {
       const match = item.match(/(\d+(?:\.\d+)?)/);
       parsedShares.push(match ? Number.parseFloat(match[1]) : undefined);
     }
   }
+  return parsedShares;
+}
+
+export function parseWriterCell(writerText: string, shareText?: string): SongWriter[] {
+  if (!writerText || !writerText.trim()) return [];
 
   const delimiter = writerText.includes(';') ? ';' : ',';
   const rawWriters = writerText.split(delimiter).map((w) => w.trim()).filter(Boolean);
+  const parsedShares = parseShareItems(shareText);
 
   const writers: SongWriter[] = [];
   rawWriters.forEach((rawWriter, idx) => {
     const { name, share: inlineShare } = extractInlineShare(rawWriter);
-    const colShare = parsedShares[idx];
+    let colShare: number | undefined;
+
+    if (parsedShares.length > 1) {
+      colShare = parsedShares[idx];
+    } else if (parsedShares.length === 1 && rawWriters.length === 1) {
+      colShare = parsedShares[0];
+    }
+
     const finalShare = inlineShare ?? colShare;
 
     if (name) {

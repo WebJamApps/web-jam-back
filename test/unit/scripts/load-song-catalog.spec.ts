@@ -125,24 +125,24 @@ describe('load-song-catalog script (#1228)', () => {
     it('preserves unknown writers when BMI table provides no writer/share columns (NO manufactured 100% share)', () => {
       const markdown = `
 # BMI Account Overview
-Writer Account: Sherman Joshua Victor 798301
-IPI: 00358258629
+Writer Account: Test Songwriter FAKE-ACCT-999
+IPI: FAKE-IPI-000000000
 
 | Title | BMI work number | Alternate titles |
 |---|---|---|
-| ALL MY LIFE | 5530339 | |
-| BREAK OUT | 5530317 | |
+| ALL MY LIFE | TEST-BMI-001 | |
+| BREAK OUT | TEST-BMI-002 | |
 `;
       const works = parseBmiWorksMarkdown(markdown);
       expect(works).toHaveLength(2);
       expect(works[0]).toEqual({
         title: 'All My Life',
-        bmiWorkNumber: '5530339',
+        bmiWorkNumber: 'TEST-BMI-001',
         writers: [], // Unverified details preserved as unknown
       });
       expect(works[1]).toEqual({
         title: 'Break Out',
-        bmiWorkNumber: '5530317',
+        bmiWorkNumber: 'TEST-BMI-002',
         writers: [],
       });
     });
@@ -151,9 +151,9 @@ IPI: 00358258629
       const markdown = `
 | Title | BMI work number | Writers | Shares |
 |---|---|---|---|
-| CO-WRITTEN WORK | 990001 | Alice Songwriter, Bob CoWriter | 50%, 50% |
-| INLINE SHARE WORK | 990002 | Carol Author (70%), Dave Contributor (30%) | |
-| SINGLE WRITER FULL | 990003 | Eve Soloist | 100% |
+| CO-WRITTEN WORK | TEST-BMI-CW1 | Alice Songwriter, Bob CoWriter | 50%, 50% |
+| INLINE SHARE WORK | TEST-BMI-CW2 | Carol Author (70%), Dave Contributor (30%) | |
+| SINGLE WRITER FULL | TEST-BMI-CW3 | Eve Soloist | 100% |
 `;
       const works = parseBmiWorksMarkdown(markdown);
       expect(works).toHaveLength(3);
@@ -174,8 +174,8 @@ IPI: 00358258629
       const markdown = `
 | Title | BMI work number | Writers |
 |---|---|---|
-| MISSING SHARE CO-WRITE | 990004 | Frank Lyricist, Grace Composer |
-| MISSING SHARE SOLO | 990005 | Heidi Melody |
+| MISSING SHARE CO-WRITE | TEST-BMI-CW4 | Frank Lyricist, Grace Composer |
+| MISSING SHARE SOLO | TEST-BMI-CW5 | Heidi Melody |
 `;
       const works = parseBmiWorksMarkdown(markdown);
       expect(works).toHaveLength(2);
@@ -189,6 +189,26 @@ IPI: 00358258629
         { name: 'Heidi Melody' },
       ]);
       expect(works[1].writers[0].share).toBeUndefined();
+    });
+
+    it('preserves blank share positions when pairing shares with writers (#1228 review P2 regression)', () => {
+      // Missing first share with known second share (must not shift Bob's 50% onto Alice)
+      const resLeadingBlank = parseWriterCell('Alice Example; Bob Example', '; 50%');
+      expect(resLeadingBlank).toEqual([
+        { name: 'Alice Example' },
+        { name: 'Bob Example', share: 50 },
+      ]);
+      expect(resLeadingBlank[0].share).toBeUndefined();
+      expect(resLeadingBlank[1].share).toBe(50);
+
+      // Missing middle share with known first and third shares
+      const resMiddleBlank = parseWriterCell('Writer One; Writer Two; Writer Three', '25%; ; 75%');
+      expect(resMiddleBlank).toEqual([
+        { name: 'Writer One', share: 25 },
+        { name: 'Writer Two' },
+        { name: 'Writer Three', share: 75 },
+      ]);
+      expect(resMiddleBlank[1].share).toBeUndefined();
     });
 
     it('parseWriterCell handles empty text, semicolons, and various share formats', () => {
@@ -273,7 +293,7 @@ IPI: 00358258629
     });
 
     it('resolves and parses all sources cleanly when valid fixtures are provided', () => {
-      const bmiFixture = '| Title | BMI work number |\n| Break Out | 5530317 |\n';
+      const bmiFixture = '| Title | BMI work number |\n| Break Out | TEST-BMI-FIX-01 |\n';
       const cdBabyFixture = JSON.stringify([
         {
           release: 'Solo Acoustic',
