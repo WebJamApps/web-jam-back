@@ -296,6 +296,7 @@ describe('The Gig API', () => {
       vi.spyOn(global, 'fetch').mockImplementation((url, init) => {
         const urlStr = String(url);
         if (urlStr.startsWith('https://graph.facebook.com/v25.0/')) {
+          if (urlStr.startsWith('https://graph.facebook.com/v25.0/container-1?')) return Promise.resolve(Response.json({ status_code: 'FINISHED' }));
           return Promise.resolve(Response.json({ id: urlStr.endsWith('/media_publish') ? 'media-1' : 'container-1' }));
         }
         return realFetch(url, init);
@@ -310,7 +311,8 @@ describe('The Gig API', () => {
       expect(r.status).toBe(200);
       expect(r.body).toEqual({ instagram: { ok: true, id: 'media-1' } });
       const calls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).startsWith('https://graph.facebook.com/'));
-      expect(calls).toHaveLength(2);
+      expect(calls).toHaveLength(3);
+      expect(String(calls[1][0])).toMatch(/\/container-1\?fields=status_code%2Cstatus/);
       const form = new URLSearchParams(calls[0][1]?.body as string);
       expect(form.get('image_url')).toMatch(/\/gig\/[^/]+\/announce-image\.jpg$/);
       expect(JSON.parse(form.get('user_tags')!)).toEqual([
