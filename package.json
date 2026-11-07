@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.34.0",
+  "version": "2.37.0",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -54,7 +54,9 @@
     "test:local": "npm run lint:openapi && npm run test:lint && npm run typecheck && rimraf coverage && npm run test:unit",
     "test:unit": "vitest run --coverage",
     "test:all": "npm run test:local",
-    "seed:second-pitch-templates": "node scripts/seed-second-pitch-templates.mjs"
+    "seed:second-pitch-templates": "node scripts/seed-second-pitch-templates.mjs",
+    "migrate:song-catalog": "node build/src/scripts/migrate-song-catalog.js",
+    "load:song-catalog": "node build/src/scripts/load-song-catalog.js"
   },
   "repository": {
     "type": "git",
