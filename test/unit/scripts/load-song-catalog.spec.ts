@@ -1,19 +1,26 @@
+import fs from 'node:fs';
 import mongoose from 'mongoose';
 import {
   isSafeToRun,
+  parseMongoUri,
   parseCliArgs,
   normalizeTitle,
   toDisplayTitle,
+  parseWriterCell,
   parseBmiWorksMarkdown,
-  parseCdBabyData,
-  parseArchiveSongs,
+  validateBmiWorks,
+  validateCdBabyReleases,
+  validateArchiveSongs,
+  isRecordingMatch,
+  enrichRecording,
+  mergeRecordingsList,
   assembleCatalog,
-  planCatalogSync,
   executeCatalogSync,
   resolveSources,
   run,
   type CatalogStore,
   type SongCatalogDoc,
+  type SongRecording,
 } from '#src/scripts/load-song-catalog.js';
 
 describe('load-song-catalog script (#1228)', () => {
@@ -21,32 +28,51 @@ describe('load-song-catalog script (#1228)', () => {
     vi.restoreAllMocks();
   });
 
-  describe('isSafeToRun database guard', () => {
+  describe('isSafeToRun database guard and parseMongoUri (#1228 review P1)', () => {
     it('refuses empty uri', () => {
       expect(isSafeToRun('', false)).toBe(false);
+      expect(isSafeToRun('', true)).toBe(false);
     });
 
-    it('refuses production or remote uri without --force', () => {
-      const releaseUri = ['mongodb', '+srv:', '//dummy.example.invalid/release'].join('');
-      const prodUri = ['mongodb', '+srv:', '//dummy.example.invalid/production'].join('');
-      expect(isSafeToRun(releaseUri, false)).toBe(false);
-      expect(isSafeToRun(prodUri, false)).toBe(false);
+    it('refuses malformed or non-mongodb URIs', () => {
+      expect(parseMongoUri('not-a-mongo-uri')).toBeNull();
+      expect(isSafeToRun('not-a-mongo-uri', false)).toBe(false);
     });
 
-    it('allows localhost and 127.0.0.1 without --force', () => {
+    it('refuses remote hostnames that merely contain "localhost" as a substring', () => {
+      const misleadingHost = 'mongodb://localhost.remote.invalid/release';
+      expect(isSafeToRun(misleadingHost, false)).toBe(false);
+    });
+
+    it('refuses remote database names that merely contain "test", "dev", or "copy" as a substring', () => {
+      expect(isSafeToRun('mongodb://remote.invalid/contest', false)).toBe(false);
+      expect(isSafeToRun('mongodb://remote.invalid/prodev', false)).toBe(false);
+      expect(isSafeToRun('mongodb://remote.invalid/copycat', false)).toBe(false);
+      expect(isSafeToRun('mongodb+srv://cluster.example.invalid/production', false)).toBe(false);
+      expect(isSafeToRun('mongodb+srv://cluster.example.invalid/release', false)).toBe(false);
+    });
+
+    it('refuses mixed local and remote hosts without --force', () => {
+      const mixedUri = 'mongodb://localhost:27017,remote.invalid:27017/release';
+      expect(isSafeToRun(mixedUri, false)).toBe(false);
+    });
+
+    it('allows localhost and loopback hostnames without --force', () => {
       const localUri = ['mongodb:', '//localhost:27017/any-db'].join('');
       const loopbackUri = ['mongodb:', '//127.0.0.1:27017/any-db'].join('');
       expect(isSafeToRun(localUri, false)).toBe(true);
       expect(isSafeToRun(loopbackUri, false)).toBe(true);
     });
 
-    it('allows dev, test, and copy db names without --force', () => {
+    it('allows deliberate dev, test, and copy database name conventions without --force', () => {
       const devUri = ['mongodb', '+srv:', '//cluster.example.invalid/web-jam-dev'].join('');
       const testUri = ['mongodb', '+srv:', '//cluster.example.invalid/web-jam-test'].join('');
       const copyUri = ['mongodb:', '//remote.example.invalid/song-catalog-copy'].join('');
+      const underDevUri = ['mongodb:', '//remote.example.invalid/my_db_dev'].join('');
       expect(isSafeToRun(devUri, false)).toBe(true);
       expect(isSafeToRun(testUri, false)).toBe(true);
       expect(isSafeToRun(copyUri, false)).toBe(true);
+      expect(isSafeToRun(underDevUri, false)).toBe(true);
     });
 
     it('allows any database when --force is passed', () => {
@@ -65,18 +91,18 @@ describe('load-song-catalog script (#1228)', () => {
         '--apply',
         '--force',
         '--bmi-file',
-        '/tmp/test-bmi.md',
+        'fixtures/test-bmi.md',
         '--cdbaby-file',
-        '/tmp/test-cdbaby.json',
+        'fixtures/test-cdbaby.json',
         '--archive-file',
-        '/tmp/test-archive.json',
+        'fixtures/test-archive.json',
       ]);
       expect(opts).toEqual({
         apply: true,
         force: true,
-        bmiFile: '/tmp/test-bmi.md',
-        cdBabyFile: '/tmp/test-cdbaby.json',
-        archiveFile: '/tmp/test-archive.json',
+        bmiFile: 'fixtures/test-bmi.md',
+        cdBabyFile: 'fixtures/test-cdbaby.json',
+        archiveFile: 'fixtures/test-archive.json',
       });
     });
   });
@@ -95,54 +121,279 @@ describe('load-song-catalog script (#1228)', () => {
     });
   });
 
-  describe('data parsing from sources', () => {
-    it('parses BMI markdown table with mocked data', () => {
+  describe('BMI works parsing and rights provenance (#1228 review P1)', () => {
+    it('preserves unknown writers when BMI table provides no writer/share columns (NO manufactured 100% share)', () => {
       const markdown = `
 # BMI Account Overview
-Writer Account: Sherman Joshua Victor
-IPI: TEST-IPI-001
+Writer Account: Sherman Joshua Victor 798301
+IPI: 00358258629
 
 | Title | BMI work number | Alternate titles |
 |---|---|---|
-| ALL MY LIFE | TEST-BMI-001 | |
-| BREAK OUT | TEST-BMI-002 | |
-| JANE DOE | TEST-BMI-003 | |
+| ALL MY LIFE | 5530339 | |
+| BREAK OUT | 5530317 | |
+`;
+      const works = parseBmiWorksMarkdown(markdown);
+      expect(works).toHaveLength(2);
+      expect(works[0]).toEqual({
+        title: 'All My Life',
+        bmiWorkNumber: '5530339',
+        writers: [], // Unverified details preserved as unknown
+      });
+      expect(works[1]).toEqual({
+        title: 'Break Out',
+        bmiWorkNumber: '5530317',
+        writers: [],
+      });
+    });
+
+    it('parses verified co-written works with explicit shares and inline shares', () => {
+      const markdown = `
+| Title | BMI work number | Writers | Shares |
+|---|---|---|---|
+| CO-WRITTEN WORK | 990001 | Alice Songwriter, Bob CoWriter | 50%, 50% |
+| INLINE SHARE WORK | 990002 | Carol Author (70%), Dave Contributor (30%) | |
+| SINGLE WRITER FULL | 990003 | Eve Soloist | 100% |
 `;
       const works = parseBmiWorksMarkdown(markdown);
       expect(works).toHaveLength(3);
-      expect(works[0]).toEqual({
-        title: 'All My Life',
-        bmiWorkNumber: 'TEST-BMI-001',
-        writers: [{ name: 'Joshua Victor Sherman', share: 100 }],
-      });
-      expect(works[1].bmiWorkNumber).toBe('TEST-BMI-002');
-      expect(works[2].bmiWorkNumber).toBe('TEST-BMI-003');
+      expect(works[0].writers).toEqual([
+        { name: 'Alice Songwriter', share: 50 },
+        { name: 'Bob CoWriter', share: 50 },
+      ]);
+      expect(works[1].writers).toEqual([
+        { name: 'Carol Author', share: 70 },
+        { name: 'Dave Contributor', share: 30 },
+      ]);
+      expect(works[2].writers).toEqual([
+        { name: 'Eve Soloist', share: 100 },
+      ]);
     });
 
-    it('parses CD Baby and archive data from JSON string or object', () => {
-      const cdBabyJson = JSON.stringify([
+    it('parses co-written works and single writers with missing shares leaving share undefined', () => {
+      const markdown = `
+| Title | BMI work number | Writers |
+|---|---|---|
+| MISSING SHARE CO-WRITE | 990004 | Frank Lyricist, Grace Composer |
+| MISSING SHARE SOLO | 990005 | Heidi Melody |
+`;
+      const works = parseBmiWorksMarkdown(markdown);
+      expect(works).toHaveLength(2);
+      expect(works[0].writers).toEqual([
+        { name: 'Frank Lyricist' },
+        { name: 'Grace Composer' },
+      ]);
+      expect(works[0].writers[0].share).toBeUndefined();
+      expect(works[0].writers[1].share).toBeUndefined();
+      expect(works[1].writers).toEqual([
+        { name: 'Heidi Melody' },
+      ]);
+      expect(works[1].writers[0].share).toBeUndefined();
+    });
+
+    it('parseWriterCell handles empty text, semicolons, and various share formats', () => {
+      expect(parseWriterCell('')).toEqual([]);
+      expect(parseWriterCell('Sherman, Joshua; Doe, Jane', '60; 40')).toEqual([
+        { name: 'Sherman, Joshua', share: 60 },
+        { name: 'Doe, Jane', share: 40 },
+      ]);
+    });
+  });
+
+  describe('source validation and refusal (#1228 review P2)', () => {
+    it('refuses missing BMI source file', () => {
+      expect(() => resolveSources({
+        apply: false,
+        force: false,
+        bmiFile: 'fixtures/nonexistent-bmi.md',
+      })).toThrow('missing required BMI works source file');
+    });
+
+    it('refuses empty BMI source file', () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      vi.spyOn(fs, 'readFileSync').mockReturnValue('');
+      expect(() => resolveSources({
+        apply: false,
+        force: false,
+        bmiFile: 'fixtures/empty-bmi.md',
+      })).toThrow('BMI works source file "fixtures/empty-bmi.md" is empty');
+    });
+
+    it('refuses BMI file with no recognized works table', () => {
+      expect(() => validateBmiWorks([], 'fixtures/no-works.md')).toThrow('contains no recognized works');
+    });
+
+    it('refuses missing CD Baby releases file', () => {
+      vi.spyOn(fs, 'existsSync').mockImplementation((p) => String(p).includes('bmi'));
+      vi.spyOn(fs, 'readFileSync').mockReturnValue('| Title | BMI work number |\n| Song | 123 |');
+      expect(() => resolveSources({
+        apply: false,
+        force: false,
+        cdBabyFile: 'fixtures/nonexistent-cdbaby.json',
+      })).toThrow('missing required CD Baby releases source file');
+    });
+
+    it('refuses empty or malformed CD Baby releases file', () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      vi.spyOn(fs, 'readFileSync').mockImplementation((p) => {
+        if (String(p).includes('bmi')) return '| Title | BMI work number |\n| Song | 123 |';
+        return 'not-json';
+      });
+      expect(() => resolveSources({
+        apply: false,
+        force: false,
+        cdBabyFile: 'fixtures/malformed-cdbaby.json',
+      })).toThrow('is not valid JSON');
+    });
+
+    it('refuses invalid CD Baby release shape', () => {
+      expect(() => validateCdBabyReleases([{ invalid: true }], 'fixtures/bad-shape.json'))
+        .toThrow('contains unrecognized release shape');
+      expect(() => validateCdBabyReleases([{ release: 'R', artist: 'A', tracks: [] }], 'fixtures/bad.json'))
+        .toThrow('contains unrecognized release shape');
+      expect(() => validateCdBabyReleases([{ release: 'R', artist: 'A', tracks: [{ noTitle: true }] }], 'fixtures/bad.json'))
+        .toThrow('contains track with missing title');
+    });
+
+    it('refuses missing, empty, or malformed music archive file', () => {
+      vi.spyOn(fs, 'existsSync').mockImplementation((p) => !String(p).includes('archive'));
+      vi.spyOn(fs, 'readFileSync').mockImplementation((p) => {
+        if (String(p).includes('bmi')) return '| Title | BMI work number |\n| Song | 123 |';
+        return JSON.stringify([{ release: 'R', artist: 'A', tracks: [{ title: 'S' }] }]);
+      });
+      expect(() => resolveSources({
+        apply: false,
+        force: false,
+        archiveFile: 'fixtures/nonexistent-archive.json',
+      })).toThrow('missing required music archive source file');
+
+      expect(() => validateArchiveSongs([], 'fixtures/bad.json')).toThrow('contains invalid or empty song records');
+      expect(() => validateArchiveSongs([{ title: 'T', artist: 'A', category: 'invalid-cat' }], 'fixtures/bad.json'))
+        .toThrow('contains unrecognized song shape');
+    });
+
+    it('resolves and parses all sources cleanly when valid fixtures are provided', () => {
+      const bmiFixture = '| Title | BMI work number |\n| Break Out | 5530317 |\n';
+      const cdBabyFixture = JSON.stringify([
         {
-          release: 'Test Album',
-          artist: 'Test Artist',
-          tracks: [{ title: 'Track One', isrc: 'TEST-ISRC-01' }],
+          release: 'Solo Acoustic',
+          artist: 'Josh Sherman',
+          tracks: [{ title: 'Break Out', isrc: 'TEST-ISRC-01' }],
         },
       ]);
-      expect(parseCdBabyData(cdBabyJson)).toHaveLength(1);
-
-      const archiveJson = JSON.stringify([
+      const archiveFixture = JSON.stringify([
         {
-          title: 'Archive Song',
-          artist: 'Performer',
+          title: 'Break Out',
+          artist: 'Josh Sherman',
           category: 'original',
+          album: 'Solo Acoustic',
           url: 'https://example.invalid/song.mp3',
         },
       ]);
-      expect(parseArchiveSongs(archiveJson)).toHaveLength(1);
+
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      vi.spyOn(fs, 'readFileSync').mockImplementation((p) => {
+        const pathStr = String(p);
+        if (pathStr.includes('bmi')) return bmiFixture;
+        if (pathStr.includes('cdbaby')) return cdBabyFixture;
+        return archiveFixture;
+      });
+
+      const sources = resolveSources({
+        apply: false,
+        force: false,
+        bmiFile: 'fixtures/bmi.md',
+        cdBabyFile: 'fixtures/cdbaby.json',
+        archiveFile: 'fixtures/archive.json',
+      });
+
+      expect(sources.bmiWorks).toHaveLength(1);
+      expect(sources.cdBabyReleases).toHaveLength(1);
+      expect(sources.archiveSongs).toHaveLength(1);
+    });
+  });
+
+  describe('recording enrichment and conflict detection (#1228 review P2)', () => {
+    it('isRecordingMatch matches by ISRC, URL, or release + artist', () => {
+      expect(isRecordingMatch({ isrc: 'US-123' }, { isrc: 'us-123' })).toBe(true);
+      expect(isRecordingMatch({ url: 'https://a.com/1' }, { url: 'https://a.com/1' })).toBe(true);
+      expect(isRecordingMatch(
+        { release: 'Solo Acoustic', artist: 'Josh Sherman' },
+        { release: 'solo acoustic', artist: 'josh sherman' },
+      )).toBe(true);
+      expect(isRecordingMatch(
+        { release: 'Album A', artist: 'Artist A' },
+        { release: 'Album B', artist: 'Artist A' },
+      )).toBe(false);
+    });
+
+    it('enriches matching recording with missing fields (e.g. attaching archive URL to CD Baby release)', () => {
+      const cdBabyRec: SongRecording = {
+        release: 'Solo Acoustic',
+        artist: 'Josh Sherman',
+        isrc: 'TEST-ISRC-01',
+        year: 2001,
+      };
+      const archiveRec: SongRecording = {
+        release: 'Solo Acoustic',
+        artist: 'Josh Sherman',
+        url: 'https://example.invalid/break-out.mp3',
+        year: 2001,
+      };
+
+      const result = enrichRecording(cdBabyRec, archiveRec);
+      expect(result.modified).toBe(true);
+      expect(cdBabyRec.url).toBe('https://example.invalid/break-out.mp3');
+      expect(cdBabyRec.isrc).toBe('TEST-ISRC-01');
+    });
+
+    it('detects conflicting ISRC, URL, or release and reports conflict', () => {
+      const rec1: SongRecording = {
+        release: 'Solo Acoustic',
+        artist: 'Josh Sherman',
+        isrc: 'TEST-ISRC-01',
+      };
+      const rec2: SongRecording = {
+        release: 'Solo Acoustic',
+        artist: 'Josh Sherman',
+        isrc: 'TEST-ISRC-02',
+      };
+
+      const result = enrichRecording(rec1, rec2);
+      expect(result.modified).toBe(false);
+      expect(result.conflict).toContain('Conflicting ISRC');
+    });
+
+    it('mergeRecordingsList enriches existing database recording when incoming source provides ISRC', () => {
+      const existingInDb: SongRecording[] = [
+        { release: 'Solo Acoustic', artist: 'Josh Sherman', url: 'https://example.invalid/song.mp3' },
+      ];
+      const incomingFromSource: SongRecording[] = [
+        { release: 'Solo Acoustic', artist: 'Josh Sherman', isrc: 'TEST-ISRC-99' },
+      ];
+
+      const merged = mergeRecordingsList(existingInDb, incomingFromSource, 'Break Out');
+      expect(merged).not.toBeNull();
+      expect(merged).toHaveLength(1);
+      expect(merged![0].isrc).toBe('TEST-ISRC-99');
+      expect(merged![0].url).toBe('https://example.invalid/song.mp3');
+    });
+
+    it('mergeRecordingsList throws error when conflicting identifiers are detected', () => {
+      const existingInDb: SongRecording[] = [
+        { release: 'Solo Acoustic', artist: 'Josh Sherman', isrc: 'ISRC-AAA' },
+      ];
+      const incoming: SongRecording[] = [
+        { release: 'Solo Acoustic', artist: 'Josh Sherman', isrc: 'ISRC-BBB' },
+      ];
+
+      expect(() => mergeRecordingsList(existingInDb, incoming, 'Conflicted Song'))
+        .toThrow('Cannot merge recordings for song "Conflicted Song": Conflicting ISRC');
     });
   });
 
   describe('assembleCatalog', () => {
-    it('merges BMI works, CD Baby releases, and Dropbox archive recordings', () => {
+    it('enriches CD Baby recording with archive audio URL on initial catalog assembly', () => {
       const catalog = assembleCatalog({
         bmiWorks: [
           {
@@ -156,7 +407,7 @@ IPI: TEST-IPI-001
             release: 'Solo Acoustic',
             artist: 'Josh Sherman',
             year: 2001,
-            tracks: [{ title: 'Break Out' }],
+            tracks: [{ title: 'Break Out', isrc: 'TEST-ISRC-01' }],
           },
         ],
         archiveSongs: [
@@ -178,7 +429,13 @@ IPI: TEST-IPI-001
       expect(song.writers).toEqual([{ name: 'Joshua Victor Sherman', share: 100 }]);
       expect(song.url).toBe('https://example.invalid/break-out.mp3');
       expect(song.recordings).toHaveLength(1);
-      expect(song.recordings[0].release).toBe('Solo Acoustic');
+      expect(song.recordings[0]).toEqual({
+        release: 'Solo Acoustic',
+        artist: 'Josh Sherman',
+        isrc: 'TEST-ISRC-01',
+        url: 'https://example.invalid/break-out.mp3',
+        year: 2001,
+      });
     });
 
     it('INVARIANT: website artist or CD Baby performer is NEVER added to writers', () => {
@@ -227,8 +484,8 @@ IPI: TEST-IPI-001
     });
   });
 
-  describe('dry run and idempotent apply sync', () => {
-    it('dry run reports planned operations without modifying store, apply persists, re-run is idempotent', async () => {
+  describe('dry run and idempotent apply sync with outcome verification (#1228 review P2)', () => {
+    it('dry run reports planned operations without modifying store, apply persists and verifies counts, re-run is idempotent', async () => {
       const storeData: SongCatalogDoc[] = [
         {
           _id: 'existing-id-1',
@@ -236,7 +493,7 @@ IPI: TEST-IPI-001
           artist: 'Josh Sherman',
           category: 'original',
           writers: [],
-          recordings: [],
+          recordings: [{ release: 'Live Vol 1', artist: 'Josh Sherman' }],
         },
       ];
 
@@ -247,7 +504,7 @@ IPI: TEST-IPI-001
           category: 'original',
           bmiWorkNumber: 'TEST-BMI-EX1',
           writers: [{ name: 'Joshua Victor Sherman', share: 100 }],
-          recordings: [{ release: 'Live Vol 1', artist: 'Josh Sherman' }],
+          recordings: [{ release: 'Live Vol 1', artist: 'Josh Sherman', isrc: 'TEST-ISRC-EX1' }],
         },
         {
           title: 'Brand New Song',
@@ -271,13 +528,14 @@ IPI: TEST-IPI-001
           const match = storeData.find((d) => d._id === filter._id);
           if (match && update.$set) {
             Object.assign(match, update.$set);
+            return Promise.resolve({ acknowledged: true, matchedCount: 1, modifiedCount: 1 });
           }
-          return Promise.resolve({});
+          return Promise.resolve({ acknowledged: true, matchedCount: 0, modifiedCount: 0 });
         },
         insertOne: (doc: Record<string, unknown>) => {
           const newDoc = { _id: `id-${storeData.length + 1}`, ...doc } as unknown as SongCatalogDoc;
           storeData.push(newDoc);
-          return Promise.resolve({});
+          return Promise.resolve({ acknowledged: true, insertedId: newDoc._id });
         },
         countDocuments: () => Promise.resolve(storeData.length),
       };
@@ -300,8 +558,9 @@ IPI: TEST-IPI-001
       expect(storeData).toHaveLength(2);
       expect(storeData[0].bmiWorkNumber).toBe('TEST-BMI-EX1');
       expect(storeData[0].writers).toEqual([{ name: 'Joshua Victor Sherman', share: 100 }]);
+      expect(storeData[0].recordings[0].isrc).toBe('TEST-ISRC-EX1'); // Enriched recording
       expect(storeData[1].title).toBe('Brand New Song');
-      expect(storeData[1].url).toBeUndefined(); // sparse uniqueness check
+      expect(storeData[1].url).toBeUndefined(); // Sparse uniqueness
 
       // 3. Second apply run (idempotent)
       const secondApply = await executeCatalogSync(store, catalog, true, log);
@@ -310,24 +569,85 @@ IPI: TEST-IPI-001
       expect(secondApply.unchanged).toBe(2);
       expect(storeData).toHaveLength(2);
     });
-  });
 
-  describe('resolveSources and run()', () => {
-    it('resolves fallback baseline data when source files do not exist', () => {
-      const sources = resolveSources({
-        apply: false,
-        force: false,
-        bmiFile: '/nonexistent/bmi.md',
-        cdBabyFile: '/nonexistent/cdbaby.json',
-        archiveFile: '/nonexistent/archive.json',
-      });
-      expect(sources.bmiWorks).toBeUndefined();
-      expect(sources.cdBabyReleases).toBeDefined();
-      expect(sources.cdBabyReleases!.length).toBeGreaterThan(0);
-      expect(sources.archiveSongs).toBeDefined();
-      expect(sources.archiveSongs!.length).toBeGreaterThan(0);
+    it('refuses completion when update matches 0 documents (zero-match-update regression)', async () => {
+      const store: CatalogStore = {
+        find: () => ({
+          toArray: () => Promise.resolve([{ _id: 'doc-1', title: 'Song', writers: [] }]),
+        }),
+        findOne: () => Promise.resolve(null),
+        updateOne: () => Promise.resolve({ acknowledged: true, matchedCount: 0, modifiedCount: 0 }),
+        insertOne: () => Promise.resolve({ acknowledged: true }),
+        countDocuments: () => Promise.resolve(1),
+      };
+
+      const catalog: SongCatalogDoc[] = [
+        {
+          title: 'Song',
+          artist: 'Josh Sherman',
+          category: 'original',
+          writers: [{ name: 'Verified Writer', share: 100 }],
+          recordings: [],
+        },
+      ];
+
+      await expect(executeCatalogSync(store, catalog, true, vi.fn()))
+        .rejects.toThrow('update matched 0 documents');
     });
 
+    it('refuses completion when final collection count does not match starting count + planned inserts (count-mismatch regression)', async () => {
+      let callCount = 0;
+      const store: CatalogStore = {
+        find: () => ({ toArray: () => Promise.resolve([]) }),
+        findOne: () => Promise.resolve(null),
+        updateOne: () => Promise.resolve({ acknowledged: true, matchedCount: 1 }),
+        insertOne: () => Promise.resolve({ acknowledged: true, insertedId: '1' }),
+        countDocuments: () => {
+          callCount += 1;
+          // First call: startCount = 0. Second call: finalTotal = 0 (simulating failed insert or unreflected write)
+          return Promise.resolve(0);
+        },
+      };
+
+      const catalog: SongCatalogDoc[] = [
+        {
+          title: 'New Song',
+          artist: 'Josh Sherman',
+          category: 'original',
+          writers: [],
+          recordings: [],
+        },
+      ];
+
+      await expect(executeCatalogSync(store, catalog, true, vi.fn()))
+        .rejects.toThrow('Apply verification mismatch: starting count was 0, planned 1 inserts, expected final count 1, but collection count is 0');
+    });
+
+    it('refuses completion when insert is not acknowledged', async () => {
+      const store: CatalogStore = {
+        find: () => ({ toArray: () => Promise.resolve([]) }),
+        findOne: () => Promise.resolve(null),
+        updateOne: () => Promise.resolve({ acknowledged: true }),
+        insertOne: () => Promise.resolve({ acknowledged: false }),
+        countDocuments: () => Promise.resolve(0),
+      };
+
+      const catalog: SongCatalogDoc[] = [
+        {
+          title: 'Unacknowledged Song',
+          artist: 'Josh Sherman',
+          category: 'original',
+          writers: [],
+          recordings: [],
+        },
+      ];
+
+      await expect(executeCatalogSync(store, catalog, true, vi.fn()))
+        .rejects.toThrow('insert not acknowledged');
+    });
+  });
+
+  describe('run() error handling and safe execution', () => {
     it('refuses to run against non-safe target database', async () => {
       const connect = vi.spyOn(mongoose, 'connect');
       const prodUri = ['mongodb', '+srv:', '//prod.example.invalid/release'].join('');
@@ -336,6 +656,15 @@ IPI: TEST-IPI-001
     });
 
     it('disconnects mongoose even when connect fails', async () => {
+      vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+      vi.spyOn(fs, 'readFileSync').mockImplementation((p) => {
+        const pathStr = String(p);
+        if (pathStr.includes('bmi')) return '| Title | BMI work number |\n| S | 1 |';
+        if (pathStr.includes('cdbaby') || pathStr.includes('cd-baby')) {
+          return JSON.stringify([{ release: 'R', artist: 'A', tracks: [{ title: 'S' }] }]);
+        }
+        return JSON.stringify([{ title: 'S', artist: 'A', category: 'original' }]);
+      });
       vi.spyOn(mongoose, 'connect').mockRejectedValue(new Error('Mongo network timeout'));
       const disconnect = vi.spyOn(mongoose, 'disconnect').mockResolvedValue(undefined);
       const safeUri = ['mongodb:', '//127.0.0.1:27017/web-jam-test'].join('');

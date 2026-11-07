@@ -1,13 +1,22 @@
 // src/scripts/load-song-catalog.ts — web-jam-back#1228
 //
 // Fills the grown song catalog in web-jam-back from:
-// 1. BMI's registered works (49 works, verified writers and work numbers)
+// 1. BMI's registered works (49 works, verified per-work writers and work numbers)
 // 2. CD Baby's releases ("Solo Acoustic", "live from central Florida, 2001 - 2005", etc.)
 // 3. Dropbox music archive (recordings, audio URLs, cover & mission songs)
 // 4. Songs not yet recorded (unrecorded originals with sparse unique url)
 //
-// INVARIANT: Performers and writers go in separate fields; website artist credits
-// are NEVER read as writers.
+// INVARIANTS:
+// - Performers and writers go in separate fields; website artist credits
+//   or release performer credits are NEVER read or converted into song writers.
+// - Rights provenance: unknown writer/share details are preserved as unknown
+//   instead of inferring sole ownership from account membership.
+// - Source integrity: missing, empty, or unrecognized sources produce a clear refusal,
+//   with zero writes; baseline seeds must not masquerade as captured sources.
+// - Multi-source enrichment: matching recordings merge missing identifiers/URLs and
+//   detect conflicting identifiers rather than silently discarding later sources.
+// - Post-apply verification: post-apply counts and mutation results must strictly match
+//   the planned report before declaring completion.
 //
 // Dry run by default. Pass --apply to write to the database. Idempotent.
 // SAFETY: Refuses to run against non-local/production databases unless --force is passed.
@@ -15,7 +24,6 @@
 import fs from 'node:fs';
 import { config } from 'dotenv';
 import mongoose from 'mongoose';
-import resetSongData from '../model/song/reset-song.js';
 import { isMainModule } from '../lib/migration-cli.js';
 
 type Doc = Record<string, unknown>;
@@ -114,85 +122,310 @@ export function toDisplayTitle(title: string): string {
     .replace(/\bMr Fate\b/gi, 'Mr. Fate');
 }
 
-function extractDefaultWriter(lines: string[]): string {
-  for (const line of lines) {
-    if (/writer account:\s*sherman\s+joshua\s+victor|sherman,\s*joshua\s*victor/i.test(line)) {
-      return 'Joshua Victor Sherman';
+function extractInlineShare(raw: string): { name: string; share?: number } {
+  const trimmed = raw.trim();
+  if ((trimmed.endsWith(')') && trimmed.includes('(')) || (trimmed.endsWith(']') && trimmed.includes('['))) {
+    const openChar = trimmed.endsWith(')') ? '(' : '[';
+    const openIdx = trimmed.lastIndexOf(openChar);
+    const candidateName = trimmed.slice(0, openIdx).trim();
+    const shareStr = trimmed.slice(openIdx + 1, -1).replace('%', '').trim();
+    const parsed = Number.parseFloat(shareStr);
+    if (candidateName && !Number.isNaN(parsed)) {
+      return { name: candidateName, share: parsed };
     }
   }
-  return 'Joshua Sherman';
+
+  let sep: string | null = null;
+  if (trimmed.includes(' - ')) {
+    sep = ' - ';
+  } else if (trimmed.includes(': ')) {
+    sep = ': ';
+  }
+  if (sep) {
+    const idx = trimmed.lastIndexOf(sep);
+    const candidateName = trimmed.slice(0, idx).trim();
+    const shareStr = trimmed.slice(idx + sep.length).replace('%', '').trim();
+    const parsed = Number.parseFloat(shareStr);
+    if (candidateName && !Number.isNaN(parsed)) {
+      return { name: candidateName, share: parsed };
+    }
+  }
+
+  return { name: trimmed };
 }
 
-function parseWorkRow(line: string, defaultWriter: string): BmiWorkRecord | null {
-  const parts = line.split('|').map((p) => p.trim()).filter(Boolean);
-  if (parts.length < 2) return null;
-  const bmiWorkNumber = parts[1];
-  if (!bmiWorkNumber || /BMI work number/i.test(bmiWorkNumber)) return null;
+export function parseWriterCell(writerText: string, shareText?: string): SongWriter[] {
+  if (!writerText || !writerText.trim()) return [];
+
+  const parsedShares: (number | undefined)[] = [];
+  if (shareText && shareText.trim()) {
+    const rawShareItems = shareText.split(/[,;/]/).map((s) => s.trim()).filter(Boolean);
+    for (const item of rawShareItems) {
+      const match = item.match(/(\d+(?:\.\d+)?)/);
+      parsedShares.push(match ? Number.parseFloat(match[1]) : undefined);
+    }
+  }
+
+  const delimiter = writerText.includes(';') ? ';' : ',';
+  const rawWriters = writerText.split(delimiter).map((w) => w.trim()).filter(Boolean);
+
+  const writers: SongWriter[] = [];
+  rawWriters.forEach((rawWriter, idx) => {
+    const { name, share: inlineShare } = extractInlineShare(rawWriter);
+    const colShare = parsedShares[idx];
+    const finalShare = inlineShare ?? colShare;
+
+    if (name) {
+      const writer: SongWriter = { name };
+      if (typeof finalShare === 'number' && !Number.isNaN(finalShare)) {
+        writer.share = finalShare;
+      }
+      writers.push(writer);
+    }
+  });
+
+  return writers;
+}
+
+interface TableColumns {
+  titleCol: number;
+  workNumCol: number;
+  writerCol: number;
+  shareCol: number;
+}
+
+function findTableColumns(cells: string[]): TableColumns | null {
+  const isHeader = cells.some((c) => /title/i.test(c))
+    && cells.some((c) => /work\s*(?:number|#)?/i.test(c));
+  if (!isHeader) return null;
+
   return {
-    title: toDisplayTitle(parts[0]),
-    bmiWorkNumber,
-    writers: [{ name: defaultWriter, share: 100 }],
+    titleCol: cells.findIndex((c) => /title/i.test(c)),
+    workNumCol: cells.findIndex((c) => /work\s*(?:number|#)?/i.test(c)),
+    writerCol: cells.findIndex((c) => /writer/i.test(c)),
+    shareCol: cells.findIndex((c) => /share/i.test(c)),
+  };
+}
+
+function parseWorkTableRow(cells: string[], cols: TableColumns): BmiWorkRecord | null {
+  if (cols.titleCol === -1 || cols.workNumCol === -1) return null;
+  const titleRaw = cells[cols.titleCol];
+  const workNumRaw = cells[cols.workNumCol];
+  if (!titleRaw || !workNumRaw || /bmi\s*work\s*number/i.test(workNumRaw)) return null;
+
+  const writerRaw = cols.writerCol !== -1 && cols.writerCol < cells.length ? cells[cols.writerCol] : undefined;
+  const shareRaw = cols.shareCol !== -1 && cols.shareCol < cells.length ? cells[cols.shareCol] : undefined;
+  const writers = writerRaw ? parseWriterCell(writerRaw, shareRaw) : [];
+
+  return {
+    title: toDisplayTitle(titleRaw),
+    bmiWorkNumber: workNumRaw,
+    writers,
   };
 }
 
 export function parseBmiWorksMarkdown(content: string): BmiWorkRecord[] {
   const lines = content.split('\n');
   const results: BmiWorkRecord[] = [];
-  const defaultWriter = extractDefaultWriter(lines);
+  let cols: TableColumns | null = null;
 
-  let inTable = false;
   for (const line of lines) {
     const trimmed = line.trim();
-    if (trimmed.startsWith('|') && /Title\s*\|\s*BMI work number/i.test(trimmed)) {
-      inTable = true;
+    if (!trimmed.startsWith('|')) {
+      cols = null;
       continue;
     }
-    if (inTable && trimmed.startsWith('|') && !trimmed.includes('---')) {
-      const work = parseWorkRow(trimmed, defaultWriter);
-      if (work) results.push(work);
+    const cells = trimmed.split('|').map((c) => c.trim());
+    if (cells.length > 0 && cells[0] === '') cells.shift();
+    if (cells.length > 0 && cells[cells.length - 1] === '') cells.pop();
+
+    if (!cols) {
+      cols = findTableColumns(cells);
+      continue;
     }
+
+    if (trimmed.includes('---')) continue;
+    const work = parseWorkTableRow(cells, cols);
+    if (work) results.push(work);
   }
+
   return results;
 }
 
+export function validateBmiWorks(works: BmiWorkRecord[], filePath: string): BmiWorkRecord[] {
+  if (!Array.isArray(works) || works.length === 0) {
+    throw new Error(`Refusing to run: BMI works source file "${filePath}" contains no recognized works.`);
+  }
+  for (const w of works) {
+    if (!w.title || !w.bmiWorkNumber) {
+      throw new Error(`Refusing to run: BMI works source file "${filePath}" contains invalid work records.`);
+    }
+  }
+  return works;
+}
+
+export function validateCdBabyReleases(releases: unknown, filePath: string): CdBabyRelease[] {
+  if (!Array.isArray(releases) || releases.length === 0) {
+    throw new Error(`Refusing to run: CD Baby releases source file "${filePath}" contains invalid or empty release records.`);
+  }
+  for (const rel of releases as Partial<CdBabyRelease>[]) {
+    if (
+      !rel.release
+      || typeof rel.release !== 'string'
+      || !rel.artist
+      || typeof rel.artist !== 'string'
+      || !Array.isArray(rel.tracks)
+      || rel.tracks.length === 0
+    ) {
+      throw new Error(`Refusing to run: CD Baby releases source file "${filePath}" contains unrecognized release shape.`);
+    }
+    for (const track of rel.tracks) {
+      if (!track.title || typeof track.title !== 'string') {
+        throw new Error(`Refusing to run: CD Baby releases source file "${filePath}" contains track with missing title.`);
+      }
+    }
+  }
+  return releases as CdBabyRelease[];
+}
+
+export function validateArchiveSongs(songs: unknown, filePath: string): ArchiveSongRecord[] {
+  if (!Array.isArray(songs) || songs.length === 0) {
+    throw new Error(`Refusing to run: music archive source file "${filePath}" contains invalid or empty song records.`);
+  }
+  const validCategories = new Set(['original', 'pub', 'mission']);
+  for (const song of songs as Partial<ArchiveSongRecord>[]) {
+    if (
+      !song.title
+      || typeof song.title !== 'string'
+      || !song.artist
+      || typeof song.artist !== 'string'
+      || !song.category
+      || !validCategories.has(song.category)
+    ) {
+      throw new Error(`Refusing to run: music archive source file "${filePath}" contains unrecognized song shape.`);
+    }
+  }
+  return songs as ArchiveSongRecord[];
+}
+
 export function parseCdBabyData(input: string | CdBabyRelease[]): CdBabyRelease[] {
-  return typeof input === 'string' ? JSON.parse(input) : input;
+  let parsed: unknown;
+  try {
+    parsed = typeof input === 'string' ? JSON.parse(input) : input;
+  } catch (err) {
+    throw new Error(`Refusing to run: CD Baby releases source file is not valid JSON: ${(err as Error).message}`);
+  }
+  return validateCdBabyReleases(parsed, 'input');
 }
 
 export function parseArchiveSongs(input: string | ArchiveSongRecord[]): ArchiveSongRecord[] {
-  return typeof input === 'string' ? JSON.parse(input) : input;
+  let parsed: unknown;
+  try {
+    parsed = typeof input === 'string' ? JSON.parse(input) : input;
+  } catch (err) {
+    throw new Error(`Refusing to run: music archive source file is not valid JSON: ${(err as Error).message}`);
+  }
+  return validateArchiveSongs(parsed, 'input');
 }
 
-export const BASELINE_CDBABY_RELEASES: CdBabyRelease[] = [
-  {
-    release: 'Solo Acoustic',
-    artist: 'Josh Sherman',
-    upc: '634479161407',
-    year: 2001,
-    tracks: [
-      { title: 'Break Out' },
-      { title: 'Drink a Beer' },
-      { title: 'Drive' },
-      { title: 'Elizabeth' },
-      { title: 'Jane Doe' },
-      { title: 'Why' },
-    ],
-  },
-  {
-    release: 'live from central Florida, 2001 - 2005',
-    artist: 'Josh Sherman Band',
-    upc: '634479151651',
-    year: 2005,
-    tracks: [
-      { title: 'All My Life' },
-      { title: 'Dog Eat Dog' },
-      { title: 'Frustration' },
-      { title: 'No More Worlds' },
-      { title: "Somebody's Fool" },
-      { title: 'What You Wanted' },
-    ],
-  },
-];
+export function isRecordingMatch(r1: SongRecording, r2: SongRecording): boolean {
+  if (r1.isrc && r2.isrc && r1.isrc.trim().toUpperCase() === r2.isrc.trim().toUpperCase()) {
+    return true;
+  }
+  if (r1.url && r2.url && r1.url.trim() === r2.url.trim()) {
+    return true;
+  }
+  const r1Rel = (r1.release || '').trim().toLowerCase();
+  const r2Rel = (r2.release || '').trim().toLowerCase();
+  const r1Art = (r1.artist || '').trim().toLowerCase();
+  const r2Art = (r2.artist || '').trim().toLowerCase();
+  if (r1Rel && r2Rel && r1Rel === r2Rel && r1Art && r2Art && r1Art === r2Art) {
+    return true;
+  }
+  return false;
+}
+
+function enrichStringProp(
+  target: SongRecording,
+  incoming: SongRecording,
+  prop: 'isrc' | 'url' | 'release' | 'artist',
+): { modified: boolean; conflict?: string } {
+  const incVal = incoming[prop]?.trim();
+  if (!incVal) return { modified: false };
+  const targetVal = target[prop]?.trim();
+  if (!targetVal) {
+    target[prop] = prop === 'isrc' ? incVal.toUpperCase() : incVal;
+    return { modified: true };
+  }
+  const match = prop === 'url' ? targetVal === incVal : targetVal.toLowerCase() === incVal.toLowerCase();
+  if (!match) {
+    return {
+      modified: false,
+      conflict: `Conflicting ${prop.toUpperCase()} for recording: existing "${targetVal}" vs incoming "${incVal}"`,
+    };
+  }
+  return { modified: false };
+}
+
+function enrichYearProp(target: SongRecording, incoming: SongRecording): { modified: boolean; conflict?: string } {
+  if (typeof incoming.year !== 'number' || Number.isNaN(incoming.year)) return { modified: false };
+  if (typeof target.year !== 'number' || Number.isNaN(target.year)) {
+    target.year = incoming.year;
+    return { modified: true };
+  }
+  if (target.year !== incoming.year) {
+    return {
+      modified: false,
+      conflict: `Conflicting year for recording: existing ${target.year} vs incoming ${incoming.year}`,
+    };
+  }
+  return { modified: false };
+}
+
+export function enrichRecording(
+  target: SongRecording,
+  incoming: SongRecording,
+): { modified: boolean; conflict?: string } {
+  let anyModified = false;
+  const stringProps: ('isrc' | 'url' | 'release' | 'artist')[] = ['isrc', 'url', 'release', 'artist'];
+
+  for (const prop of stringProps) {
+    const res = enrichStringProp(target, incoming, prop);
+    if (res.conflict) return res;
+    if (res.modified) anyModified = true;
+  }
+
+  const yearRes = enrichYearProp(target, incoming);
+  if (yearRes.conflict) return yearRes;
+  if (yearRes.modified) anyModified = true;
+
+  return { modified: anyModified };
+}
+
+export function mergeRecordingsList(
+  existingRecs: SongRecording[],
+  incomingRecs: SongRecording[],
+  songTitle = '',
+): SongRecording[] | null {
+  const merged: SongRecording[] = existingRecs.map((r) => ({ ...r }));
+  let changed = false;
+
+  for (const incoming of incomingRecs) {
+    const match = merged.find((r) => isRecordingMatch(r, incoming));
+    if (match) {
+      const { modified, conflict } = enrichRecording(match, incoming);
+      if (conflict) {
+        throw new Error(`Cannot merge recordings for song "${songTitle}": ${conflict}`);
+      }
+      if (modified) changed = true;
+    } else {
+      merged.push({ ...incoming });
+      changed = true;
+    }
+  }
+
+  return changed ? merged : null;
+}
 
 export interface LoadSourcesOptions {
   bmiWorks?: BmiWorkRecord[];
@@ -212,8 +445,15 @@ function mergeCdBabyTrack(catalogMap: Map<string, SongCatalogDoc>, track: CdBaby
 
   const existing = catalogMap.get(key);
   if (existing) {
-    const hasRecording = existing.recordings.some((r) => r.release === recording.release && r.artist === recording.artist);
-    if (!hasRecording) existing.recordings.push(recording);
+    const match = existing.recordings.find((r) => isRecordingMatch(r, recording));
+    if (match) {
+      const { conflict } = enrichRecording(match, recording);
+      if (conflict) {
+        throw new Error(`Cannot merge CD Baby recording for song "${existing.title}": ${conflict}`);
+      }
+    } else {
+      existing.recordings.push(recording);
+    }
   } else {
     catalogMap.set(key, {
       title: track.title,
@@ -227,22 +467,28 @@ function mergeCdBabyTrack(catalogMap: Map<string, SongCatalogDoc>, track: CdBaby
 
 function backfillExistingSong(existing: SongCatalogDoc, song: ArchiveSongRecord, recording?: SongRecording) {
   existing.category = song.category;
-  existing.url ||= song.url;
-  existing.album ||= song.album;
-  existing.year ||= song.year;
-  existing.image ||= song.image;
-  existing.composer ||= song.composer;
+  if (song.url) existing.url ||= song.url;
+  if (song.album) existing.album ||= song.album;
+  if (song.year) existing.year ||= song.year;
+  if (song.image) existing.image ||= song.image;
+  if (song.composer) existing.composer ||= song.composer;
   if (recording) {
-    const hasRec = existing.recordings.some((r) => r.url === recording.url
-      || (r.release === recording.release && r.artist === recording.artist));
-    if (!hasRec) existing.recordings.push(recording);
+    const match = existing.recordings.find((r) => isRecordingMatch(r, recording));
+    if (match) {
+      const { conflict } = enrichRecording(match, recording);
+      if (conflict) {
+        throw new Error(`Cannot merge archive recording for song "${existing.title}": ${conflict}`);
+      }
+    } else {
+      existing.recordings.push(recording);
+    }
   }
 }
 
 function mergeArchiveSong(catalogMap: Map<string, SongCatalogDoc>, song: ArchiveSongRecord) {
   const key = normalizeTitle(song.title);
   const existing = catalogMap.get(key);
-  const recording: SongRecording | undefined = song.url ? {
+  const recording: SongRecording | undefined = (song.url || song.album) ? {
     release: song.album,
     artist: song.artist,
     url: song.url,
@@ -300,13 +546,37 @@ export function assembleCatalog(sources: LoadSourcesOptions): SongCatalogDoc[] {
   return Array.from(catalogMap.values());
 }
 
+export function parseMongoUri(uri: string): { hosts: string[]; dbName: string } | null {
+  if (!uri || typeof uri !== 'string') return null;
+  const match = uri.match(/^mongodb(?:\+srv)?:\/\/(?:[^@]+@)?([^/?#]+)(?:\/([^?#]*))?/i);
+  if (!match) return null;
+  const hostsPart = match[1];
+  const rawDbName = match[2] || '';
+  const dbName = decodeURIComponent(rawDbName.trim()).toLowerCase();
+  const hosts = hostsPart.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+  if (hosts.length === 0) return null;
+  return { hosts, dbName };
+}
+
+export function isLocalHost(hostWithPort: string): boolean {
+  const withoutPort = hostWithPort.replace(/:\d+$/, '').trim().toLowerCase();
+  return withoutPort === 'localhost' || withoutPort === '127.0.0.1' || withoutPort === '::1' || withoutPort === '[::1]';
+}
+
+const DELIBERATE_SAFE_DB_REGEX = /(?:^|[-_.])(?:dev|test|copy)(?:[-_.]|$)/i;
+
 export function isSafeToRun(uri: string, force: boolean): boolean {
-  if (!uri) return false;
+  if (!uri || typeof uri !== 'string') return false;
   if (force) return true;
-  const dbName = (uri.split('?')[0].split('/').pop() || '').toLowerCase();
-  const isLocal = uri.includes('localhost') || uri.includes('127.0.0.1');
-  const isDevOrTest = dbName.includes('dev') || dbName.includes('test') || dbName.includes('copy');
-  return isLocal || isDevOrTest;
+
+  const parsed = parseMongoUri(uri);
+  if (!parsed) return false;
+
+  const allHostsLocal = parsed.hosts.every((h) => isLocalHost(h));
+  if (allHostsLocal) return true;
+
+  if (!parsed.dbName) return false;
+  return DELIBERATE_SAFE_DB_REGEX.test(parsed.dbName);
 }
 
 export interface PlanOperation {
@@ -324,20 +594,6 @@ function findMatchingDoc(existingDocs: Doc[], item: SongCatalogDoc): Doc | undef
     || (typeof item.url === 'string' && Boolean(item.url) && d.url === item.url));
 }
 
-function mergeRecordingsList(existingRecs: SongRecording[], newRecs: SongRecording[]): SongRecording[] | null {
-  const merged = [...existingRecs];
-  let added = false;
-  for (const rec of newRecs) {
-    const exists = existingRecs.some((r) => (rec.url && r.url === rec.url)
-      || (rec.release && r.release === rec.release && r.artist === rec.artist));
-    if (!exists) {
-      merged.push(rec);
-      added = true;
-    }
-  }
-  return added ? merged : null;
-}
-
 function checkWriterChanges(existing: Doc, item: SongCatalogDoc): SongWriter[] | null {
   if (item.writers.length > 0 && (!Array.isArray(existing.writers) || (existing.writers as Doc[]).length === 0)) {
     return item.writers;
@@ -348,7 +604,7 @@ function checkWriterChanges(existing: Doc, item: SongCatalogDoc): SongWriter[] |
 function checkRecordingChanges(existing: Doc, item: SongCatalogDoc): SongRecording[] | null {
   if (item.recordings.length > 0) {
     const existingRecs = Array.isArray(existing.recordings) ? (existing.recordings as SongRecording[]) : [];
-    return mergeRecordingsList(existingRecs, item.recordings);
+    return mergeRecordingsList(existingRecs, item.recordings, item.title);
   }
   return null;
 }
@@ -410,6 +666,70 @@ export async function planCatalogSync(store: CatalogStore, catalog: SongCatalogD
   return operations;
 }
 
+async function applyMutations(
+  store: CatalogStore,
+  plannedInserts: PlanOperation[],
+  plannedUpdates: PlanOperation[],
+): Promise<{ actualInserts: number; actualUpdates: number }> {
+  let actualInserts = 0;
+  let actualUpdates = 0;
+
+  for (const op of plannedInserts) {
+    const payload: Doc = { ...op.item };
+    if (!payload.url) delete payload.url; // Sparse uniqueness for unrecorded songs
+    // eslint-disable-next-line no-await-in-loop
+    const insertRes = await store.insertOne(payload) as { acknowledged?: boolean; insertedId?: unknown } | undefined;
+    if (insertRes && insertRes.acknowledged === false) {
+      throw new Error(`Failed to insert song "${op.title}": insert not acknowledged`);
+    }
+    actualInserts += 1;
+  }
+
+  for (const op of plannedUpdates) {
+    // eslint-disable-next-line no-await-in-loop
+    const updateRes = await store.updateOne({ _id: op.existingId }, { $set: op.changes! }) as {
+      acknowledged?: boolean;
+      matchedCount?: number;
+      modifiedCount?: number;
+    } | undefined;
+    if (updateRes && (updateRes.acknowledged === false || updateRes.matchedCount === 0)) {
+      throw new Error(
+        `Failed to update song "${op.title}" (id: ${String(op.existingId)}): update matched 0 documents`,
+      );
+    }
+    actualUpdates += 1;
+  }
+
+  return { actualInserts, actualUpdates };
+}
+
+function verifyApplyCounts(
+  startCount: number,
+  finalCount: number,
+  plannedInserts: number,
+  actualInserts: number,
+  plannedUpdates: number,
+  actualUpdates: number,
+) {
+  const expectedTotal = startCount + plannedInserts;
+  if (actualInserts !== plannedInserts) {
+    throw new Error(
+      `Apply verification mismatch: expected ${plannedInserts} inserts, but completed ${actualInserts}`,
+    );
+  }
+  if (actualUpdates !== plannedUpdates) {
+    throw new Error(
+      `Apply verification mismatch: expected ${plannedUpdates} updates, but completed ${actualUpdates}`,
+    );
+  }
+  if (finalCount !== expectedTotal) {
+    throw new Error(
+      `Apply verification mismatch: starting count was ${startCount}, planned ${plannedInserts} inserts, `
+      + `expected final count ${expectedTotal}, but collection count is ${finalCount}`,
+    );
+  }
+}
+
 export async function executeCatalogSync(
   store: CatalogStore,
   catalog: SongCatalogDoc[],
@@ -441,24 +761,12 @@ export async function executeCatalogSync(
     };
   }
 
-  let actualInserts = 0;
-  let actualUpdates = 0;
-
-  for (const op of plannedInserts) {
-    const payload: Doc = { ...op.item };
-    if (!payload.url) delete payload.url; // Sparse uniqueness for unrecorded songs
-    // eslint-disable-next-line no-await-in-loop
-    await store.insertOne(payload);
-    actualInserts += 1;
-  }
-
-  for (const op of plannedUpdates) {
-    // eslint-disable-next-line no-await-in-loop
-    await store.updateOne({ _id: op.existingId }, { $set: op.changes! });
-    actualUpdates += 1;
-  }
-
+  const startCount = await store.countDocuments({});
+  const { actualInserts, actualUpdates } = await applyMutations(store, plannedInserts, plannedUpdates);
   const finalTotal = await store.countDocuments({});
+
+  verifyApplyCounts(startCount, finalTotal, plannedInserts.length, actualInserts, plannedUpdates.length, actualUpdates);
+
   log(`APPLY COMPLETE: ${actualInserts} inserted, ${actualUpdates} updated, `
     + `${unchanged.length} unchanged. Collection count: ${finalTotal}.`);
 
@@ -499,31 +807,32 @@ export function parseCliArgs(argv: string[]): CliOptions {
   return opts;
 }
 
+function readRequiredSourceFile(filePath: string, label: string): string {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Refusing to run: missing required ${label} source file "${filePath}".`);
+  }
+  const content = fs.readFileSync(filePath, 'utf8');
+  if (!content.trim()) {
+    throw new Error(`Refusing to run: ${label} source file "${filePath}" is empty.`);
+  }
+  return content;
+}
+
 export function resolveSources(opts: CliOptions): LoadSourcesOptions {
   const defaultBmiPath = '/home/joshua/Dropbox/web-jam-llms/songwriting/account-look-up/bmi-works-2026-11-04.md';
   const bmiPath = opts.bmiFile || process.env.BMI_WORKS_FILE || defaultBmiPath;
-  let bmiWorks: BmiWorkRecord[] | undefined;
-  if (fs.existsSync(bmiPath)) {
-    bmiWorks = parseBmiWorksMarkdown(fs.readFileSync(bmiPath, 'utf8'));
-  }
+  const bmiContent = readRequiredSourceFile(bmiPath, 'BMI works');
+  const bmiWorks = validateBmiWorks(parseBmiWorksMarkdown(bmiContent), bmiPath);
 
   const defaultCdBabyPath = '/home/joshua/Dropbox/web-jam-llms/songwriting/account-look-up/cd-baby-releases.json';
   const cdBabyPath = opts.cdBabyFile || process.env.CDBABY_RELEASES_FILE || defaultCdBabyPath;
-  let cdBabyReleases: CdBabyRelease[] | undefined;
-  if (fs.existsSync(cdBabyPath)) {
-    cdBabyReleases = parseCdBabyData(fs.readFileSync(cdBabyPath, 'utf8'));
-  } else {
-    cdBabyReleases = BASELINE_CDBABY_RELEASES;
-  }
+  const cdBabyContent = readRequiredSourceFile(cdBabyPath, 'CD Baby releases');
+  const cdBabyReleases = parseCdBabyData(cdBabyContent);
 
   const defaultArchivePath = '/home/joshua/Dropbox/web-jam-llms/songwriting/account-look-up/dropbox-music-archive.json';
   const archivePath = opts.archiveFile || process.env.SONG_ARCHIVE_FILE || defaultArchivePath;
-  let archiveSongs: ArchiveSongRecord[] | undefined;
-  if (fs.existsSync(archivePath)) {
-    archiveSongs = parseArchiveSongs(fs.readFileSync(archivePath, 'utf8'));
-  } else {
-    archiveSongs = resetSongData.songs as ArchiveSongRecord[];
-  }
+  const archiveContent = readRequiredSourceFile(archivePath, 'music archive');
+  const archiveSongs = parseArchiveSongs(archiveContent);
 
   return { bmiWorks, cdBabyReleases, archiveSongs };
 }
