@@ -56,7 +56,7 @@ describe('Granting gig:announce through /admin/user', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ instagram: { ok: true, id: 'grant-ig' } });
     expect(metaPublish.publishToInstagram).toHaveBeenCalledExactlyOnceWith('Test announcement',
-      expect.stringContaining(`/gig/${gig._id}/announce-image.jpg`), [], key);
+      expect.stringContaining(`/gig/${gig._id}/announce-image.jpg`), [], key, { collaborators: [], locationId: undefined });
     expect((await GigModel.findById(String(gig._id)))?.announcedAt).toBeTruthy();
   });
 });

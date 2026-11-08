@@ -324,6 +324,54 @@ describe('The Gig API', () => {
       expect((updated as unknown as { announceImageUrl?: string }).announceImageUrl).toBe('https://example.com/promo.jpg');
     });
 
+    it('records each successful picture and reports a dropped location through the HTTP route', async () => {
+      const gig = await GigModel.create({ venue: 'Announce Venue', promoImageUrl: 'https://example.com/first.jpg' });
+      expect(gig.announcements).toBeUndefined();
+      let mediaCalls = 0;
+      const http = vi.spyOn(global, 'fetch').mockImplementation((url, init) => {
+        const address = String(url);
+        if (!address.startsWith('https://graph.facebook.com/')) return realFetch(url, init);
+        if (address.endsWith('/media')) {
+          mediaCalls += 1;
+          if (mediaCalls === 1) return Promise.resolve(Response.json({ error: { message: 'Location refused' } }, { status: 400 }));
+          return Promise.resolve(Response.json({ id: `container-${mediaCalls}` }));
+        }
+        return Promise.resolve(Response.json(address.endsWith('/media_publish') ? { id: 'post' } : { status_code: 'FINISHED' }));
+      });
+      for (const imageUrl of ['https://example.com/first.jpg', 'https://example.com/second.jpg']) {
+        r = await request(app).post(`/gig/${gig._id}/announce`).set({ origin: allowedUrl })
+          .set('Authorization', `Bearer ${authUtils.createJWT({ _id: adminUser._id })}`)
+          .send({ caption: 'Hi', imageUrl, collaborators: ['chemmariasherman'], locationId: '378590115336095' });
+        expect(r.status).toBe(200);
+        expect(r.body.instagram).toEqual(imageUrl.endsWith('first.jpg')
+          ? { ok: true, id: 'post', locationDropped: 'Location refused' } : { ok: true, id: 'post' });
+      }
+      const updated = await GigModel.findById(String(gig._id)) as unknown as {
+        announcedAt: Date; announcements: { at: Date; imageUrl: string }[];
+      };
+      expect(updated.announcements.map((entry) => entry.imageUrl)).toEqual(['https://example.com/first.jpg', 'https://example.com/second.jpg']);
+      expect(updated.announcements[0].at).toBeInstanceOf(Date);
+      expect(updated.announcements[1].at).toEqual(updated.announcedAt);
+      expect(updated.announcements[0]).not.toHaveProperty('_id');
+      expect(http.mock.calls.filter(([url]) => String(url).endsWith('/media_publish'))).toHaveLength(2);
+    });
+
+    it('does not add history or stamp when both location attempts fail', async () => {
+      const gig = await GigModel.create({ venue: 'Announce Venue' });
+      const http = vi.spyOn(global, 'fetch').mockImplementation((url, init) => (
+        String(url).startsWith('https://graph.facebook.com/')
+          ? Promise.resolve(Response.json({ error: { message: 'Invalid image' } }, { status: 400 })) : realFetch(url, init)
+      ));
+      r = await request(app).post(`/gig/${gig._id}/announce`).set({ origin: allowedUrl })
+        .set('Authorization', `Bearer ${authUtils.createJWT({ _id: adminUser._id })}`)
+        .send({ caption: 'Hi', locationId: '123' });
+      expect(r.body).toEqual({ instagram: { ok: false, error: 'Invalid image' } });
+      const updated = await GigModel.findById(String(gig._id));
+      expect(updated?.announcedAt).toBeUndefined();
+      expect(updated?.announcements).toBeUndefined();
+      expect(http.mock.calls.filter(([url]) => String(url).startsWith('https://graph.facebook.com/'))).toHaveLength(2);
+    });
+
     it('500s with a clear message when Meta is fully unconfigured', async () => {
       for (const k of META_ENV_KEYS) delete process.env[k];
       const gig = await GigModel.create({ venue: 'Announce Venue' });
@@ -351,17 +399,21 @@ describe('The Gig API', () => {
       expect(r.body.message).toBe('Instagram announce is not configured');
     });
 
-    it('refuses malformed tags through the HTTP route without an Instagram request or gig update', async () => {
+    it.each([
+      { userTags: ['@invalid'] }, { collaborators: ['bad name'] }, { collaborators: ['a', 'b', 'c', 'd'] },
+      { locationId: '12a' }, { locationId: '-5' }, { locationId: '123456789012345678901' },
+    ])('refuses malformed announce fields through HTTP without an Instagram request or gig update: %j', async (body) => {
       const gig = await GigModel.create({ venue: 'Announce Venue' });
       const http = vi.spyOn(global, 'fetch');
       r = await request(app).post(`/gig/${gig._id}/announce`).set({ origin: allowedUrl })
         .set('Authorization', `Bearer ${authUtils.createJWT({ _id: adminUser._id })}`)
-        .send({ caption: 'Hi', userTags: ['@invalid'] });
+        .send({ caption: 'Hi', ...body });
       expect(r.status).toBe(400);
       expect(http.mock.calls.filter(([url]) => String(url).startsWith('https://graph.'))).toHaveLength(0);
       const updated = await GigModel.findById(String(gig._id));
       expect(updated?.announcedAt).toBeUndefined();
       expect(updated?.announceImageUrl).toBeUndefined();
+      expect(updated?.announcements).toBeUndefined();
     });
 
     it('reports authorization lookup failure through the HTTP route without publishing', async () => {

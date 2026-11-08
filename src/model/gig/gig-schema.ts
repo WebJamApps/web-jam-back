@@ -40,6 +40,10 @@ const gigSchema = new Schema({
   // success. Re-announcing later just overwrites the stamp — this is a "last
   // announced" marker, not a history log.
   announcedAt: { type: Date, required: false },
+  announcements: {
+    type: [new Schema({ at: { type: Date, required: true }, imageUrl: { type: String, required: true } }, { _id: false })],
+    required: false, default: undefined,
+  },
 }, options);
 
 export default mongoose.models.Gig || mongoose.model('Gig', gigSchema, 'gigs');

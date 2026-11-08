@@ -106,6 +106,67 @@ describe('Venue Controller', () => {
     });
   });
 
+  describe('facebookPageId writes', () => {
+    const id = '507f1f77bcf86cd799439011';
+    const base = { name: 'The Spot', address: '1 Main St', zipCode: '24153' };
+    for (const method of ['createVenue', 'updateVenue'] as const) {
+      it.each(['abc', '123456789012345678901', '-5', '123\n', '12 3', null, 123, {}, []])(
+        `${method} refuses invalid Page ID %j before writing`, async (facebookPageId) => {
+          const create = vi.fn();
+          const update = vi.fn();
+          c.model.create = create;
+          c.model.findByIdAndUpdate = update;
+          await c[method]({ user: 'a', params: { id }, body: { ...base, facebookPageId } }, resStub);
+          expect(status).toBe(400);
+          expect(payload.message).toContain('facebookPageId');
+          expect(create).not.toHaveBeenCalled();
+          expect(update).not.toHaveBeenCalled();
+        },
+      );
+      it.each(['378590115336095', '12345678901234567890', '00123', ''])(
+        `${method} saves or clears Page ID %j`, async (facebookPageId) => {
+          c.model.find = vi.fn().mockResolvedValue([]);
+          c.model.findById = vi.fn().mockResolvedValue(null);
+          const create = vi.fn((body: Record<string, unknown>) => Promise.resolve({ _id: id, ...body }));
+          const update = vi.fn((_id: string, body: Record<string, unknown>) => Promise.resolve({ _id, ...body }));
+          c.model.create = create;
+          c.model.findByIdAndUpdate = update;
+          await c[method]({ user: 'a', params: { id }, body: { ...base, facebookPageId } }, resStub);
+          expect(status).toBe(method === 'createVenue' ? 201 : 200);
+          expect(payload.facebookPageId).toBe(facebookPageId);
+          const written = method === 'createVenue' ? create.mock.calls[0][0] : update.mock.calls[0][1];
+          expect(written.facebookPageId).toBe(facebookPageId);
+          expect(new venueSchema(written).toObject().facebookPageId).toBe(facebookPageId);
+        },
+      );
+      it.each([
+        { $set: { facebookPageId: 'abc' } }, { $unset: { facebookPageId: '' } },
+        { $rename: { notes: 'facebookPageId' } }, { 'facebookPageId.nested': '123' },
+      ])(`${method} refuses alternate Page ID update %j`, async (alternate) => {
+        const create = vi.fn();
+        const update = vi.fn();
+        c.model.create = create;
+        c.model.findByIdAndUpdate = update;
+        await c[method]({ user: 'a', params: { id }, body: { ...base, ...alternate } }, resStub);
+        expect(status).toBe(400);
+        expect(payload.message).toContain('facebookPageId');
+        expect(create).not.toHaveBeenCalled();
+        expect(update).not.toHaveBeenCalled();
+      });
+      it(`${method} preserves a stored Page ID when omitted`, async () => {
+        const existing = { _id: id, ...base, facebookPageId: '123' };
+        c.model.find = vi.fn().mockResolvedValue([existing]);
+        c.model.findById = vi.fn().mockResolvedValue(existing);
+        const update = vi.fn((_id: string, body: Record<string, unknown>) => Promise.resolve({ ...existing, ...body }));
+        c.model.findByIdAndUpdate = update;
+        await c[method]({ user: 'a', params: { id }, body: base }, resStub);
+        expect(status).toBe(200);
+        expect(payload.facebookPageId).toBe('123');
+        expect(update.mock.calls[0][1]).not.toHaveProperty('facebookPageId');
+      });
+    }
+  });
+
   describe('authorize', () => {
     it('403s when the capability is missing', async () => {
       asAgent(['venue:edit']);

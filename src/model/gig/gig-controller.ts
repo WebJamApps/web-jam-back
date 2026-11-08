@@ -8,8 +8,9 @@ import gigModel from './gig-facade.js';
 import { Icontroller } from '../../lib/routeUtils.js';
 import userModel from '../user/user-facade.js';
 import { htmlCaptionToText } from '#src/lib/caption-text.js';
-import { getInstagramKey, publishToInstagram, type InstagramTag } from '#src/lib/meta-publish.js';
+import { getInstagramKey, publishToInstagram, type InstagramTag, type InstagramOptions } from '#src/lib/meta-publish.js';
 import { fetchAndProcessAnnounceImage } from '../../lib/announce-image.js';
+import { isFacebookPageId, isInstagramUsername } from '#src/lib/instagram-fields.js';
 
 // Role fallback for human admins who authorize by role (no privileges array).
 // Mirrors TemplateController/VenueController/PromoController (#819/#822).
@@ -27,12 +28,25 @@ interface AnnounceBody {
   caption?: string;
   imageUrl?: unknown;
   userTags?: unknown;
+  collaborators?: unknown;
+  locationId?: unknown;
 }
 
 interface GigDoc {
   _id?: unknown;
   announceImageUrl?: string;
   promoImageUrl?: string;
+}
+
+function readInstagramOptions(body: AnnounceBody): InstagramOptions | { error: string } {
+  const collaborators = body.collaborators === undefined ? [] : body.collaborators;
+  if (!Array.isArray(collaborators) || collaborators.length > 3 || collaborators.some((name) => !isInstagramUsername(name))) {
+    return { error: 'collaborators must contain at most three Instagram usernames without @' };
+  }
+  if (body.locationId !== undefined && body.locationId !== '' && !isFacebookPageId(body.locationId)) {
+    return { error: 'locationId must contain 1 to 20 digits' };
+  }
+  return { collaborators, locationId: isFacebookPageId(body.locationId) ? body.locationId : undefined };
 }
 
 // Privilege-first, role-fallback gate (mirrors VenueController/TemplateController).
@@ -153,9 +167,11 @@ class GigController extends ArtistController {
 
     const usernames = body.userTags ?? [];
     if (!Array.isArray(usernames) || usernames.length > 2
-      || usernames.some((name) => typeof name !== 'string' || (name !== '' && !/^[a-zA-Z0-9._]{1,30}$/.test(name)))) {
+      || usernames.some((name) => name !== '' && !isInstagramUsername(name))) {
       return res.status(400).json({ message: 'userTags must contain at most two Instagram usernames without @' });
     }
+    const instagramOptions = readInstagramOptions(body);
+    if ('error' in instagramOptions) return res.status(400).json({ message: instagramOptions.error });
     if (body.imageUrl !== undefined && !isValidHttpUrl(body.imageUrl)) {
       return res.status(400).json({ message: 'imageUrl must be a valid http or https URL' });
     }
@@ -179,10 +195,15 @@ class GigController extends ArtistController {
     }
     const captionText = htmlCaptionToText(body.caption);
     const publicImageUrl = `${selfBaseUrl(req)}/gig/${req.params.id}/announce-image.jpg`;
-    const instagram = await publishToInstagram(captionText, publicImageUrl, tags, key);
+    const instagram = await publishToInstagram(captionText, publicImageUrl, tags, key, instagramOptions);
     if (instagram.ok) {
       // A stamp failure must not invite a duplicate post by hiding publish success.
-      try { await this.model.findByIdAndUpdate(req.params.id, { announcedAt: new Date() }); } catch { /* ignore */ }
+      const at = new Date();
+      try {
+        await this.model.findByIdAndUpdate(req.params.id, {
+          $set: { announcedAt: at }, $push: { announcements: { at, imageUrl } },
+        });
+      } catch { /* ignore */ }
     }
 
     return res.status(200).json({ instagram });

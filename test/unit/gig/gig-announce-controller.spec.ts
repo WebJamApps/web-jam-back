@@ -31,30 +31,54 @@ describe('Gig announce', () => {
     expect(c.model.findByIdAndUpdate).toHaveBeenNthCalledWith(1, id, { announceImageUrl: 'https://example.com/custom.png' });
     expect(publishToInstagram).toHaveBeenCalledWith('Hi https://example.com', `http://localhost:7000/gig/${id}/announce-image.jpg`, [
       { username: 'chemmariasherman', x: 0.25, y: 0.85 }, { username: 'venue.name', x: 0.75, y: 0.85 },
-    ], key);
-    expect(c.model.findByIdAndUpdate).toHaveBeenNthCalledWith(2, id, { announcedAt: expect.any(Date) });
+    ], key, { collaborators: [], locationId: undefined });
+    expect(c.model.findByIdAndUpdate).toHaveBeenNthCalledWith(2, id, {
+      $set: { announcedAt: expect.any(Date) },
+      $push: { announcements: { at: expect.any(Date), imageUrl: 'https://example.com/custom.png' } },
+    });
     expect(res.json).toHaveBeenCalledWith({ instagram: { ok: true, id: 'post' } });
   });
   it('uses the gig source and preserves the venue position when Maria is cleared', async () => {
     await announce({ caption: 'Hi', userTags: ['', 'venue'] });
     expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(id, { announceImageUrl: 'https://example.com/promo.png' });
-    expect(publishToInstagram).toHaveBeenCalledWith('Hi', expect.any(String), [{ username: 'venue', x: 0.75, y: 0.85 }], key);
+    expect(publishToInstagram).toHaveBeenCalledWith('Hi', expect.any(String), [{ username: 'venue', x: 0.75, y: 0.85 }], key,
+      { collaborators: [], locationId: undefined });
   });
   it('uses the default source and accepts omitted tags', async () => {
     vi.mocked(c.model.findById).mockResolvedValue({});
     await announce({ caption: 'Hi' });
     expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(id, { announceImageUrl: 'http://localhost:7000/gig/promo-default.jpg' });
-    expect(publishToInstagram).toHaveBeenCalledWith('Hi', expect.any(String), [], key);
+    expect(publishToInstagram).toHaveBeenCalledWith('Hi', expect.any(String), [], key, { collaborators: [], locationId: undefined });
+  });
+  it.each([[], ['chemmariasherman'], ['one', 'two', 'three']].map((collaborators) => ({ collaborators })))(
+    'passes collaborators through without changing tags: %j', async ({ collaborators }) => {
+      await announce({ caption: 'Hi', collaborators, locationId: '378590115336095' });
+      expect(publishToInstagram).toHaveBeenCalledWith('Hi', expect.any(String), [], key,
+        { collaborators, locationId: '378590115336095' });
+    },
+  );
+  it.each([undefined, ''])('omits an empty or absent location: %j', async (locationId) => {
+    await announce({ caption: 'Hi', locationId });
+    expect(publishToInstagram).toHaveBeenCalledWith('Hi', expect.any(String), [], key, { collaborators: [], locationId: undefined });
+  });
+  it('returns the location warning after a successful fallback', async () => {
+    vi.mocked(publishToInstagram).mockResolvedValue({ ok: true, id: 'post', locationDropped: 'Location refused' });
+    await announce({ caption: 'Hi', locationId: '123' });
+    expect(res.json).toHaveBeenCalledWith({ instagram: { ok: true, id: 'post', locationDropped: 'Location refused' } });
   });
   it.each([
     {}, { caption: 1 }, { caption: ' ' }, { caption: 'Hi', imageUrl: {} },
     { caption: 'Hi', imageUrl: 'not-a-url' }, { caption: 'Hi', imageUrl: 'ftp://example.com/image.jpg' }, { caption: 'Hi', imageUrl: '' },
     ...['@venue', 'bad name', 'a'.repeat(31), 1, null, {}].map((tag) => ({ caption: 'Hi', userTags: [tag] })),
     { caption: 'Hi', userTags: 'venue' }, { caption: 'Hi', userTags: ['a', 'b', 'c'] },
+    ...['bad name', '@venue', 'venue\n', '', 'a'.repeat(31), null, 5, {}].map((name) => ({ caption: 'Hi', collaborators: [name] })),
+    { caption: 'Hi', collaborators: ['a', 'b', 'c', 'd'] }, { caption: 'Hi', collaborators: 'venue' }, { caption: 'Hi', collaborators: null },
+    ...['12a', '-5', '123456789012345678901', '123\n', null, 123, {}, []].map((locationId) => ({ caption: 'Hi', locationId })),
   ])('refuses malformed input without publishing: %j', async (body) => {
     await announce(body);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(publishToInstagram).not.toHaveBeenCalled();
+    expect(c.model.findByIdAndUpdate).not.toHaveBeenCalled();
   });
   it('rejects invalid ids', async () => {
     await announce({ caption: 'Hi' }, 'invalid');
