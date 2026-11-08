@@ -372,7 +372,7 @@
         ],
         "operationId": "announceGig",
         "summary": "Announce a gig on the Josh Sherman Instagram",
-        "description": "Converts the caption to plain text, saves the chosen image source as announceImageUrl, and publishes the public /gig/{id}/announce-image.jpg with tags through Instagram v25.0. Success sets announcedAt. The image source is imageUrl, else promoImageUrl, else /gig/promo-default.jpg. Requires the separately provided public JPEG route.",
+        "description": "Converts the caption to plain text, saves the chosen image source as announceImageUrl, and publishes the public /gig/{id}/announce-image.jpg with tags and collaborators through Instagram v25.0. A failed media request with a location is retried once without it before waiting and publishing. Success sets announcedAt and appends the time and chosen image source to announcements. The image source is imageUrl, else promoImageUrl, else /gig/promo-default.jpg.",
         "security": [
           {
             "bearerAuth": []
@@ -399,6 +399,23 @@
                     "type": "string",
                     "format": "uri"
                   },
+                  "collaborators": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "description": "Up to three public Instagram usernames without @. Omission or an empty list sends no collaborators.",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 30,
+                      "pattern": "^[A-Za-z0-9._]+(?![\\s\\S])"
+                    }
+                  },
+                  "locationId": {
+                    "type": "string",
+                    "maxLength": 20,
+                    "pattern": "^[0-9]{0,20}(?![\\s\\S])",
+                    "description": "Facebook Page ID for the Instagram location. Omission or an empty string sends no location. A rejected location is dropped on one retry."
+                  },
                   "userTags": {
                     "type": "array",
                     "maxItems": 2,
@@ -406,7 +423,7 @@
                     "items": {
                       "type": "string",
                       "maxLength": 30,
-                      "pattern": "^[a-zA-Z0-9._]*$"
+                      "pattern": "^[a-zA-Z0-9._]*(?![\\s\\S])"
                     }
                   }
                 }
@@ -431,7 +448,7 @@
             }
           },
           "400": {
-            "description": "Invalid gig id, caption, imageUrl or userTags, or gig not found.",
+            "description": "Invalid gig id, caption, imageUrl, userTags, collaborators or locationId, or gig not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1445,6 +1462,10 @@
           "error": {
             "type": "string",
             "description": "Why the publish failed, when not ok."
+          },
+          "locationDropped": {
+            "type": "string",
+            "description": "The first media request's error when the post was successfully published after retrying without its requested location."
           }
         }
       },
@@ -1516,6 +1537,19 @@
               "announcedAt": {
                 "type": "string",
                 "format": "date-time"
+              },
+              "announcements": {
+                "type": "array",
+                "readOnly": true,
+                "description": "Successful Instagram posts, appended in order. Absent on gigs without recorded history.",
+                "items": {
+                  "type": "object",
+                  "required": ["at", "imageUrl"],
+                  "properties": {
+                    "at": { "type": "string", "format": "date-time" },
+                    "imageUrl": { "type": "string", "format": "uri", "description": "The chosen image source, not the public JPEG route." }
+                  }
+                }
               },
               "announceImageUrl": {
                 "type": "string",
@@ -1681,6 +1715,12 @@
           },
           "website": {
             "type": "string"
+          },
+          "facebookPageId": {
+            "type": "string",
+            "maxLength": 20,
+            "pattern": "^[0-9]{0,20}(?![\\s\\S])",
+            "description": "Optional Facebook Page ID for Instagram location tagging, stored as digits. Empty string clears it; omission preserves the stored value on updates."
           },
           "instagramUsername": {
             "type": "string",

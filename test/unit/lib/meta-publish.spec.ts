@@ -12,6 +12,70 @@ describe('Instagram publishing', () => {
   });
 
   describe('publishToInstagram', () => {
+    it.each([[], ['chemmariasherman']].map((collaborators) => ({ collaborators })))(
+      'sends collaborators and the requested location: %j', async ({ collaborators }) => {
+        const http = vi.spyOn(global, 'fetch').mockResolvedValueOnce(Response.json({ id: 'container' }))
+          .mockResolvedValueOnce(finished()).mockResolvedValueOnce(Response.json({ id: 'post' }));
+        expect(await publishToInstagram('Caption', 'https://example.com/image.jpg', tags, key,
+          { collaborators, locationId: '378590115336095' })).toEqual({ ok: true, id: 'post' });
+        const form = new URLSearchParams(http.mock.calls[0][1]?.body as string);
+        expect(form.get('location_id')).toBe('378590115336095');
+        expect(form.get('collaborators')).toBe(collaborators.length ? JSON.stringify(collaborators) : null);
+        expect(http.mock.calls.filter(([url]) => String(url).endsWith('/media_publish'))).toHaveLength(1);
+      },
+    );
+
+    it.each([undefined, ''])('sends no location for %j', async (locationId) => {
+      const http = vi.spyOn(global, 'fetch').mockResolvedValueOnce(Response.json({ id: 'container' }))
+        .mockResolvedValueOnce(finished()).mockResolvedValueOnce(Response.json({ id: 'post' }));
+      await publishToInstagram('Caption', 'https://example.com/image.jpg', [], key, { locationId });
+      expect(new URLSearchParams(http.mock.calls[0][1]?.body as string).has('location_id')).toBe(false);
+    });
+
+    it('retries container creation once without the location, keeps other fields, and publishes only once', async () => {
+      const http = vi.spyOn(global, 'fetch').mockResolvedValueOnce(Response.json({ error: { message: 'Invalid location' } }, { status: 400 }))
+        .mockResolvedValueOnce(Response.json({ id: 'retry-container' })).mockResolvedValueOnce(finished())
+        .mockResolvedValueOnce(Response.json({ id: 'post' }));
+      expect(await publishToInstagram('Caption', 'https://example.com/image.jpg', tags, key,
+        { collaborators: ['chemmariasherman'], locationId: '123' })).toEqual({ ok: true, id: 'post', locationDropped: 'Invalid location' });
+      expect(http.mock.calls.map(([url]) => String(url).split('?')[0])).toEqual([
+        'https://graph.facebook.com/v25.0/account/media', 'https://graph.facebook.com/v25.0/account/media',
+        'https://graph.facebook.com/v25.0/retry-container', 'https://graph.facebook.com/v25.0/account/media_publish',
+      ]);
+      const initial = new URLSearchParams(http.mock.calls[0][1]?.body as string);
+      const retry = new URLSearchParams(http.mock.calls[1][1]?.body as string);
+      expect(initial.get('location_id')).toBe('123');
+      initial.delete('location_id');
+      expect([...retry]).toEqual([...initial]);
+      expect(new URLSearchParams(http.mock.calls[3][1]?.body as string).get('creation_id')).toBe('retry-container');
+    });
+
+    it('returns the second creation error without polling or publishing when the fallback fails', async () => {
+      const http = vi.spyOn(global, 'fetch').mockResolvedValueOnce(Response.json({ error: { message: 'Invalid location' } }))
+        .mockResolvedValueOnce(Response.json({ error: { message: 'Invalid image' } }));
+      expect(await publishToInstagram('Caption', 'https://example.com/image.jpg', [], key, { locationId: '123' }))
+        .toEqual({ ok: false, error: 'Invalid image' });
+      expect(http).toHaveBeenCalledTimes(2);
+      expect(http.mock.calls.every(([url]) => String(url).endsWith('/media'))).toBe(true);
+    });
+
+    it('retries a network refusal at creation without exposing private exception details', async () => {
+      const http = vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('private request details'))
+        .mockResolvedValueOnce(Response.json({ id: 'container' })).mockResolvedValueOnce(finished())
+        .mockResolvedValueOnce(Response.json({ id: 'post' }));
+      expect(await publishToInstagram('Caption', 'https://example.com/image.jpg', [], key, { locationId: '123' }))
+        .toEqual({ ok: true, id: 'post', locationDropped: 'Instagram request could not be completed' });
+      expect(http).toHaveBeenCalledTimes(4);
+    });
+
+    it('does not retry a publish refusal even when the container carried a location', async () => {
+      const http = vi.spyOn(global, 'fetch').mockResolvedValueOnce(Response.json({ id: 'container' }))
+        .mockResolvedValueOnce(finished()).mockResolvedValueOnce(Response.json({ error: { message: 'Publish refused' } }));
+      expect(await publishToInstagram('Caption', 'https://example.com/image.jpg', [], key, { locationId: '123' }))
+        .toEqual({ ok: false, error: 'Publish refused' });
+      expect(http).toHaveBeenCalledTimes(3);
+    });
+
     it('creates, waits for the container to finish, then publishes a v25.0 container with both tag positions', async () => {
       const http = vi.spyOn(global, 'fetch').mockResolvedValueOnce(Response.json({ id: 'container' }))
         .mockResolvedValueOnce(finished()).mockResolvedValueOnce(Response.json({ id: 'post' }));

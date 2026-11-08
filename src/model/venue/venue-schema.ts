@@ -126,6 +126,7 @@ const venueSchema = new Schema({
   },
   phone: { type: String, required: false, trim: true },
   instagramUsername: { type: String, required: false },
+  facebookPageId: { type: String, required: false },
   website: { type: String, required: false, trim: true },
   status: {
     type: String, required: false, enum: ['active', 'archived'], default: 'active',
