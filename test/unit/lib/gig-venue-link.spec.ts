@@ -2,6 +2,7 @@
 import mongoose from 'mongoose';
 import {
   normalizeVenueName, buildUnambiguousNameIndex, resolveGigVenueId, groupGigsByVenue, JOSH_GIGS_FILTER,
+  decodeHtmlEntities,
 } from '#src/lib/gig-venue-link.js';
 import { DEFAULT_ARTIST } from '#src/lib/artist.js';
 
@@ -159,6 +160,37 @@ describe('gig-venue-link (#958)', () => {
       expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: DEFAULT_ARTIST });
       expect(JOSH_GIGS_FILTER.$or).toContainEqual({ artist: { $exists: false } });
       expect(JOSH_GIGS_FILTER.$or).not.toContainEqual({ artist: 'josh' });
+    });
+  });
+
+  describe('decodeHtmlEntities (#1236)', () => {
+    it('decodes from 7&ndash;9 PM to from 7–9 PM', () => {
+      expect(decodeHtmlEntities('from 7&ndash;9 PM')).toBe('from 7–9 PM');
+    });
+
+    it('decodes &rsquo;, &eacute;, &mdash;, and &hellip; to their characters', () => {
+      expect(decodeHtmlEntities('&rsquo;')).toBe('’');
+      expect(decodeHtmlEntities('&eacute;')).toBe('é');
+      expect(decodeHtmlEntities('&mdash;')).toBe('—');
+      expect(decodeHtmlEntities('&hellip;')).toBe('…');
+    });
+
+    it('decodes hex &#x2013; and decimal &#8211; to –', () => {
+      expect(decodeHtmlEntities('&#x2013;')).toBe('–');
+      expect(decodeHtmlEntities('&#8211;')).toBe('–');
+    });
+
+    it('turns &nbsp; and a U+00A0 character into a plain space', () => {
+      expect(decodeHtmlEntities('&nbsp;')).toBe(' ');
+      expect(decodeHtmlEntities('\u{A0}')).toBe(' ');
+    });
+
+    it('decodes &amp;lt; to &lt; once without double-decoding', () => {
+      expect(decodeHtmlEntities('&amp;lt;')).toBe('&lt;');
+    });
+
+    it('leaves unrecognized entities like &notarealname; as typed', () => {
+      expect(decodeHtmlEntities('&notarealname;')).toBe('&notarealname;');
     });
   });
 });
