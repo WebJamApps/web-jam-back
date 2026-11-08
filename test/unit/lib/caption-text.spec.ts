@@ -46,4 +46,38 @@ describe('htmlCaptionToText (#962)', () => {
     const html = '  <p>  Padded  </p>  ';
     expect(htmlCaptionToText(html)).toBe('Padded');
   });
+
+  describe('HTML entity decoding (#1236)', () => {
+    it('decodes from 7&ndash;9 PM to from 7–9 PM', () => {
+      expect(htmlCaptionToText('<p>from 7&ndash;9 PM</p>')).toBe('from 7–9 PM');
+    });
+
+    it('decodes &rsquo;, &eacute;, &mdash;, and &hellip; to their characters', () => {
+      expect(htmlCaptionToText('<p>&rsquo; &eacute; &mdash; &hellip;</p>')).toBe('’ é — …');
+    });
+
+    it('decodes &#x2013; and &#8211; to –', () => {
+      expect(htmlCaptionToText('<p>&#x2013; and &#8211;</p>')).toBe('– and –');
+    });
+
+    it('turns &nbsp; and a U+00A0 character into a plain space', () => {
+      expect(htmlCaptionToText('<p>A&nbsp;B</p>')).toBe('A B');
+      expect(htmlCaptionToText('<p>A\u{A0}B</p>')).toBe('A B');
+    });
+
+    it('decodes &amp;lt; to &lt; once without double-decoding', () => {
+      expect(htmlCaptionToText('<p>&amp;lt;</p>')).toBe('&lt;');
+    });
+
+    it('decodes numeric-encoded ampersands once without double-decoding', () => {
+      expect(htmlCaptionToText('<p>&#38;ndash;</p>')).toBe('&ndash;');
+      expect(htmlCaptionToText('<p>&#X26;lt;</p>')).toBe('&lt;');
+      expect(htmlCaptionToText('<p>&#x26;lt;</p>')).toBe('&lt;');
+      expect(htmlCaptionToText('<p>&#38;#8211;</p>')).toBe('&#8211;');
+    });
+
+    it('leaves unrecognized entities like &notarealname; as typed', () => {
+      expect(htmlCaptionToText('<p>&notarealname;</p>')).toBe('&notarealname;');
+    });
+  });
 });
