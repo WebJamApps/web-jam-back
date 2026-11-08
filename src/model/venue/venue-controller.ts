@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Controller from '#src/lib/controller.js';
 import { Icontroller } from '#src/lib/routeUtils.js';
 import { isValidEmail } from '#src/lib/email.js';
+import { isFacebookPageId } from '#src/lib/instagram-fields.js';
 import venueModel from './venue-facade.js';
 import { normalizeAddress } from './normalize-address.js';
 import { censusLocationUpdate, hasVenueAddressUpdate } from './census-geocoder.js';
@@ -98,6 +99,7 @@ interface VenueBody {
   phone?: string;
   website?: string;
   instagramUsername?: string;
+  facebookPageId?: string;
   status?: string;
   outreachEligible?: boolean;
   // #1059 — payAmount replaces payTier; audienceAttention/personalFavorite
@@ -320,6 +322,10 @@ function applyFamilyNearbyOnWrite(body: VenueBody, source: LocatableVenue, inten
 }
 
 function validateFormatFields(body: VenueBody): string {
+  if (hasAlternateFieldUpdate(body, 'facebookPageId') || (body.facebookPageId !== undefined
+    && body.facebookPageId !== '' && !isFacebookPageId(body.facebookPageId))) {
+    return 'facebookPageId must contain only digits, up to 20 characters';
+  }
   if (hasAlternateFieldUpdate(body, 'instagramUsername') || (body.instagramUsername !== undefined
     && (typeof body.instagramUsername !== 'string' || body.instagramUsername.length > 30 || /[^A-Za-z0-9._]/.test(body.instagramUsername)))) {
     return 'instagramUsername must contain only letters, numbers, periods and underscores, up to 30 characters, without @';

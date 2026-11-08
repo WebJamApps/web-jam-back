@@ -25,6 +25,20 @@ describe('OpenAPI Specification Router (GET /openapi.json)', () => {
     vi.restoreAllMocks();
   });
 
+  it('documents optional collaborator, location and history fields for existing clients', async () => {
+    mockUser('Developer');
+    const res = await request(app).get('/openapi.json').set('Authorization', `Bearer ${devToken}`);
+    expect(res.status).toBe(200);
+    const input = res.body.paths['/gig/{id}/announce'].post.requestBody.content['application/json'].schema;
+    expect(input.required).toEqual(['caption']);
+    expect(input.properties.collaborators.maxItems).toBe(3);
+    expect(input.properties.collaborators.items.minLength).toBe(1);
+    expect(input.properties.locationId.maxLength).toBe(20);
+    expect(res.body.components.schemas.LegResult.properties.locationDropped.type).toBe('string');
+    expect(res.body.components.schemas.VenueUpdateInput.properties.facebookPageId.maxLength).toBe(20);
+    expect(res.body.components.schemas.Gig.allOf[1].properties.announcements.items.required).toEqual(['at', 'imageUrl']);
+  });
+
   describe('Authorization Rules', () => {
     it('answers 200 with the specification for JaM-admin', async () => {
       mockUser('JaM-admin');

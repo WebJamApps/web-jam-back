@@ -1,9 +1,11 @@
 const GRAPH = 'https://graph.facebook.com/v25.0';
 
-export interface LegResult { ok: boolean; id?: string; error?: string }
+export interface LegResult { ok: boolean; id?: string; error?: string; locationDropped?: string }
 export interface InstagramTag { username: string; x: number; y: number }
 export interface InstagramKey { userId: string; accessToken: string }
+export interface InstagramOptions { collaborators?: string[]; locationId?: string }
 interface GraphResponse { id?: string; status_code?: string; status?: string; error?: { message?: string } }
+const REQUEST_ERROR = 'Instagram request could not be completed';
 
 export const CONTAINER_POLL_MS = 1_000;
 export const CONTAINER_MAX_POLLS = 15;
@@ -57,13 +59,35 @@ async function waitForContainer(containerId: string, key: InstagramKey): Promise
   return 'Instagram did not finish processing the image in time';
 }
 
+async function createMedia(key: InstagramKey, params: Record<string, string>): Promise<GraphResponse> {
+  try {
+    return await postForm(`${GRAPH}/${encodeURIComponent(key.userId)}/media`, params);
+  } catch {
+    return { error: { message: REQUEST_ERROR } };
+  }
+}
+
+async function createContainer(key: InstagramKey, params: Record<string, string>): Promise<{
+  container: GraphResponse; locationDropped?: string;
+}> {
+  const container = await createMedia(key, params);
+  if (!params.location_id || (!container.error && container.id)) return { container };
+  const locationDropped = container.error?.message || 'Instagram media container creation failed';
+  const withoutLocation = { ...params };
+  delete withoutLocation.location_id;
+  return { container: await createMedia(key, withoutLocation), locationDropped };
+}
+
 export async function publishToInstagram(
-  caption: string, imageUrl: string, tags: InstagramTag[], key: InstagramKey,
+  caption: string, imageUrl: string, tags: InstagramTag[], key: InstagramKey, options: InstagramOptions = {},
 ): Promise<LegResult> {
   try {
-    const container = await postForm(`${GRAPH}/${encodeURIComponent(key.userId)}/media`, {
+    const params: Record<string, string> = {
       image_url: imageUrl, caption, access_token: key.accessToken, user_tags: JSON.stringify(tags),
-    });
+    };
+    if (options.collaborators?.length) params.collaborators = JSON.stringify(options.collaborators);
+    if (options.locationId) params.location_id = options.locationId;
+    const { container, locationDropped } = await createContainer(key, params);
     if (container.error || !container.id) {
       return { ok: false, error: container.error?.message || 'Instagram media container creation failed' };
     }
@@ -75,8 +99,8 @@ export async function publishToInstagram(
     if (published.error || !published.id) {
       return { ok: false, error: published.error?.message || 'Instagram publish failed' };
     }
-    return { ok: true, id: published.id };
+    return { ok: true, id: published.id, ...(locationDropped ? { locationDropped } : {}) };
   } catch {
-    return { ok: false, error: 'Instagram request could not be completed' };
+    return { ok: false, error: REQUEST_ERROR };
   }
 }
