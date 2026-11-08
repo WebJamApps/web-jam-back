@@ -37,8 +37,8 @@ const gigSchema = new Schema({
   },
   announceImageUrl: { type: String, required: false },
   // Stamped by POST /gig/:id/announce on Instagram
-  // success. Re-announcing later just overwrites the stamp — this is a "last
-  // announced" marker, not a history log.
+  // success. Re-announcing later overwrites the stamp — this is a "last
+  // announced" marker; the history log is recorded in announcements below.
   announcedAt: { type: Date, required: false },
   announcements: {
     type: [new Schema({ at: { type: Date, required: true }, imageUrl: { type: String, required: true } }, { _id: false })],
