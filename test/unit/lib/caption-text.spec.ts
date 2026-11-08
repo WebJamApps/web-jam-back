@@ -69,6 +69,13 @@ describe('htmlCaptionToText (#962)', () => {
       expect(htmlCaptionToText('<p>&amp;lt;</p>')).toBe('&lt;');
     });
 
+    it('decodes numeric-encoded ampersands once without double-decoding', () => {
+      expect(htmlCaptionToText('<p>&#38;ndash;</p>')).toBe('&ndash;');
+      expect(htmlCaptionToText('<p>&#X26;lt;</p>')).toBe('&lt;');
+      expect(htmlCaptionToText('<p>&#x26;lt;</p>')).toBe('&lt;');
+      expect(htmlCaptionToText('<p>&#38;#8211;</p>')).toBe('&#8211;');
+    });
+
     it('leaves unrecognized entities like &notarealname; as typed', () => {
       expect(htmlCaptionToText('<p>&notarealname;</p>')).toBe('&notarealname;');
     });

@@ -298,12 +298,13 @@ const NAMED_ENTITIES: Record<string, string> = {
   yicy: 'ї', yopf: '𝕪', yscr: '𝓎', yucy: 'ю', yuml: 'ÿ', zacute: 'ź', zcaron: 'ž', zcy: 'з', zdot: 'ż', zeetrf: 'ℨ', zeta: 'ζ',
   zfr: '𝔷', zhcy: 'ж', zigrarr: '⇝', zopf: '𝕫', zscr: '𝓏', zwj: '‍', zwnj: '‌',
 };
-const NAMED_ENTITY_RE = /&([a-zA-Z][a-zA-Z0-9]*);/g;
-const NUMERIC_ENTITY_RE = /&#(\d+);/g;
-const HEX_ENTITY_RE = /&#[xX]([0-9a-fA-F]+);/g;
+const HTML_ENTITY_RE = /&(?:#(?:[xX]([0-9a-fA-F]+)|(\d+))|([a-zA-Z][a-zA-Z0-9]*));/g;
 
 function decodeCodePoint(code: number, raw: string): string {
   if (Number.isFinite(code) && code >= 0 && code <= 0x10FFFF) {
+    if (code === 0xA0) {
+      return ' ';
+    }
     try {
       return String.fromCodePoint(code);
     } catch {
@@ -318,9 +319,18 @@ function decodeCodePoint(code: number, raw: string): string {
 // this module's name matching, so it reuses this rather than duplicating it.
 export function decodeHtmlEntities(text: string): string {
   return text
-    .replace(HEX_ENTITY_RE, (m, hex: string) => decodeCodePoint(parseInt(hex, 16), m))
-    .replace(NUMERIC_ENTITY_RE, (m, dec: string) => decodeCodePoint(parseInt(dec, 10), m))
-    .replace(NAMED_ENTITY_RE, (m, name: string) => NAMED_ENTITIES[name] ?? m)
+    .replace(HTML_ENTITY_RE, (m, hex?: string, dec?: string, named?: string) => {
+      if (hex !== undefined) {
+        return decodeCodePoint(parseInt(hex, 16), m);
+      }
+      if (dec !== undefined) {
+        return decodeCodePoint(parseInt(dec, 10), m);
+      }
+      if (named !== undefined) {
+        return NAMED_ENTITIES[named] ?? m;
+      }
+      return m;
+    })
     .replace(/\u{A0}/gu, ' ');
 }
 

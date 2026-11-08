@@ -189,6 +189,13 @@ describe('gig-venue-link (#958)', () => {
       expect(decodeHtmlEntities('&amp;lt;')).toBe('&lt;');
     });
 
+    it('decodes numeric-encoded ampersands once without double-decoding', () => {
+      expect(decodeHtmlEntities('&#38;ndash;')).toBe('&ndash;');
+      expect(decodeHtmlEntities('&#X26;lt;')).toBe('&lt;');
+      expect(decodeHtmlEntities('&#x26;lt;')).toBe('&lt;');
+      expect(decodeHtmlEntities('&#38;#8211;')).toBe('&#8211;');
+    });
+
     it('leaves unrecognized entities like &notarealname; as typed', () => {
       expect(decodeHtmlEntities('&notarealname;')).toBe('&notarealname;');
     });
