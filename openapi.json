@@ -423,7 +423,7 @@
                     "items": {
                       "type": "string",
                       "maxLength": 30,
-                      "pattern": "^[a-zA-Z0-9._]*$"
+                      "pattern": "^[a-zA-Z0-9._]*(?![\\s\\S])"
                     }
                   }
                 }

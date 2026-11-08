@@ -69,7 +69,7 @@ describe('Gig announce', () => {
   it.each([
     {}, { caption: 1 }, { caption: ' ' }, { caption: 'Hi', imageUrl: {} },
     { caption: 'Hi', imageUrl: 'not-a-url' }, { caption: 'Hi', imageUrl: 'ftp://example.com/image.jpg' }, { caption: 'Hi', imageUrl: '' },
-    ...['@venue', 'bad name', 'a'.repeat(31), 1, null, {}].map((tag) => ({ caption: 'Hi', userTags: [tag] })),
+    ...['@venue', 'bad name', 'venue\n', 'a'.repeat(31), 1, null, {}].map((tag) => ({ caption: 'Hi', userTags: [tag] })),
     { caption: 'Hi', userTags: 'venue' }, { caption: 'Hi', userTags: ['a', 'b', 'c'] },
     ...['bad name', '@venue', 'venue\n', '', 'a'.repeat(31), null, 5, {}].map((name) => ({ caption: 'Hi', collaborators: [name] })),
     { caption: 'Hi', collaborators: ['a', 'b', 'c', 'd'] }, { caption: 'Hi', collaborators: 'venue' }, { caption: 'Hi', collaborators: null },
