@@ -66,7 +66,7 @@ describe('The Gig API', () => {
     r = await request(app)
       .post('/gig')
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: adminUser._id })}`)
       .send({ venue: 'Twin Creeks Brewing', city: 'Vinton', usState: 'Virginia' });
     expect(r.status).toBe(201);
   });
@@ -75,7 +75,7 @@ describe('The Gig API', () => {
     r = await request(app)
       .put(`/gig/${gig._id}`)
       .set({ origin: allowedUrl })
-      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: newUser._id })}`)
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: adminUser._id })}`)
       .send({ venue: 'New Venue' });
     expect(r.status).toBe(200);
     expect(r.body.venue).toBe('New Venue');
