@@ -57,11 +57,13 @@ app.use(helmet.contentSecurityPolicy({
       'https://www.dropbox.com', 'https://cdn.plyr.io'],
     'object-src': ["'none'"],
     'script-src': ["'self'", 'https://accounts.google.com', 'https://apis.google.com', 'https://cdn.tiny.cloud',
-      'https://w.soundcloud.com', 'https://www.youtube.com', 'https://s.ytimg.com', 'https://cdnjs.cloudflare.com', 'https://js.stripe.com'],
+      'https://w.soundcloud.com', 'https://www.youtube.com', 'https://s.ytimg.com', 'https://cdnjs.cloudflare.com',
+      'https://js.stripe.com', 'https://maps.googleapis.com'],
     'script-src-attr': ["'none'"],
     'style-src': ["'self'", 'https:', "'unsafe-inline'"],
     'upgrade-insecure-requests': [],
-    'connect-src': ["'self'", 'ws:', 'wss:', 'https://cdn.plyr.io', 'https://noembed.com'],
+    'connect-src': ["'self'", 'ws:', 'wss:', 'https://cdn.plyr.io', 'https://noembed.com',
+      'https://maps.googleapis.com', 'https://places.googleapis.com'],
   },
 }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
