@@ -16,6 +16,8 @@ import { isFacebookPageId, isInstagramUsername } from '#src/lib/instagram-fields
 // Mirrors TemplateController/VenueController/PromoController (#819/#822).
 const ALLOWED_ROLES = ['JaM-admin', 'Developer'];
 const GIG_ANNOUNCE_CAPS = ['gig:announce'];
+const GIG_CREATE_CAPS = ['gig:create', 'tour:create'];
+const GIG_EDIT_CAPS = ['gig:edit', 'tour:edit'];
 const GIG_DELETE_CAPS = ['gig:delete', 'tour:delete'];
 
 interface AuthedUser { userType?: string; privileges?: string[] }
@@ -110,6 +112,18 @@ class GigController extends ArtistController {
     }
     if (!user) return { status: 401, message: 'user not found' };
     return checkAccess(user, required);
+  }
+
+  async create(req: AuthRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, GIG_CREATE_CAPS);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    return super.create(req, res);
+  }
+
+  async findByIdAndUpdate(req: AuthIdRequest, res: Response): Promise<unknown> {
+    const guardErr = await this.authorize(req, GIG_EDIT_CAPS);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+    return super.findByIdAndUpdate(req, res);
   }
 
   async findByIdAndDelete(req: AuthIdRequest, res: Response): Promise<unknown> {

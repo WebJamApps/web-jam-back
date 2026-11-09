@@ -22,9 +22,11 @@ describe('Artist scoping', () => {
     await GigModel.deleteMany({});
     await BookModel.deleteMany({});
     await userModel.deleteMany({ email: { $in: ['super@example.com', 'tim@example.com'] } });
-    const su = await userModel.create({ name: 'josh', email: 'super@example.com', userType: allowedRole }) as unknown as { _id: { toString(): string } };
+    const su = await userModel.create({
+      name: 'josh', email: 'super@example.com', userType: allowedRole, privileges: ['gig:create'],
+    }) as unknown as { _id: { toString(): string } };
     const tim = await userModel.create({
-      name: 'tim', email: 'tim@example.com', userType: allowedRole, artist: 'tim', privileges: ['gig:delete'],
+      name: 'tim', email: 'tim@example.com', userType: allowedRole, artist: 'tim', privileges: ['gig:create', 'gig:edit', 'gig:delete'],
     }) as unknown as { _id: { toString(): string } };
     superUser = { _id: su._id.toString() };
     timAdmin = { _id: tim._id.toString() };
