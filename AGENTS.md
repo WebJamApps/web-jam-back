@@ -11,7 +11,7 @@ Read that file before acting. If you cannot find it, STOP and say so — do not 
 rules and do not reconstruct them from memory or from this file.
 
 ## Tech Stack
-- **Runtime:** Node.js v24.19.0
+- **Runtime:** Node.js 26.x
 - **Framework:** Express
 - **Testing:** Vitest (vitest.config.ts)
 - **Linting:** ESLint (eslint.config.mjs)
