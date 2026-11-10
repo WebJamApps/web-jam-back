@@ -15,8 +15,6 @@ interface Imodel {
   findByIdAndUpdate: (id: string, update: UpdateQuery<AnyDoc>) => Promise<AnyDoc | null>;
   findByIdAndDelete: (id: string) => Promise<AnyDoc | null>;
   deleteMany: (query: QueryFilter<AnyDoc>) => Promise<unknown>;
-  comparePassword?: (password: string, hash: string) => Promise<boolean>;
-  validateSignup?: (obj: { name: string; email: string; password: string }) => string;
 }
 const debug = Debug('web-jam-back:lib/controller');
 let uRoles:string[] = [];
