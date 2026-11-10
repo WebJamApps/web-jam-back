@@ -250,6 +250,71 @@ describe('OpenAPI Specification Router (GET /openapi.json)', () => {
       expect(updateSchema.properties.name).toBeDefined();
       expect(updateSchema.properties.description).toBeDefined();
     });
+
+    it('describes user, admin user, book and song routes accurately', async () => {
+      mockUser('Developer');
+      const res: ApiResponse = await request(app)
+        .get('/openapi.json')
+        .set('Authorization', `Bearer ${devToken}`);
+
+      expect(res.status).toBe(200);
+      const spec = res.body;
+
+      // User routes
+      expect(spec.paths['/user']).toBeDefined();
+      expect(spec.paths['/user'].get).toBeDefined();
+      expect(spec.paths['/user'].post).toBeDefined();
+      expect(spec.paths['/user/auth/google']).toBeDefined();
+      expect(spec.paths['/user/auth/google'].post).toBeDefined();
+      expect(spec.paths['/user/{id}']).toBeDefined();
+      expect(spec.paths['/user/{id}'].get).toBeDefined();
+      expect(spec.paths['/user/{id}'].put).toBeDefined();
+      expect(spec.paths['/user/{id}'].delete).toBeDefined();
+
+      // Admin user routes
+      expect(spec.paths['/admin/user']).toBeDefined();
+      expect(spec.paths['/admin/user'].get).toBeDefined();
+      expect(spec.paths['/admin/user'].post).toBeDefined();
+      expect(spec.paths['/admin/user/{id}']).toBeDefined();
+      expect(spec.paths['/admin/user/{id}'].get).toBeDefined();
+      expect(spec.paths['/admin/user/{id}'].put).toBeDefined();
+      expect(spec.paths['/admin/user/{id}'].delete).toBeDefined();
+      expect(spec.paths['/admin/user/{id}/token']).toBeDefined();
+      expect(spec.paths['/admin/user/{id}/token'].post).toBeDefined();
+
+      // Book routes
+      expect(spec.paths['/book']).toBeDefined();
+      expect(spec.paths['/book'].get).toBeDefined();
+      expect(spec.paths['/book'].post).toBeDefined();
+      expect(spec.paths['/book/one']).toBeDefined();
+      expect(spec.paths['/book/one'].get).toBeDefined();
+      expect(spec.paths['/book/one'].put).toBeDefined();
+      expect(spec.paths['/book/{id}']).toBeDefined();
+      expect(spec.paths['/book/{id}'].get).toBeDefined();
+      expect(spec.paths['/book/{id}'].put).toBeDefined();
+      expect(spec.paths['/book/{id}'].delete).toBeDefined();
+      expect(spec.paths['/book/findcheckedout/{id}']).toBeDefined();
+      expect(spec.paths['/book/findcheckedout/{id}'].get).toBeDefined();
+
+      // Song routes
+      expect(spec.paths['/song']).toBeDefined();
+      expect(spec.paths['/song'].get).toBeDefined();
+      expect(spec.paths['/song'].post).toBeDefined();
+      expect(spec.paths['/song/{id}']).toBeDefined();
+      expect(spec.paths['/song/{id}'].get).toBeDefined();
+      expect(spec.paths['/song/{id}'].put).toBeDefined();
+      expect(spec.paths['/song/{id}'].delete).toBeDefined();
+
+      // Schemas
+      expect(spec.components.schemas.User).toBeDefined();
+      expect(spec.components.schemas.User.required).toEqual(['_id', 'name', 'email']);
+      expect(spec.components.schemas.AdminUserInput).toBeDefined();
+      expect(spec.components.schemas.AdminUserUpdateInput).toBeDefined();
+      expect(spec.components.schemas.Book).toBeDefined();
+      expect(spec.components.schemas.BookInput).toBeDefined();
+      expect(spec.components.schemas.BookUpdateInput).toBeDefined();
+      expect(spec.components.schemas.Song).toBeDefined();
+    });
   });
 
   describe('Path Resolution (Rule 57)', () => {

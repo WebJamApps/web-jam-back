@@ -35,6 +35,18 @@
     {
       "name": "songs",
       "description": "Public music-page display and authenticated private song catalog."
+    },
+    {
+      "name": "users",
+      "description": "User account lookup, self-service profile and Google OAuth."
+    },
+    {
+      "name": "admin-users",
+      "description": "Administrative user management, role grants, privilege administration, and service tokens."
+    },
+    {
+      "name": "books",
+      "description": "Shared book collection, slideshow photos and per-artist page content documents."
     }
   ],
   "security": [],
@@ -1361,6 +1373,1000 @@
           }
         }
       }
+    },
+    "/user": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "listUsers",
+        "summary": "List users",
+        "description": "Available only in non-production environments. In production, returns 401 not authorized.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The list of users.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "findUserByEmail",
+        "summary": "Look up user by email",
+        "description": "Requires authentication. Allowed only for user admins (JaM-admin or Developer).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserEmailLookupInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Matching user with cleared password.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Wrong email or user not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "description": "Not authorized to look up users.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/user/auth/google": {
+      "post": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "authGoogle",
+        "summary": "Authenticate with Google OAuth",
+        "description": "Exchanges Google OAuth authorization code for profile info, returning a JWT token and user email for existing or newly created user accounts.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleAuthInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication successful for returning user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Registration and authentication successful for new user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Authentication failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/user/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "getUser",
+        "summary": "Read user record by id",
+        "description": "Requires authentication. A caller may read their own record, or any record if holding a user admin role (JaM-admin or Developer).",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or user not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "description": "Not authorized to read this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "updateUserRefused",
+        "summary": "Update user record (refused)",
+        "description": "Refused for every caller; edits must go through /admin/user.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "description": "Use /admin/user for editing users.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "users"
+        ],
+        "operationId": "deleteUserRefused",
+        "summary": "Delete user record (refused)",
+        "description": "Refused for every caller; deletes must go through /admin/user.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "description": "Use /admin/user for deleting users.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/admin/user": {
+      "get": {
+        "tags": [
+          "admin-users"
+        ],
+        "operationId": "listAdminUsers",
+        "summary": "List all users (administrative)",
+        "description": "Requires authentication. Returns all user accounts.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of all users.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/User"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin-users"
+        ],
+        "operationId": "createAdminUser",
+        "summary": "Create user account",
+        "description": "Requires authentication. Validates role assignments, userStatus options and privileges.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created user account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (missing fields, invalid role, invalid status).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "description": "Acting admin role cannot grant the requested role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/admin/user/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin-users"
+        ],
+        "operationId": "getAdminUser",
+        "summary": "Read user account by id",
+        "description": "Requires authentication. Returns user account details.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The user account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or user not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin-users"
+        ],
+        "operationId": "updateAdminUser",
+        "summary": "Update user account by id",
+        "description": "Requires authentication. Validates role transitions, userStatus and privileges. Disallows MongoDB update operators and dotted paths.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated user account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id, prohibited operators, or invalid role/status/privileges.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "description": "Acting admin role cannot grant or remove the requested role, or agent approve error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin-users"
+        ],
+        "operationId": "deleteAdminUser",
+        "summary": "Delete user account by id",
+        "description": "Requires authentication. Deletes user account.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User deleted message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or user not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/admin/user/{id}/token": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "admin-users"
+        ],
+        "operationId": "mintAdminUserToken",
+        "summary": "Mint non-expiring service token",
+        "description": "Requires authentication. Mints a non-expiring service JWT for an agent or system user account.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minted token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid id or user not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/book": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "operationId": "listBooks",
+        "summary": "List books and page content documents",
+        "description": "Public list of books and content records, filtered by optional artist or document type query parameter.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "artist",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by artist slug"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by document type (e.g. bio, stewardshipPageContent)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of matching book/content documents.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Book"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "books"
+        ],
+        "operationId": "createBook",
+        "summary": "Create a book or content document",
+        "description": "Requires authentication. Creates a new book or content document. If caller is an artist-scoped admin, the record is stamped with their artist.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created book record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Book"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/book/one": {
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "operationId": "getBookOne",
+        "summary": "Read a single book or content document by query",
+        "description": "Public fetch for a single document matching query parameters (e.g. bio, stewardshipPageContent), scoped to artist.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "artist",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by artist slug"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by document type"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The single matching document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Book"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or document not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "books"
+        ],
+        "operationId": "updateBookOne",
+        "summary": "Update a single book or content document by query",
+        "description": "Requires authentication. Scopes update to caller artist if artist-scoped admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "artist",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by artist slug"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by document type"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Book"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or document not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/book/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "operationId": "getBook",
+        "summary": "Read book or content document by id",
+        "description": "Requires authentication. Returns book record details.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The book record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Book"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or document not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "books"
+        ],
+        "operationId": "updateBook",
+        "summary": "Update book or content document by id",
+        "description": "Requires authentication. Scopes update to caller artist if artist-scoped admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BookUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated book record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Book"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or document not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "books"
+        ],
+        "operationId": "deleteBook",
+        "summary": "Delete book or content document by id",
+        "description": "Requires authentication. Guards against deleting records outside caller artist if artist-scoped admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Book deleted message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or document not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/book/findcheckedout/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "User ID who checked out the books",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "books"
+        ],
+        "operationId": "findCheckedOutBooks",
+        "summary": "List books checked out by user id",
+        "description": "Requires authentication. Returns collection of books checked out by the user ID.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection of books checked out by the user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Book"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1544,10 +2550,20 @@
                 "description": "Successful Instagram posts, appended in order. Absent on gigs without recorded history.",
                 "items": {
                   "type": "object",
-                  "required": ["at", "imageUrl"],
+                  "required": [
+                    "at",
+                    "imageUrl"
+                  ],
                   "properties": {
-                    "at": { "type": "string", "format": "date-time" },
-                    "imageUrl": { "type": "string", "format": "uri", "description": "The chosen image source, not the public JPEG route." }
+                    "at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "imageUrl": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "The chosen image source, not the public JPEG route."
+                    }
                   }
                 }
               },
@@ -2296,6 +3312,412 @@
             "items": {
               "$ref": "#/components/schemas/SongRecording"
             }
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "required": [
+          "_id",
+          "name",
+          "email"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "verifiedEmail": {
+            "type": "boolean"
+          },
+          "changeemail": {
+            "type": "string"
+          },
+          "userPhone": {
+            "type": "number"
+          },
+          "userStatus": {
+            "type": "string",
+            "enum": [
+              "human",
+              "ai-agent"
+            ]
+          },
+          "userType": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string",
+            "description": "Artist slug for artist-scoped admins. Absent for super-admins and ordinary users."
+          },
+          "userStreetAddress": {
+            "type": "string"
+          },
+          "userCity": {
+            "type": "string"
+          },
+          "userState": {
+            "type": "string"
+          },
+          "userZip": {
+            "type": "string"
+          },
+          "userDetails": {
+            "type": "string"
+          },
+          "privileges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UserEmailLookupInput": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        }
+      },
+      "GoogleAuthInput": {
+        "type": "object",
+        "required": [
+          "code",
+          "clientId",
+          "redirectUri"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Google OAuth authorization code"
+          },
+          "clientId": {
+            "type": "string",
+            "description": "Google OAuth client ID"
+          },
+          "redirectUri": {
+            "type": "string",
+            "format": "uri",
+            "description": "OAuth redirect URI"
+          }
+        }
+      },
+      "AuthResponse": {
+        "type": "object",
+        "required": [
+          "email",
+          "token"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "token": {
+            "type": "string",
+            "description": "JWT bearer token"
+          }
+        }
+      },
+      "AdminUserInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "email"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "verifiedEmail": {
+            "type": "boolean"
+          },
+          "userPhone": {
+            "type": "number"
+          },
+          "userStatus": {
+            "type": "string",
+            "enum": [
+              "human",
+              "ai-agent"
+            ]
+          },
+          "userType": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "userStreetAddress": {
+            "type": "string"
+          },
+          "userCity": {
+            "type": "string"
+          },
+          "userState": {
+            "type": "string"
+          },
+          "userZip": {
+            "type": "string"
+          },
+          "userDetails": {
+            "type": "string"
+          },
+          "privileges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AdminUserUpdateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "verifiedEmail": {
+            "type": "boolean"
+          },
+          "userPhone": {
+            "type": "number"
+          },
+          "userStatus": {
+            "type": "string",
+            "enum": [
+              "human",
+              "ai-agent"
+            ]
+          },
+          "userType": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "userStreetAddress": {
+            "type": "string"
+          },
+          "userCity": {
+            "type": "string"
+          },
+          "userState": {
+            "type": "string"
+          },
+          "userZip": {
+            "type": "string"
+          },
+          "userDetails": {
+            "type": "string"
+          },
+          "privileges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TokenResponse": {
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Minted service JWT token"
+          }
+        }
+      },
+      "Book": {
+        "type": "object",
+        "required": [
+          "_id",
+          "title",
+          "type"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "numberPages": {
+            "type": "number"
+          },
+          "dateOfPub": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "isbn": {
+            "type": "string"
+          },
+          "siteLocation": {
+            "type": "string"
+          },
+          "numberOfCopies": {
+            "type": "number"
+          },
+          "access": {
+            "type": "string"
+          },
+          "comments": {
+            "type": "string"
+          },
+          "checkedOutBy": {
+            "type": "string"
+          },
+          "checkedOutByName": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BookInput": {
+        "type": "object",
+        "required": [
+          "title",
+          "type"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "numberPages": {
+            "type": "number"
+          },
+          "dateOfPub": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "isbn": {
+            "type": "string"
+          },
+          "siteLocation": {
+            "type": "string"
+          },
+          "numberOfCopies": {
+            "type": "number"
+          },
+          "access": {
+            "type": "string"
+          },
+          "comments": {
+            "type": "string"
+          },
+          "checkedOutBy": {
+            "type": "string"
+          },
+          "checkedOutByName": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "artist": {
+            "type": "string"
+          }
+        }
+      },
+      "BookUpdateInput": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "numberPages": {
+            "type": "number"
+          },
+          "dateOfPub": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "isbn": {
+            "type": "string"
+          },
+          "siteLocation": {
+            "type": "string"
+          },
+          "numberOfCopies": {
+            "type": "number"
+          },
+          "access": {
+            "type": "string"
+          },
+          "comments": {
+            "type": "string"
+          },
+          "checkedOutBy": {
+            "type": "string"
+          },
+          "checkedOutByName": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "artist": {
+            "type": "string"
           }
         }
       }
