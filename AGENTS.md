@@ -19,6 +19,7 @@ rules and do not reconstruct them from memory or from this file.
 ## Development Workflow
 - **Build:** Check package.json for build scripts.
 - **Explicit Permission Required Before Codework / PR Creation:** Never start code implementation, create feature branches/worktrees, commit changes, or open pull requests without explicit permission or a direct command from Josh in chat naming/approving the task. When investigating bugs or discovering root causes, stop after diagnosis to explain the findings and proposed solution, and wait for Josh's explicit go-ahead before writing code, modifying files, or submitting any PR.
+- **Lockfile Root Version Synchronization on Semver Bumps**: When bumping `package.json`'s version, always run `npm install --package-lock-only --ignore-scripts` to synchronize the version metadata in `package-lock.json` (both top-level `"version"` and `packages[""]["version"]`) so both manifests consistently describe the same release version in lockstep.
 - **Node Engine Version Bumps:** When bumping Node.js in `package.json` `engines.node`, always run `npm install --package-lock-only --ignore-scripts` (or `npm install --ignore-scripts`) to update `package-lock.json` root engine definition without triggering `postinstall` build scripts, so both files are committed together.
 - **Standards:** Follow existing ESM patterns.
 - **Vitest Config & Environment Variables**: Never hardcode test environment variables (such as `test.env.AllowUrl`) in shared, CI-executed `vitest.config.ts` to satisfy local test runs. Vitest's `test.env` overrides project-level CI environment variables across all test workers and silently overwrites production/CI test environments. If local test execution requires environment variables, configure them in uncommitted local `.env` files rather than modifying `vitest.config.ts`.
@@ -28,7 +29,7 @@ rules and do not reconstruct them from memory or from this file.
 - **Sliding Window Quota Preservation:** Google Antigravity (`agy`) tracks model token usage on a rolling 5-hour sliding window. To preserve quota and avoid 3+ hour lockouts during heavy or multi-repo tasks:
   - Keep command outputs compact: avoid printing thousands of lines of raw test logs directly into main turn outputs.
   - Redirect large multi-line summaries, test plans, and evidence to scratch files (`--summary-file`, `--test-plan-file`, `--test-evidence-file`) when calling `create-draft-pr.sh`.
-  - **Automatic Flash High Subagent Handoff on "Go":** After Josh says go, an agy session on Flash High does the work itself or hands it to a subagent at the same level.
+  - **Automatic Flash Subagent Handoff on "Go":** After Josh says go, an agy session on Flash does the work itself or hands it to a subagent at the same level.
 
 ## Routes & Verbs
 - **Venue Updates (`/venue/:id`)**: `PATCH /venue/:id` is the partial-merge update verb (routing to `controller.updateVenue`). Address updates enforce immutability once set (`400: address cannot be removed`).
@@ -41,17 +42,11 @@ rules and do not reconstruct them from memory or from this file.
 - **Verification Never Replaces the Sendability Guards**: Gate 2 verification is a COPY-INTEGRITY check only. It renders with `{ skipDedup: true, requireEligible: false }` so it can fingerprint any venue, so the send loop MUST still resolve every venue — verified or not — through `resolvePitch` with production defaults (`requireEligible: true`, `skipDedup: false`) before mailing it. Reuse the verified rendering as `preRendered` bytes ONLY; never let it stand in for the eligibility (#844) or dedup (#923) checks. Skipping them lets a re-POSTed batch mail every venue twice and mails a venue whose `outreachEligible` was revoked (including permanently, by `not-interested`) after approval.
 - **Deterministic Batch Lookup & Scope**: When querying batch approval records for a target weekend, prefer exact `batchId` matching before falling back to weekend-level matching, and always sort deterministically (`.sort({ createdAt: -1, _id: -1 })`) so multi-batch weekends resolve predictably rather than matching arbitrary documents in natural order.
 
-## Song Catalog & Migration Invariants
-- **Performer vs Writer Separation**: Performers and writers go in separate fields (`artist` / `recordings[].artist` vs `writers`). Website artist credits or release performer credits must NEVER be read or converted into song writers.
-- **Rights Provenance & Verified Shares**: Read verified per-work writer and share details from source records; preserve unknown details as unknown rather than manufacturing default writer identities or 100% shares from account headers.
-- **Positional Share Association**: When pairing multi-writer share columns with writers, preserve blank positions (e.g. `; 50%`) so later writers' shares are never shifted onto earlier writers.
-- **No Real Identifiers in Public Tests**: Never use real account numbers, writer IPIs, or work numbers in tests or committed fixtures in public repositories. Always use clearly fabricated test identifiers (`TEST-BMI-001`, `FAKE-IPI-001`).
-- **Fail-Closed Source Resolution**: Loader scripts must require all external source files and validate their shape/content before connecting or writing. Missing, empty, or unrecognized sources must produce a clear refusal with zero writes; baseline seeds must not masquerade as captured sources.
-- **Multi-Source Recording Enrichment**: Merge verified missing fields on matching recordings across sources (matching by ISRC, audio URL, or release/artist) and fail closed on conflicting identifiers rather than silently dropping later fields.
-- **Post-Apply Count & Mutation Verification**: Always check acknowledged insert/update results and verify that the post-apply collection count strictly equals starting count plus planned inserts before declaring completion, refusing mismatches.
-- **Sparse Unique URL Constraint**: Songs not yet recorded omit `url` (`delete payload.url` if falsy) rather than storing empty strings or null, preserving MongoDB's sparse unique index constraint.
-- **Safe-Run Migration & Loader Guard**: Catalog scripts parse and validate hostnames and deliberate database-name conventions (`dev`, `test`, `copy`), refusing execution against non-local/production databases unless `--force` is passed explicitly.
-- **No `process.env.DROPBOX_` in `src/`**: Files in `src/` must never reference `process.env.DROPBOX_*` (enforced by regression tests). Use domain-specific variable names (e.g. `SONG_ARCHIVE_FILE`) for external paths.
-
-> **Moved to the Obsidian vault (2026-11-05):** Troubleshooting lessons (test typing, guards, storage, schemas, diagrams) now live word for word in `~/Dropbox/web-jam-llms/rules-vault/web-jam-back-AGENTS.md`. Read it before working in that area.
-
+Before changing anything under `src/scripts/`, read `docs/rules/scripts.md`.
+Before changing anything under `test/`, read `docs/rules/tests.md`.
+Before changing anything under `src/model/outreach/`, read `docs/rules/outreach.md`.
+Before changing anything under `src/model/venue-mining-sweep/`, read `docs/rules/venue-mining-sweep.md`.
+Before changing anything under `src/model/backup/`, read `docs/rules/backup.md`.
+Before changing anything under `src/model/venue/`, read `docs/rules/venue.md`.
+Before changing anything under `src/model/openapi/`, read `docs/rules/openapi.md`.
+Before changing anything under `src/model/gig/`, read `docs/rules/gig.md`.
