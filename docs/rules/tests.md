@@ -17,7 +17,4 @@
 - **Distinguishing User-Not-Found from Lookup Failure in Guard Tests**: Tests where a token user does not exist in the database verify authorization refusal (outcome 2, returning 401), not an infrastructure lookup error (outcome 3, returning 500 when `findById` rejects). Test descriptions must accurately distinguish between missing user records and database rejection.
 
 
-- **Lockfile Root Version Synchronization on Semver Bumps**: When bumping `package.json`'s version, always run `npm install --package-lock-only --ignore-scripts` to synchronize the version metadata in `package-lock.json` (both top-level `"version"` and `packages[""]["version"]`) so both manifests consistently describe the same release version in lockstep.
-
-
 - **Global `fetch` Mocking with Ephemeral Test Client & Test Isolation**: `test/helpers/api.ts`'s `request(app)` executes HTTP requests via `globalThis.fetch`. When test suites mock `globalThis.fetch` or `global.fetch` via `vi.spyOn(global, 'fetch')`, they must: (1) bind the unmocked native fetch (`const realFetch = globalThis.fetch.bind(globalThis);`) at module scope and forward non-mocked URLs (such as local ephemeral server requests) to `realFetch(url, init)`; and (2) strictly restore mocks in `afterEach(() => vi.restoreAllMocks())`. Failure to restore mocks causes subsequent tests in the same file to re-wrap the already-spied fetch, leading to infinite recursion and `RangeError: Maximum call stack size exceeded`.

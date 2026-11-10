@@ -27,6 +27,3 @@
 
 
 - **No `process.env.DROPBOX_` in `src/`**: Files in `src/` must never reference `process.env.DROPBOX_*` (enforced by regression tests). Use domain-specific variable names (e.g. `SONG_ARCHIVE_FILE`) for external paths.
-
-
-- **Safe-Run Migration & Loader Guard**: Catalog scripts refuse execution against non-local/production databases unless `--force` is passed explicitly.
