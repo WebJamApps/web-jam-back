@@ -1,11 +1,11 @@
 {
   "name": "web-jam-back",
-  "version": "2.38.4",
+  "version": "2.39.0",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
   "engines": {
-    "node": "24.19.0"
+    "node": "26.x"
   },
   "files": [
     "src/"
@@ -16,7 +16,29 @@
     "#lib/*": "./build/src/lib/*"
   },
   "overrides": {
-    "shell-quote": "^1.12.0"
+    "minimatch": "^11.0.5",
+    "shell-quote": "^1.12.0",
+    "typescript-eslint": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/eslint-plugin": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/parser": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/type-utils": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "typescript": "$typescript"
+    },
+    "@typescript-eslint/utils": {
+      "typescript": "$typescript"
+    },
+    "ts-api-utils": {
+      "typescript": "$typescript"
+    }
   },
   "scripts": {
     "rmrf": "rimraf build && rimraf JaMmusic && rimraf coverage",
@@ -64,48 +86,49 @@
   },
   "author": "HandlersAndKickers <>",
   "dependencies": {
-    "@types/cors": "^2.8.13",
-    "@types/debug": "^4.1.7",
+    "@types/cors": "^2.8.19",
+    "@types/debug": "^4.1.13",
     "@types/express": "^5.0.6",
-    "@types/express-sslify": "^1.2.2",
-    "@types/morgan": "^1.9.4",
-    "@types/node": "^24.0.0",
+    "@types/express-sslify": "^1.2.5",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^26.6.6",
     "@types/nodemailer": "^8.0.2",
-    "cors": "^2.8.5",
-    "csvtojson": "^2.0.10",
-    "debug": "^4.3.4",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "express-rate-limit": "^8.7.1",
+    "cors": "^2.8.6",
+    "csvtojson": "^2.0.14",
+    "debug": "^4.4.3",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
     "express-sslify": "^1.2.0",
-    "helmet": "^8.1.0",
-    "jwt-simple": "^0.5.6",
-    "mongoose": "^9.7.2",
+    "helmet": "^8.3.0",
+    "jwt-simple": "^0.6.1",
+    "mongoose": "^9.12.1",
     "morgan": "^1.12.1",
-    "nodemailer": "^10.1.4",
+    "nodemailer": "^10.5.0",
     "rimraf": "^6.1.4",
     "sharp": "^0.35.5",
-    "snyk": "^1.1118.0",
-    "typescript": "^5.3.3"
+    "snyk": "^1.1308.4",
+    "typescript": "^7.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@redocly/cli": "^2.71.1",
-    "@vitest/coverage-v8": "^4.1.12",
-    "@vitest/eslint-plugin": "^1.6.16",
-    "concurrently": "^10.0.3",
-    "eslint": "^10.2.1",
-    "eslint-plugin-import-x": "^4.16.2",
-    "eslint-plugin-json": "^4.0.1",
-    "eslint-plugin-n": "^17.24.0",
+    "@redocly/cli": "^2.77.0",
+    "@typescript/typescript6": "^6.0.2",
+    "@vitest/coverage-v8": "^5.1.0",
+    "@vitest/eslint-plugin": "^1.6.28",
+    "concurrently": "^10.0.7",
+    "eslint": "^10.14.0",
+    "eslint-plugin-import-x": "^4.18.1",
+    "eslint-plugin-json": "^5.0.0",
+    "eslint-plugin-n": "^18.5.0",
     "eslint-plugin-promise": "^7.3.0",
-    "eslint-plugin-security": "^4.0.0",
-    "eslint-plugin-sonarjs": "^4.0.3",
-    "eslint-plugin-unicorn": "^73.0.0",
-    "globals": "^17.5.0",
-    "jscpd": "^5.0.11",
-    "typescript-eslint": "^8.59.1",
-    "vitest": "^4.1.12"
+    "eslint-plugin-security": "^4.2.1",
+    "eslint-plugin-sonarjs": "^4.2.2",
+    "eslint-plugin-unicorn": "^79.0.0",
+    "globals": "^17.14.0",
+    "jscpd": "^5.4.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
   },
   "snyk": true
 }
