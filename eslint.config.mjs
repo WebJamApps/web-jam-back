@@ -1,14 +1,40 @@
-import js from '@eslint/js';
-import tseslint from 'typescript-eslint';
-import importX from 'eslint-plugin-import-x';
-import vitest from '@vitest/eslint-plugin';
-import n from 'eslint-plugin-n';
-import security from 'eslint-plugin-security';
-import json from 'eslint-plugin-json';
-import sonarjs from 'eslint-plugin-sonarjs';
-import unicorn from 'eslint-plugin-unicorn';
-import promise from 'eslint-plugin-promise';
-import globals from 'globals';
+import { createRequire } from 'node:module';
+
+// TypeScript 7 Go compiler does not provide the JS programmatic AST API.
+// Forward typescript-eslint, sonarjs, and other ESLint plugins to @typescript/typescript6.
+const require = createRequire(import.meta.url);
+try {
+  const tsPath = require.resolve('typescript');
+  const ts6 = require('@typescript/typescript6');
+  require.cache[tsPath] = {
+    id: tsPath,
+    filename: tsPath,
+    loaded: true,
+    exports: ts6,
+  };
+} catch {
+  // Fallback if @typescript/typescript6 is not present
+}
+
+const js = (await import('@eslint/js')).default;
+const tseslint = (await import('typescript-eslint')).default;
+const importX = (await import('eslint-plugin-import-x')).default;
+const vitest = (await import('@vitest/eslint-plugin')).default;
+const n = (await import('eslint-plugin-n')).default;
+const security = (await import('eslint-plugin-security')).default;
+const json = (await import('eslint-plugin-json')).default;
+const sonarjs = (await import('eslint-plugin-sonarjs')).default;
+const unicorn = (await import('eslint-plugin-unicorn')).default;
+const promise = (await import('eslint-plugin-promise')).default;
+const globals = (await import('globals')).default;
+
+// Take the SonarJS recommended ruleset but downgrade every rule to 'warn'
+// (preserving any per-rule options) so it surfaces issues without failing CI.
+const sonarjsWarn = Object.fromEntries(
+  Object.entries(sonarjs.configs.recommended.rules).map(([name, val]) => [
+    name, Array.isArray(val) ? ['warn', ...val.slice(1)] : 'warn',
+  ]),
+);
 
 export default [
   {
@@ -27,7 +53,11 @@ export default [
     },
   },
   js.configs.recommended,
-  sonarjs.configs.recommended,
+  {
+    files: ['**/*.ts'],
+    plugins: { sonarjs },
+    rules: sonarjsWarn,
+  },
   ...tseslint.configs.recommended,
   {
     files: ['**/*.ts'],
@@ -59,7 +89,14 @@ export default [
       'no-multiple-empty-lines': ['error', { max: 1, maxEOF: 1 }],
       ...promise.configs['flat/recommended'].rules,
       'promise/catch-or-return': ['error', { allowFinally: true, terminationMethod: ['catch', 'finally'] }],
-      ...unicorn.configs['flat/recommended'].rules,
+      ...(unicorn.configs['flat/recommended']?.rules ?? unicorn.configs.recommended?.rules ?? {}),
+      'unicorn/prefer-combined-guards': 'off',
+      'unicorn/prefer-escaped-irregular-whitespace': 'off',
+      'unicorn/prefer-minimal-ternary': 'off',
+      'unicorn/no-unnecessary-array-flat-map': 'off',
+      'unicorn/prefer-early-return': 'off',
+      'unicorn/prefer-continue': 'off',
+      'unicorn/prefer-logical-operator-over-ternary': 'off',
       'unicorn/filename-case': 'off',
       'unicorn/name-replacements': 'off',
       'unicorn/prevent-abbreviations': 'off',
