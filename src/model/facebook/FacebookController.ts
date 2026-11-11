@@ -9,7 +9,7 @@ const debug = Debug('web-jam-back:FacebookController');
 // versions don't hard-fail (calls auto-forward to the oldest still-supported
 // one), and the four fields below are stable core fields. Bump when convenient.
 // See README "Facebook feed" section.
-export const FB_GRAPH_VERSION = 'v20.0';
+export const FB_GRAPH_VERSION = 'v25.0';
 const GRAPH = `https://graph.facebook.com/${FB_GRAPH_VERSION}`;
 const REFRESH_INTERVAL_MS = 60 * 60 * 1000; // hourly
 const PAGE_FIELDS = 'message,full_picture,permalink_url,created_time';

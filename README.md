@@ -160,7 +160,7 @@ The Reconnect flow logs the page admin into Facebook, where the consent dialog l
 
 ### Finding / verifying a page id
 
-The id stored in `FB_PAGES` must be the one Facebook returns from `/me/accounts` (that's what the token exchange matches against). To find or confirm it: in the [Graph API Explorer](https://developers.facebook.com/tools/explorer) generate a user token (scope `pages_show_list`, the page checked), then `GET /v20.0/me/accounts` and read the `id` next to the page name. A quick sanity check: `https://www.facebook.com/<page-id>` should land on that page. The page's HTML `delegatePageID` is **not** reliable — it can differ from the Graph id under the New Pages Experience.
+The id stored in `FB_PAGES` must be the one Facebook returns from `/me/accounts` (that's what the token exchange matches against). To find or confirm it: in the [Graph API Explorer](https://developers.facebook.com/tools/explorer) generate a user token (scope `pages_show_list`, the page checked), then `GET /v25.0/me/accounts` and read the `id` next to the page name. A quick sanity check: `https://www.facebook.com/<page-id>` should land on that page. The page's HTML `delegatePageID` is **not** reliable — it can differ from the Graph id under the New Pages Experience.
 
 ### One-time Meta app dashboard setup
 

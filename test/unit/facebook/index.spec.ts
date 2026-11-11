@@ -54,7 +54,7 @@ describe('Facebook feed API', () => {
   });
   afterAll(async () => { await userModel.deleteMany({ email: 'fbadmin@example.com' }); await FacebookToken.deleteMany({}); });
 
-  it('pins a Graph API version', () => { expect(FB_GRAPH_VERSION).toMatch(/^v\d+\.\d+$/); });
+  it('pins a Graph API version', () => { expect(FB_GRAPH_VERSION).toBe('v25.0'); });
 
   it('GET /facebook/feed is public and returns the empty cache initially', async () => {
     const r = await request(app).get('/facebook/feed').set({ origin: allowedUrl });
