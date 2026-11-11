@@ -2361,9 +2361,6 @@
           },
           "401": {
             "$ref": "#/components/responses/NotLoggedIn"
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
           }
         }
       }

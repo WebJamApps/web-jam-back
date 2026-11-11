@@ -269,7 +269,9 @@ describe('OpenAPI Specification Router (GET /openapi.json)', () => {
       expect(spec.paths['/user/{id}']).toBeDefined();
       expect(spec.paths['/user/{id}'].get).toBeDefined();
       expect(spec.paths['/user/{id}'].put).toBeDefined();
+      expect(spec.paths['/user/{id}'].put.responses['403']).toBeDefined();
       expect(spec.paths['/user/{id}'].delete).toBeDefined();
+      expect(spec.paths['/user/{id}'].delete.responses['403']).toBeDefined();
 
       // Admin user routes
       expect(spec.paths['/admin/user']).toBeDefined();
@@ -295,6 +297,8 @@ describe('OpenAPI Specification Router (GET /openapi.json)', () => {
       expect(spec.paths['/book/{id}'].delete).toBeDefined();
       expect(spec.paths['/book/findcheckedout/{id}']).toBeDefined();
       expect(spec.paths['/book/findcheckedout/{id}'].get).toBeDefined();
+      expect(Object.keys(spec.paths['/book/findcheckedout/{id}'].get.responses).sort()).toEqual(['200', '401']);
+      expect(spec.paths['/book/findcheckedout/{id}'].get.responses['500']).toBeUndefined();
 
       // Song routes
       expect(spec.paths['/song']).toBeDefined();
