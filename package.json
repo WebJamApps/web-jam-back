@@ -64,7 +64,6 @@
   },
   "author": "HandlersAndKickers <>",
   "dependencies": {
-    "@types/bcryptjs": "^2.4.2",
     "@types/cors": "^2.8.13",
     "@types/debug": "^4.1.7",
     "@types/express": "^5.0.6",
@@ -72,7 +71,6 @@
     "@types/morgan": "^1.9.4",
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^8.0.2",
-    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "csvtojson": "^2.0.10",
     "debug": "^4.3.4",
