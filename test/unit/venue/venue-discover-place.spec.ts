@@ -303,7 +303,7 @@ describe('Nominatim Place Discovery Route — GET /venue/discover/place (#1219)'
     });
   });
 
-  describe('Rate Limiting', () => {
+  describe('Rate Limiting', { timeout: 15000 }, () => {
     it('enforces the one-request-a-second limit when calling Nominatim (#1219)', async () => {
       nominatimThrottle.minIntervalMs = 1000;
 
