@@ -8,7 +8,7 @@
 // the 'release' (production) database. DEV Atlas is the normal local-dev target.
 //
 // Idempotent: uses upserts keyed on natural identifiers (Template by type+stage;
-// Venue by email; User by email; OutreachConfig by key:'outreach'; Outreach by venueId+targetDates).
+// Venue by email; User by email; Outreach by venueId+targetDates).
 // Re-running the script does NOT duplicate data.
 //
 // Schemas are defined inline (matching src/model/*/.*-schema.ts) because tsx/ts-node
@@ -108,19 +108,11 @@ const userSchema = new Schema({
   privileges: { type: [String], required: false, default: [] },
 });
 
-// mirror: src/model/outreach/outreach-config-schema.ts
-const configSchema = new Schema({
-  key: { type: String, required: true, unique: true, default: 'outreach' },
-  autoApprove: { type: Boolean, default: false },
-  lastModifiedBy: String,
-}, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } });
-
 // Singleton model pattern matching the real schema files.
 const Template = mongoose.models.Template || mongoose.model('Template', templateSchema);
 const Venue = mongoose.models.Venue || mongoose.model('Venue', venueSchema);
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 const Outreach = mongoose.models.Outreach || mongoose.model('Outreach', outreachSchema);
-const OutreachConfig = mongoose.models.OutreachConfig || mongoose.model('OutreachConfig', configSchema);
 
 // ── Seed data: 9 Templates (3 venueTypes × 3 stages) ────────────────────────
 //
@@ -554,15 +546,7 @@ async function run() {
     console.log(`  user upserted: "${u.name}" (${u.email}, ${u.userType}, privileges: ${u.privileges.join(',')})`);
   }
 
-  // 4. OutreachConfig — singleton
-  await OutreachConfig.findOneAndUpdate(
-    { key: 'outreach' },
-    { $set: { key: 'outreach', autoApprove: false, lastModifiedBy: 'seed-outreach' } },
-    { upsert: true, returnDocument: 'after' },
-  );
-  console.log('  config upserted: key=outreach autoApprove=false');
-
-  // 5. Outreach records — 2 total
+  // 4. Outreach records — 2 total
   const stageVenue = venueRecords.find((v) => v && v.name === 'The Stage at Roanoke');
   const hideawayVenue = venueRecords.find((v) => v && v.name === 'The Hideaway Lounge');
   let oUpserted = 0;
@@ -604,7 +588,6 @@ Seed complete:
   ${tUpserted} templates  (3 venueTypes × cold/returning/upcoming)
   ${vUpserted} venues     (outreachEligible + varied types/stages)
   ${uUpserted} test user(s) (privileged E2E / local admin user)
-  1 OutreachConfig (autoApprove: false)
   ${oUpserted} outreach records (1 sent + 1 replied @ "Sept 25-27")
 
 To exercise the Batch Outreach page:
