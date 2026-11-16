@@ -35,6 +35,8 @@ const readCsv = new ReadCSV();
 // CollegeLutheran) plus timshermanmusic.com and its *.pages.dev previews (#885).
 const corsOptions = makeCorsOptions();
 const app = express();
+// Trust Heroku's single proxy hop so req.ip reflects each visitor's own address (#973).
+app.set('trust proxy', 1);
 
 /* istanbul ignore next */
 if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'main') app.use(enforce.HTTPS({ trustProtoHeader: true }));

@@ -8,13 +8,38 @@ export type VenuePlaceLookup =
   | { status: 'resolved'; formattedAddress: string; addressComponents: VenueAddressComponent[] }
   | { status: 'unavailable' };
 
-// Address components are retained for the later booking-address check. This
-// lookup only enriches email content; unavailable lookups must still deliver.
-export async function lookupVenuePlace(placeId: string, apiKey?: string): Promise<VenuePlaceLookup> {
+export type VenueVerificationResult =
+  | VenuePlaceLookup
+  | { status: 'not-found' };
+
+interface RawPlacePayload {
+  formattedAddress?: unknown;
+  addressComponents?: VenueAddressComponent[];
+}
+
+export function hasStreetAddress(components: VenueAddressComponent[]): boolean {
+  const hasNumber = components.some((c) => Array.isArray(c.types) && c.types.includes('street_number'));
+  const hasRoute = components.some((c) => Array.isArray(c.types) && c.types.includes('route'));
+  return hasNumber && hasRoute;
+}
+
+function toResolvedPlace(raw: RawPlacePayload | null | undefined): VenueVerificationResult {
+  const address = typeof raw?.formattedAddress === 'string' ? raw.formattedAddress.trim() : '';
+  if (!address) return { status: 'not-found' };
+  return {
+    status: 'resolved',
+    formattedAddress: address,
+    addressComponents: Array.isArray(raw?.addressComponents) ? raw.addressComponents : [],
+  };
+}
+
+export async function verifyVenuePlace(placeId: string, apiKey?: string): Promise<VenueVerificationResult> {
   if (!apiKey?.trim()) return { status: 'unavailable' };
+  const trimmedId = placeId.trim();
+  if (!trimmedId) return { status: 'not-found' };
 
   try {
-    const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+    const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(trimmedId)}`, {
       method: 'GET',
       headers: {
         'X-Goog-Api-Key': apiKey,
@@ -22,19 +47,50 @@ export async function lookupVenuePlace(placeId: string, apiKey?: string): Promis
       },
       signal: AbortSignal.timeout(5000),
     });
+    if (response.status === 404) return { status: 'not-found' };
     if (!response.ok) return { status: 'unavailable' };
 
-    const data = await response.json() as { formattedAddress?: unknown; addressComponents?: VenueAddressComponent[] } | null;
-    const address = typeof data?.formattedAddress === 'string' ? data.formattedAddress.trim() : '';
-    if (!address) return { status: 'unavailable' };
-    return {
-      status: 'resolved',
-      formattedAddress: address,
-      addressComponents: Array.isArray(data?.addressComponents) ? data.addressComponents : [],
-    };
+    const data = await response.json() as RawPlacePayload | null;
+    return toResolvedPlace(data);
   } catch {
     // Includes network errors, timeouts and malformed JSON. Do not log Google's
     // response or request headers, which may contain the artist's server key.
     return { status: 'unavailable' };
   }
+}
+
+export async function searchVenueAddress(addressQuery: string, apiKey?: string): Promise<VenueVerificationResult> {
+  if (!apiKey?.trim()) return { status: 'unavailable' };
+  const trimmedQuery = addressQuery.trim();
+  if (!trimmedQuery) return { status: 'not-found' };
+
+  try {
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'places.formattedAddress,places.addressComponents',
+      },
+      body: JSON.stringify({ textQuery: trimmedQuery }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.status === 404) return { status: 'not-found' };
+    if (!response.ok) return { status: 'unavailable' };
+
+    const data = await response.json() as { places?: RawPlacePayload[] } | null;
+    if (!data || typeof data !== 'object') return { status: 'unavailable' };
+    const first = Array.isArray(data.places) ? data.places[0] : undefined;
+    return toResolvedPlace(first);
+  } catch {
+    // Do not log response or request headers containing the artist's server key.
+    return { status: 'unavailable' };
+  }
+}
+
+// Address components are retained for the booking-address check. This lookup
+// simplifies not-found to unavailable for email formatting compatibility (#1173).
+export async function lookupVenuePlace(placeId: string, apiKey?: string): Promise<VenuePlaceLookup> {
+  const result = await verifyVenuePlace(placeId, apiKey);
+  return result.status === 'resolved' ? result : { status: 'unavailable' };
 }
