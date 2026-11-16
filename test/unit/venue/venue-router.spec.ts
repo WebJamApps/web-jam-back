@@ -333,23 +333,28 @@ describe('Venue Router (PATCH /venue/:id)', () => {
     expect(updated.touches[0]).toMatchObject({ type: 'outcome', outcome: 'replied' });
   });
 
-  it('does not capture /venue/places/... as /venue/:id (#1159)', async () => {
-    // If captured by /:id, "places" is treated as an invalid ObjectId and returns 400 "Find id is invalid"
+  it('does not capture /venue/listings/search as /venue/:id and returns 404 on retired /venue/places/... routes (#1217)', async () => {
+    const rSearch = await request(app)
+      .get('/venue/listings/search?q=ramkat')
+      .set({ origin: allowedUrl })
+      .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`);
+
+    expect(rSearch.status).toBe(403);
+    expect(rSearch.body.message).not.toBe('Find id is invalid');
+
     const rSuggest = await request(app)
       .get('/venue/places/suggest')
       .set({ origin: allowedUrl })
       .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`);
 
-    expect(rSuggest.status).toBe(403);
-    expect(rSuggest.body.message).not.toBe('Find id is invalid');
+    expect(rSuggest.status).toBe(404);
 
     const rDetails = await request(app)
       .get('/venue/places/some-place-id')
       .set({ origin: allowedUrl })
       .set('Authorization', `Bearer ${authUtils.createJWT({ _id: agentUser._id })}`);
 
-    expect(rDetails.status).toBe(403);
-    expect(rDetails.body.message).not.toBe('Find id is invalid');
+    expect(rDetails.status).toBe(404);
   });
 
   it('does not capture /venue/discover/place as /venue/:id (#1219)', async () => {
