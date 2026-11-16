@@ -14,9 +14,11 @@ pitched. Both singular and plural `GET /outreach/preview` accept
 `targetWeekend` as an ISO date range string, for example
 `2026-11-20 to 2026-11-22`, alongside display-only `targetDates`. An ISO range
 in `targetDates` also remains supported. Previews and sends choose the venue type's
-`second-pitch` template when history exists and fill `[First Pitch Date]` from
-the earliest pitch for that weekend. Missing second-pitch templates refuse the
-venue; there is no cold-template fallback.
+follow-up template for the venue's relationship (`second-pitch-returning`,
+`second-pitch-upcoming`, or `second-pitch`) from linked gigs when history exists and
+fill `[First Pitch Date]` from the earliest pitch for that weekend. Missing
+follow-up templates refuse the venue; there is no fallback to another follow-up
+or to a first-pitch template.
 
 ## Recording Gate 1
 

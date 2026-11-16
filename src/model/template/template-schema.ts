@@ -28,16 +28,17 @@ const templateSchema = new Schema({
     required: true,
     enum: ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar', 'OnlineForm'],
   },
-  // Relationship stage (#848, #1127): `cold` = first contact, `returning` =
+  // Relationship stage (#848, #1127, #1263): `cold` = first contact, `returning` =
   // "we've played here, would love to come back", `upcoming` = booked debut
   // gig coming up, pitching follow-up dates. A template is now keyed by type +
   // stage, so each venue type can have a different cold vs. returning vs. upcoming
-  // pitch. `second-pitch` holds the follow-up copy for a silent venue-weekend.
+  // pitch. `second-pitch`, `second-pitch-returning`, and `second-pitch-upcoming`
+  // hold the follow-up copy matching each relationship for a silent venue-weekend.
   // Existing single-per-type templates default to `cold`.
   stage: {
     type: String,
     required: false,
-    enum: ['cold', 'returning', 'upcoming', 'second-pitch'],
+    enum: ['cold', 'returning', 'upcoming', 'second-pitch', 'second-pitch-returning', 'second-pitch-upcoming'],
     default: 'cold',
   },
   subject: { type: String, required: false, trim: true },

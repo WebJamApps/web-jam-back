@@ -123,22 +123,38 @@ describe('Template Controller', () => {
       expect(findOne).toHaveBeenCalledWith({ type: 'Originals', stage: 'upcoming' });
     });
 
-    it('rejects an invalid stage', async () => {
-      await c.createTemplate({ user: 'a', body: { type: 'Originals', stage: 'lukewarm' } }, resStub);
+    it.each(['second-pitch-returning', 'second-pitch-upcoming'])('accepts %s stage and dedupes it separately (#1263)', async (stage) => {
+      const findOne = vi.fn(() => Promise.resolve(null));
+      c.model.findOne = findOne;
+      c.model.create = vi.fn(() => Promise.resolve({ _id: 'n' }));
+      await c.createTemplate({ user: 'a', body: { type: 'Originals', stage } }, resStub);
+      expect(status).not.toBe(400);
+      expect(findOne).toHaveBeenCalledWith({ type: 'Originals', stage });
+    });
+
+    it.each(['lukewarm', 'second-pitch-other'])('rejects an invalid stage (%s)', async (stage) => {
+      await c.createTemplate({ user: 'a', body: { type: 'Originals', stage } }, resStub);
       expect(status).toBe(400);
       expect(payload.message).toContain('stage not valid');
     });
   });
 
   describe('updateTemplate', () => {
-    it('accepts changing a template to the second-pitch stage', async () => {
+    it.each(['second-pitch', 'second-pitch-returning', 'second-pitch-upcoming'])('accepts changing a template to the %s stage', async (stage) => {
       const id = new mongoose.Types.ObjectId().toString();
       c.model.findById = vi.fn(() => Promise.resolve({ _id: id }));
-      const update = vi.fn(() => Promise.resolve({ _id: id, stage: 'second-pitch' }));
+      const update = vi.fn(() => Promise.resolve({ _id: id, stage }));
       c.model.findByIdAndUpdate = update;
-      await c.updateTemplate({ user: 'agent', params: { id }, body: { stage: 'second-pitch' } }, resStub);
+      await c.updateTemplate({ user: 'agent', params: { id }, body: { stage } }, resStub);
       expect(status).toBe(200);
-      expect(update).toHaveBeenCalledWith(id, expect.objectContaining({ stage: 'second-pitch' }));
+      expect(update).toHaveBeenCalledWith(id, expect.objectContaining({ stage }));
+    });
+
+    it('rejects an invalid stage on update', async () => {
+      const id = new mongoose.Types.ObjectId().toString();
+      await c.updateTemplate({ user: 'agent', params: { id }, body: { stage: 'second-pitch-other' } }, resStub);
+      expect(status).toBe(400);
+      expect(payload.message).toContain('stage not valid');
     });
 
     it('rejects an invalid id', async () => {
