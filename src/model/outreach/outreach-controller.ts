@@ -961,7 +961,26 @@ function hasAttachedPastGig(venueRecord: Record<string, unknown>): boolean {
 // lookup stops at an id-linked gig because its result is only used as yes or no.
 // A venue with no name matches by venueId only.
 // A throwing query counts as "no gig found" (fails closed).
-type RelationshipStage = 'cold' | 'returning' | 'upcoming' | 'second-pitch';
+type RelationshipStage =
+  | 'cold'
+  | 'returning'
+  | 'upcoming'
+  | 'second-pitch'
+  | 'second-pitch-returning'
+  | 'second-pitch-upcoming';
+const SECOND_PITCH_STAGES = new Set<RelationshipStage>([
+  'second-pitch',
+  'second-pitch-returning',
+  'second-pitch-upcoming',
+]);
+const FOLLOW_UP_STAGE: Record<RelationshipStage, RelationshipStage> = {
+  cold: 'second-pitch',
+  returning: 'second-pitch-returning',
+  upcoming: 'second-pitch-upcoming',
+  'second-pitch': 'second-pitch',
+  'second-pitch-returning': 'second-pitch-returning',
+  'second-pitch-upcoming': 'second-pitch-upcoming',
+};
 type LinkedGig = { datetime?: Date | string };
 const gigTime = (g: LinkedGig): number => new Date(g.datetime as string).getTime();
 const queryLinkableGigs = async (filter: Record<string, unknown>): Promise<LinkableGig[]> => {
@@ -969,7 +988,11 @@ const queryLinkableGigs = async (filter: Record<string, unknown>): Promise<Linka
   return Array.isArray(gigs) ? gigs : [];
 };
 
-async function findLinkedGig(venue: VenueDoc, when: 'past' | 'upcoming'): Promise<LinkedGig | null> {
+async function findLinkedGig(
+  venue: VenueDoc,
+  when: 'past' | 'upcoming',
+  throwOnError = false,
+): Promise<LinkedGig | null> {
   const datetime = { [when === 'past' ? '$lt' : '$gte']: new Date() };
   const dir = when === 'past' ? -1 : 1;
   const nearest = (gigs: LinkedGig[]): LinkedGig | null => {
@@ -986,30 +1009,31 @@ async function findLinkedGig(venue: VenueDoc, when: 'past' | 'upcoming'): Promis
       ? (groupGigsByVenue(unlinked, [venue as unknown as LinkableVenue]).get(venueId) || [])
       : [];
     return nearest([...byIdGigs, ...byNameGigs]);
-  } catch {
+  } catch (err) {
+    if (throwOnError) throw err;
     // Indeterminate / lookup failure: fail closed rather than hallucinating gigs
     return null;
   }
 }
 
-async function queryLinkedPastGig(venue: VenueDoc): Promise<boolean> {
-  return Boolean(await findLinkedGig(venue, 'past'));
+async function queryLinkedPastGig(venue: VenueDoc, throwOnError = false): Promise<boolean> {
+  return Boolean(await findLinkedGig(venue, 'past', throwOnError));
 }
 
 // Datetime of the venue's earliest linked upcoming gig (attached nextGig, else
 // venueId match, else name match), or undefined when none is found.
-export async function findNextGigDatetime(venue: VenueDoc): Promise<Date | string | undefined> {
+export async function findNextGigDatetime(venue: VenueDoc, throwOnError = false): Promise<Date | string | undefined> {
   const attached = venue.nextGig?.datetime;
   if (attached) {
     const time = new Date(attached).getTime();
     if (!Number.isNaN(time) && time >= Date.now()) return attached;
   }
-  return (await findLinkedGig(venue, 'upcoming'))?.datetime || undefined;
+  return (await findLinkedGig(venue, 'upcoming', throwOnError))?.datetime || undefined;
 }
 
-export async function hasLinkedPastGig(venue: VenueDoc): Promise<boolean> {
+export async function hasLinkedPastGig(venue: VenueDoc, throwOnError = false): Promise<boolean> {
   if (hasAttachedPastGig(venue as Record<string, unknown>)) return true;
-  return queryLinkedPastGig(venue);
+  return queryLinkedPastGig(venue, throwOnError);
 }
 
 export function checkApprovalsChanged(
@@ -1402,10 +1426,14 @@ class OutreachController extends Controller {
   // the retired relationshipStage pin, or prior outreach status. A venue with a
   // linked past gig is `returning` (even with a future gig too); otherwise one
   // with a linked upcoming gig is `upcoming`; everything else is `cold`.
-  async resolveStageInfo(venue: VenueDoc): Promise<{ stage: RelationshipStage; nextGigDate?: string }> { // eslint-disable-line class-methods-use-this
-    const next = await findNextGigDatetime(venue);
+  async resolveStageInfo(
+    venue: VenueDoc,
+    opts: { throwOnError?: boolean } = {},
+  ): Promise<{ stage: RelationshipStage; nextGigDate?: string }> { // eslint-disable-line class-methods-use-this
+    const throwOnError = opts.throwOnError ?? false;
+    const next = await findNextGigDatetime(venue, throwOnError);
     const nextGigDate = next ? formatNextGigDate(next) : undefined;
-    if (await hasLinkedPastGig(venue)) return { stage: 'returning', nextGigDate };
+    if (await hasLinkedPastGig(venue, throwOnError)) return { stage: 'returning', nextGigDate };
     return { stage: nextGigDate ? 'upcoming' : 'cold', nextGigDate };
   }
 
@@ -1417,13 +1445,13 @@ class OutreachController extends Controller {
   // templates with no stage set. A `returning` or `upcoming` request with no
   // variant of that stage yet falls back to the cold template, so sends never
   // break before the copy is authored. A second pitch must have its own copy:
-  // never fall back to the first pitch when that template is missing.
+  // never fall back to another follow-up or to the first pitch when missing.
   async findTemplate(type: string, stage: RelationshipStage): Promise<TemplateDoc | null> { // eslint-disable-line class-methods-use-this
     const coldMatch = { type, active: true, $or: [{ stage: 'cold' }, { stage: { $exists: false } }, { stage: null }] };
     if (stage !== 'cold') {
       const staged = await templateModel.findOne({ type, active: true, stage }) as unknown as TemplateDoc | null;
       if (staged) return formatTemplate(staged as unknown as Record<string, unknown>) as unknown as TemplateDoc;
-      if (stage === 'second-pitch') return null;
+      if (SECOND_PITCH_STAGES.has(stage)) return null;
     }
     const cold = await templateModel.findOne(coldMatch) as unknown as TemplateDoc | null;
     return cold ? (formatTemplate(cold as unknown as Record<string, unknown>) as unknown as TemplateDoc) : null;
@@ -1507,15 +1535,16 @@ class OutreachController extends Controller {
     let nextGigDate: string | undefined;
     let stage: RelationshipStage;
     try {
-      const info = await this.resolveStageInfo(venue);
-      stage = pitchState.lastPitchAt === null ? info.stage : 'second-pitch';
+      const isSecondPitch = pitchState.lastPitchAt !== null;
+      const info = await this.resolveStageInfo(venue, { throwOnError: isSecondPitch });
+      stage = isSecondPitch ? FOLLOW_UP_STAGE[info.stage] : info.stage;
       nextGigDate = info.nextGigDate;
       template = await this.findTemplate(type, stage);
     } catch (e) {
       return { error: { status: 500, message: (e as Error).message, venueName } };
     }
     if (!template) {
-      const stageName = stage === 'second-pitch' ? 'second-pitch ' : '';
+      const stageName = SECOND_PITCH_STAGES.has(stage) ? `${stage} ` : '';
       return { error: { status: 400, message: `no active ${stageName}template for type ${type}`, venueName } };
     }
 
