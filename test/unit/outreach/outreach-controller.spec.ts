@@ -463,19 +463,46 @@ describe('Outreach Controller (#844 batch model)', () => {
 
   describe('template by stage (#848, #1116)', () => {
     describe('second-pitch templates', () => {
+      type FollowUpStage = 'second-pitch' | 'second-pitch-returning' | 'second-pitch-upcoming';
+      type PitchResult = {
+        error?: { status: number; message: string };
+        template?: { stage?: string };
+        nextGigDate?: string;
+      };
+      const outreachCtrl = controller as unknown as {
+        model: { find: (filter: Record<string, unknown>) => Promise<unknown[]> };
+        findTemplate: (type: string, stage: FollowUpStage) => Promise<unknown>;
+        resolvePitch: (body: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<PitchResult>;
+      };
+
       afterEach(() => { vi.restoreAllMocks(); });
 
-      it.each(['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar'])('loads the active second-pitch copy for %s', async (type) => {
-        const template = validTemplate({ type, stage: 'second-pitch' });
-        const findOne = vi.spyOn(templateModel, 'findOne').mockResolvedValue(template);
-        expect(await c.findTemplate(type, 'second-pitch')).toEqual(template);
-        expect(findOne).toHaveBeenCalledExactlyOnceWith({ type, active: true, stage: 'second-pitch' });
+      it.each<FollowUpStage>([
+        'second-pitch',
+        'second-pitch-returning',
+        'second-pitch-upcoming',
+      ])('loads each active follow-up stage (%s) by type', async (stage) => {
+        for (const type of ['Originals', 'PubFestivalBrewery', 'MidRangeCafeBar']) {
+          const template = validTemplate({ type, stage });
+          const findOne = vi.spyOn(templateModel, 'findOne').mockResolvedValue(
+            template as unknown as Awaited<ReturnType<typeof templateModel.findOne>>,
+          );
+          expect(await outreachCtrl.findTemplate(type, stage)).toEqual(template);
+          expect(findOne).toHaveBeenCalledExactlyOnceWith({ type, active: true, stage });
+          findOne.mockRestore();
+        }
       });
 
-      it('refuses missing second-pitch copy without querying the cold or legacy templates', async () => {
-        const findOne = vi.spyOn(templateModel, 'findOne').mockResolvedValueOnce(null).mockResolvedValue(validTemplate());
-        expect(await c.findTemplate('Originals', 'second-pitch')).toBeNull();
-        expect(findOne).toHaveBeenCalledExactlyOnceWith({ type: 'Originals', active: true, stage: 'second-pitch' });
+      it.each<FollowUpStage>([
+        'second-pitch',
+        'second-pitch-returning',
+        'second-pitch-upcoming',
+      ])('refuses missing %s copy without querying cold, first-pitch, or legacy templates', async (stage) => {
+        const findOne = vi.spyOn(templateModel, 'findOne')
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue(validTemplate() as unknown as Awaited<ReturnType<typeof templateModel.findOne>>);
+        expect(await outreachCtrl.findTemplate('Originals', stage)).toBeNull();
+        expect(findOne).toHaveBeenCalledExactlyOnceWith({ type: 'Originals', active: true, stage });
       });
 
       it('names the missing type and stage in the refusal and sends nothing', async () => {
@@ -502,10 +529,152 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(context.error).toBeUndefined();
       });
 
-      it('propagates lookup failures instead of falling back to another stage', async () => {
+      it.each<FollowUpStage>([
+        'second-pitch',
+        'second-pitch-returning',
+        'second-pitch-upcoming',
+      ])('propagates %s template lookup failures instead of falling back to another stage', async (stage) => {
         const findOne = vi.spyOn(templateModel, 'findOne').mockRejectedValue(new Error('template lookup unavailable'));
-        await expect(c.findTemplate('Originals', 'second-pitch')).rejects.toThrow('template lookup unavailable');
+        await expect(outreachCtrl.findTemplate('Originals', stage)).rejects.toThrow('template lookup unavailable');
         expect(findOne).toHaveBeenCalledTimes(1);
+      });
+
+      describe('second-pitch stage derivation from linked gigs (#1263)', () => {
+        const priorPitch = (venueId: string) => ({
+          venueId,
+          status: 'sent',
+          sentAt: new Date(Date.now() - 8 * 86400000),
+        });
+
+        const pastGigDate = new Date('2025-02-01T20:00:00.000Z');
+        const upcomingGigDate = new Date(Date.now() + 14 * 86400000);
+
+        const stubFollowUpVenue = (venueType = 'Originals') => {
+          const venue = validVenue({ name: 'The Spot on Kirk', venueType });
+          const venueId = String(venue._id);
+          vi.spyOn(venueModel, 'findById').mockResolvedValue(
+            venue as unknown as Awaited<ReturnType<typeof venueModel.findById>>,
+          );
+          vi.spyOn(outreachCtrl.model, 'find').mockResolvedValue([priorPitch(venueId)]);
+          return venue;
+        };
+
+        const stubVenueGigs = (venueId: string, venueGigs: Array<{ venueId: string; datetime: Date }>) => {
+          vi.spyOn(gigModel, 'find').mockImplementation(((filter: { venueId?: string | null; datetime?: { $lt?: Date; $gte?: Date } }) => {
+            if (filter.venueId !== venueId) return Promise.resolve([]);
+            const matched = venueGigs.filter((g) => (
+              filter.datetime?.$lt ? g.datetime.getTime() < Date.now() : g.datetime.getTime() >= Date.now()
+            ));
+            return Promise.resolve(matched);
+          }) as unknown as typeof gigModel.find);
+        };
+
+        it.each<{
+          label: string;
+          gigs: (venueId: string) => Array<{ venueId: string; datetime: Date }>;
+          expectedStage: FollowUpStage;
+          expectNextGig: boolean;
+        }>([
+          {
+            label: 'past gig only -> second-pitch-returning',
+            gigs: (venueId: string) => [{ venueId, datetime: pastGigDate }],
+            expectedStage: 'second-pitch-returning',
+            expectNextGig: false,
+          },
+          {
+            label: 'past and upcoming gigs -> second-pitch-returning',
+            gigs: (venueId: string) => [
+              { venueId, datetime: pastGigDate },
+              { venueId, datetime: upcomingGigDate },
+            ],
+            expectedStage: 'second-pitch-returning',
+            expectNextGig: true,
+          },
+          {
+            label: 'upcoming gig only -> second-pitch-upcoming',
+            gigs: (venueId: string) => [{ venueId, datetime: upcomingGigDate }],
+            expectedStage: 'second-pitch-upcoming',
+            expectNextGig: true,
+          },
+          {
+            label: 'no linked gig -> second-pitch',
+            gigs: () => [],
+            expectedStage: 'second-pitch',
+            expectNextGig: false,
+          },
+        ])('selects follow-up stage when $label', async ({ gigs, expectedStage, expectNextGig }) => {
+          const venue = stubFollowUpVenue('PubFestivalBrewery');
+          stubVenueGigs(String(venue._id), gigs(String(venue._id)));
+          const expectedTemplate = validTemplate({ type: 'PubFestivalBrewery', stage: expectedStage });
+          const findOne = vi.spyOn(templateModel, 'findOne').mockResolvedValue(
+            expectedTemplate as unknown as Awaited<ReturnType<typeof templateModel.findOne>>,
+          );
+
+          const context = await outreachCtrl.resolvePitch({ venueId: String(venue._id), targetWeekend: VALID_WEEKEND });
+          expect(context.error).toBeUndefined();
+          expect(findOne).toHaveBeenCalledExactlyOnceWith({ type: 'PubFestivalBrewery', active: true, stage: expectedStage });
+          expect(context.template).toMatchObject({ stage: expectedStage });
+          if (expectNextGig) expect(context.nextGigDate).toBeTruthy();
+          else expect(context.nextGigDate).toBeUndefined();
+        });
+
+        it.each<{
+          stage: FollowUpStage;
+          venueType: string;
+          gigs: (venueId: string) => Array<{ venueId: string; datetime: Date }>;
+        }>([
+          {
+            stage: 'second-pitch-returning',
+            venueType: 'Originals',
+            gigs: (venueId: string) => [{ venueId, datetime: pastGigDate }],
+          },
+          {
+            stage: 'second-pitch-upcoming',
+            venueType: 'PubFestivalBrewery',
+            gigs: (venueId: string) => [{ venueId, datetime: upcomingGigDate }],
+          },
+          {
+            stage: 'second-pitch',
+            venueType: 'MidRangeCafeBar',
+            gigs: () => [],
+          },
+        ])('refuses with venue type and missing $stage stage when follow-up template is absent', async ({ stage, venueType, gigs }) => {
+          const venue = stubFollowUpVenue(venueType);
+          stubVenueGigs(String(venue._id), gigs(String(venue._id)));
+          const findOne = vi.spyOn(templateModel, 'findOne').mockResolvedValueOnce(null).mockResolvedValue(
+            validTemplate({ type: venueType, stage: 'cold' }) as unknown as Awaited<ReturnType<typeof templateModel.findOne>>,
+          );
+
+          const context = await outreachCtrl.resolvePitch({ venueId: String(venue._id), targetWeekend: VALID_WEEKEND });
+          expect(context.error).toMatchObject({
+            status: 400,
+            message: `no active ${stage} template for type ${venueType}`,
+          });
+          expect(findOne).toHaveBeenCalledExactlyOnceWith({ type: venueType, active: true, stage });
+          expect(sendMail).not.toHaveBeenCalled();
+        });
+
+        it('500s when gig lookup throws on a follow-up instead of falling back to second-pitch', async () => {
+          const venue = stubFollowUpVenue('Originals');
+          vi.spyOn(gigModel, 'find').mockRejectedValue(new Error('gig query timeout'));
+          const findOne = vi.spyOn(templateModel, 'findOne');
+
+          const context = await outreachCtrl.resolvePitch({ venueId: String(venue._id), targetWeekend: VALID_WEEKEND });
+          expect(context.error).toMatchObject({ status: 500, message: 'gig query timeout' });
+          expect(findOne).not.toHaveBeenCalled();
+          expect(sendMail).not.toHaveBeenCalled();
+        });
+
+        it('500s when follow-up template lookup throws instead of falling back to another stage', async () => {
+          const venue = stubFollowUpVenue('Originals');
+          stubVenueGigs(String(venue._id), [{ venueId: String(venue._id), datetime: pastGigDate }]);
+          const findOne = vi.spyOn(templateModel, 'findOne').mockRejectedValue(new Error('template db down'));
+
+          const context = await outreachCtrl.resolvePitch({ venueId: String(venue._id), targetWeekend: VALID_WEEKEND });
+          expect(context.error).toMatchObject({ status: 500, message: 'template db down' });
+          expect(findOne).toHaveBeenCalledExactlyOnceWith({ type: 'Originals', active: true, stage: 'second-pitch-returning' });
+          expect(sendMail).not.toHaveBeenCalled();
+        });
       });
 
       const secondPitch = () => validTemplate({
