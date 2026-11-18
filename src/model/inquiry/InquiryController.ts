@@ -2,6 +2,7 @@ import nodemailer, { Transporter } from 'nodemailer';
 import { Request, Response } from 'express';
 import Debug from 'debug';
 import { DEFAULT_ARTIST, normalizeArtist } from '#src/lib/artist.js';
+import { isAllowedOrigin, readStaticOrigins } from '#src/lib/cors.js';
 import { extractCustomerEmail, formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
 import {
   extractMessage,
@@ -118,9 +119,12 @@ class InquiryController {
     debug(req.body);
     const body = (req.body || {}) as Record<string, unknown>;
 
-    // Check 2: Known form — missing or unrecognized form drops silently.
+    // Check 2: Known form and site — missing/unrecognized form, or missing/disallowed Origin, drops silently.
     const form = parseKnownForm(body.form);
     if (!form) return res.status(200).json({ message: 'email sent' });
+    if (!isAllowedOrigin(req.headers?.origin, readStaticOrigins(), false)) {
+      return res.status(200).json({ message: 'email sent' });
+    }
 
     // Check 3: Hidden trap field — any value in `website` drops silently.
     if (hasTrapValue(body.website)) return res.status(200).json({ message: 'email sent' });
