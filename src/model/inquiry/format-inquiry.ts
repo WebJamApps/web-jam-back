@@ -63,7 +63,20 @@ function venueFields(body: InquiryBody, venue?: VenuePlaceLookup): Array<[string
       : ['Venue address', 'not verified (lookup unavailable)']];
   }
   const address = str(body.venueAddress);
-  return address ? [['Venue Address (typed by customer)', address]] : [];
+  if (!address) return [];
+  if (venue?.status === 'resolved') {
+    return [
+      ['Venue Address', venue.formattedAddress],
+      ['Venue Address (typed by customer)', address],
+    ];
+  }
+  if (venue?.status === 'unavailable') {
+    return [
+      ['Venue address', 'not verified (lookup unavailable)'],
+      ['Venue Address (typed by customer)', address],
+    ];
+  }
+  return [['Venue Address (typed by customer)', address]];
 }
 
 // Order fields should appear in the email body.
