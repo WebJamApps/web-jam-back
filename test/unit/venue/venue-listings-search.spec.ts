@@ -264,6 +264,7 @@ describe('Listings Copy Search & Retired Google Routes (#1217)', () => {
     it('returns [] with no database read when q is empty or under two characters', async () => {
       const findOneSpy = vi.spyOn(MapListing, 'findOne');
       const findSpy = vi.spyOn(MapListing, 'find');
+      const aggregateSpy = vi.spyOn(MapListing, 'aggregate');
 
       for (const query of ['', 'a', '   ']) {
         // eslint-disable-next-line no-await-in-loop
@@ -282,6 +283,7 @@ describe('Listings Copy Search & Retired Google Routes (#1217)', () => {
 
       expect(findOneSpy).not.toHaveBeenCalled();
       expect(findSpy).not.toHaveBeenCalled();
+      expect(aggregateSpy).not.toHaveBeenCalled();
     });
 
     it('returns 503 when the listings copy has never been loaded (empty or lock doc only)', async () => {
@@ -387,6 +389,115 @@ describe('Listings Copy Search & Retired Google Routes (#1217)', () => {
         .set(adminHeaders());
       expect(obrien.status).toBe(200);
       expect((obrien.body as Array<{ listingId: string }>).map((i) => i.listingId)).toEqual(['ov-obrien']);
+    });
+
+    it('ranks the best match first even when over 100 matching listings are inserted ahead of it', async () => {
+      const fillerPrefix = Array.from({ length: 65 }, (_, i) => ({
+        listingId: `ov-prefix-filler-${i}`,
+        name: `Oakridge Tavern Number ${String(i).padStart(2, '0')}`,
+        street: `${i + 1} Oak St`,
+        city: 'Roanoke',
+        state: 'VA',
+        zipCode: '24011',
+        kind: 'bar',
+        location: { type: 'Point', coordinates: [-79.94, 37.27] },
+        release: '2026-10-21.0',
+        downloadedAt: sampleNow,
+      }));
+      const exactPrefixLast = {
+        listingId: 'ov-prefix-exact-last',
+        name: 'Oakridge',
+        street: '999 Oak St',
+        city: 'Roanoke',
+        state: 'VA',
+        zipCode: '24011',
+        kind: 'bar',
+        location: { type: 'Point', coordinates: [-79.94, 37.27] },
+        release: '2026-10-21.0',
+        downloadedAt: sampleNow,
+      };
+
+      const fillerWords = Array.from({ length: 115 }, (_, i) => ({
+        listingId: `ov-word-filler-${i}`,
+        name: `Northside Cedar Venue ${String(i).padStart(3, '0')}`,
+        street: `${i + 1} Cedar Ave`,
+        city: 'Blacksburg',
+        state: 'VA',
+        zipCode: '24060',
+        kind: 'bar',
+        location: { type: 'Point', coordinates: [-80.41, 37.22] },
+        release: '2026-10-21.0',
+        downloadedAt: sampleNow,
+      }));
+      const bestWordLast = {
+        listingId: 'ov-word-best-last',
+        name: 'Cedar Blacksburg Lounge',
+        street: '500 Main St',
+        city: 'Salem',
+        state: 'VA',
+        zipCode: '24153',
+        kind: 'lounge',
+        location: { type: 'Point', coordinates: [-80.05, 37.29] },
+        release: '2026-10-21.0',
+        downloadedAt: sampleNow,
+      };
+
+      await MapListing.insertMany([...fillerPrefix, exactPrefixLast, ...fillerWords, bestWordLast]);
+
+      const prefixRes = await request(app)
+        .get('/venue/listings/search')
+        .query({ q: 'oakridge' })
+        .set(adminHeaders());
+      expect(prefixRes.status).toBe(200);
+      const prefixItems = prefixRes.body as Array<{ listingId: string }>;
+      expect(prefixItems).toHaveLength(5);
+      expect(prefixItems[0].listingId).toBe('ov-prefix-exact-last');
+
+      const wordRes = await request(app)
+        .get('/venue/listings/search')
+        .query({ q: 'cedar blacksburg' })
+        .set(adminHeaders());
+      expect(wordRes.status).toBe(200);
+      const wordItems = wordRes.body as Array<{ listingId: string }>;
+      expect(wordItems).toHaveLength(5);
+      expect(wordItems[0].listingId).toBe('ov-word-best-last');
+    });
+
+    it('awards word-boundary bonus when a word matches mid-word first and standalone later', async () => {
+      await MapListing.insertMany([
+        {
+          listingId: 'ov-rambar-short',
+          name: 'Rambar X',
+          street: '10 Main St',
+          city: 'Roanoke',
+          state: 'VA',
+          zipCode: '24011',
+          kind: 'bar',
+          location: { type: 'Point', coordinates: [-79.94, 37.27] },
+          release: '2026-10-21.0',
+          downloadedAt: sampleNow,
+        },
+        {
+          listingId: 'ov-rambar-bar',
+          name: 'Rambar Bar',
+          street: '12 Main St',
+          city: 'Roanoke',
+          state: 'VA',
+          zipCode: '24011',
+          kind: 'bar',
+          location: { type: 'Point', coordinates: [-79.94, 37.27] },
+          release: '2026-10-21.0',
+          downloadedAt: sampleNow,
+        },
+      ]);
+
+      const r = await request(app)
+        .get('/venue/listings/search')
+        .query({ q: 'bar' })
+        .set(adminHeaders());
+      expect(r.status).toBe(200);
+      const items = r.body as Array<{ listingId: string }>;
+      expect(items.map((i) => i.listingId)).toEqual(['ov-rambar-bar', 'ov-the-r-1', 'ov-rambar-short']);
     });
   });
 

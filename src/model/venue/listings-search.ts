@@ -1,3 +1,4 @@
+import type { PipelineStage } from 'mongoose';
 import MapListing, { type MapListingRecord } from './map-listing-schema.js';
 import { MAP_LISTING_LOCK_ID } from './map-listing-refresh.js';
 
@@ -54,48 +55,138 @@ function toSearchItem(doc: MapListingRecord): VenueListingSearchItem {
   };
 }
 
-function wordBoundaryHit(haystack: string, word: string): boolean {
-  const idx = haystack.indexOf(word);
-  if (idx === -1) return false;
-  return idx === 0 || !/[a-z0-9]/.test(haystack.charAt(idx - 1));
+function buildPrefixPipeline(escapedQuery: string): PipelineStage[] {
+  return [
+    {
+      $match: {
+        listingId: { $ne: MAP_LISTING_LOCK_ID },
+        name: { $regex: `^${escapedQuery}`, $options: 'i' },
+      },
+    },
+    {
+      $addFields: {
+        _isExact: {
+          $cond: [
+            { $regexMatch: { input: { $ifNull: ['$name', ''] }, regex: `^${escapedQuery}$`, options: 'i' } },
+            0,
+            1,
+          ],
+        },
+        _nameLen: { $strLenCP: { $ifNull: ['$name', ''] } },
+        _nameLower: { $toLower: { $ifNull: ['$name', ''] } },
+      },
+    },
+    {
+      $sort: {
+        _isExact: 1,
+        _nameLen: 1,
+        _nameLower: 1,
+        name: 1,
+        listingId: 1,
+      },
+    },
+    { $limit: LISTINGS_SEARCH_LIMIT },
+    { $project: SEARCH_PROJECTION },
+  ];
 }
 
-function compareByPrefixMatch(a: MapListingRecord, b: MapListingRecord, queryLower: string): number {
-  const aExact = a.name.toLowerCase() === queryLower ? 0 : 1;
-  const bExact = b.name.toLowerCase() === queryLower ? 0 : 1;
-  if (aExact !== bExact) return aExact - bExact;
-  if (a.name.length !== b.name.length) return a.name.length - b.name.length;
-  return a.name.localeCompare(b.name) || a.listingId.localeCompare(b.listingId);
+function buildFieldWordScore(
+  fieldExpr: string | Record<string, unknown>,
+  pattern: string,
+  boundaryRegex: string,
+  basePoints: number,
+  boundaryPoints: number,
+  fallbackExpr: number | Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    $cond: [
+      { $regexMatch: { input: fieldExpr, regex: pattern, options: 'i' } },
+      {
+        $cond: [
+          { $regexMatch: { input: fieldExpr, regex: boundaryRegex, options: 'i' } },
+          basePoints + boundaryPoints,
+          basePoints,
+        ],
+      },
+      fallbackExpr,
+    ],
+  };
 }
 
-function wordMatchScore(doc: MapListingRecord, wordsLower: string[], queryLower: string): number {
-  const nameLower = doc.name.toLowerCase();
-  const cityLower = (doc.city || '').toLowerCase();
-  let score = 0;
+function buildWordPipeline(
+  escapedQuery: string,
+  words: string[],
+  seenIds: ReadonlySet<string>,
+  limit: number,
+): PipelineStage[] {
+  const wordClauses = words.map((word) => {
+    const pattern = escapeRegexLiteral(word);
+    return {
+      $or: [
+        { name: { $regex: pattern, $options: 'i' } },
+        { city: { $regex: pattern, $options: 'i' } },
+      ],
+    };
+  });
 
-  if (nameLower.includes(queryLower)) score += 100;
-  for (const w of wordsLower) {
-    if (nameLower.includes(w)) {
-      score += 10;
-      if (wordBoundaryHit(nameLower, w)) score += 5;
-    } else if (cityLower.includes(w)) {
-      score += 3;
-      if (wordBoundaryHit(cityLower, w)) score += 2;
-    }
+  const nameField = { $ifNull: ['$name', ''] };
+  const cityField = { $ifNull: ['$city', ''] };
+
+  const wordScoreTerms: Record<string, unknown>[] = [
+    {
+      $cond: [
+        { $regexMatch: { input: nameField, regex: escapedQuery, options: 'i' } },
+        100,
+        0,
+      ],
+    },
+    ...words.map((word) => {
+      const pattern = escapeRegexLiteral(word);
+      const boundaryRegex = `(?:^|[^a-z0-9])${pattern}`;
+      const cityScore = buildFieldWordScore(cityField, pattern, boundaryRegex, 3, 2, 0);
+      return buildFieldWordScore(nameField, pattern, boundaryRegex, 10, 5, cityScore);
+    }),
+  ];
+
+  return [
+    {
+      $match: {
+        listingId: { $nin: [MAP_LISTING_LOCK_ID, ...seenIds] },
+        $and: wordClauses,
+      },
+    },
+    {
+      $addFields: {
+        _score: { $add: wordScoreTerms },
+        _nameLen: { $strLenCP: nameField },
+        _nameLower: { $toLower: nameField },
+      },
+    },
+    {
+      $sort: {
+        _score: -1,
+        _nameLen: 1,
+        _nameLower: 1,
+        name: 1,
+        listingId: 1,
+      },
+    },
+    { $limit: limit },
+    { $project: SEARCH_PROJECTION },
+  ];
+}
+
+function appendUniqueItems(
+  results: VenueListingSearchItem[],
+  seen: Set<string>,
+  docs: MapListingRecord[],
+): void {
+  for (const doc of docs) {
+    if (results.length >= LISTINGS_SEARCH_LIMIT) return;
+    if (seen.has(doc.listingId)) continue;
+    seen.add(doc.listingId);
+    results.push(toSearchItem(doc));
   }
-  return score;
-}
-
-function compareByWordScore(
-  a: MapListingRecord,
-  b: MapListingRecord,
-  wordsLower: string[],
-  queryLower: string,
-): number {
-  const scoreDiff = wordMatchScore(b, wordsLower, queryLower) - wordMatchScore(a, wordsLower, queryLower);
-  if (scoreDiff !== 0) return scoreDiff;
-  if (a.name.length !== b.name.length) return a.name.length - b.name.length;
-  return a.name.localeCompare(b.name) || a.listingId.localeCompare(b.listingId);
 }
 
 export async function searchVenueListings(rawQuery: string): Promise<VenueListingsSearchOutcome> {
@@ -113,66 +204,22 @@ export async function searchVenueListings(rawQuery: string): Promise<VenueListin
     }
 
     const escapedQuery = escapeRegexLiteral(trimmed);
-    const prefixDocs = await MapListing.find(
-      {
-        listingId: { $ne: MAP_LISTING_LOCK_ID },
-        name: { $regex: `^${escapedQuery}`, $options: 'i' },
-      },
-      SEARCH_PROJECTION,
-    )
-      .limit(50)
-      .lean()
-      .exec() as unknown as MapListingRecord[];
-
-    const queryLower = trimmed.toLowerCase();
-    const sortedPrefix = [...prefixDocs].sort((a, b) => compareByPrefixMatch(a, b, queryLower));
+    const prefixDocs = await MapListing.aggregate<MapListingRecord>(buildPrefixPipeline(escapedQuery)).exec();
 
     const results: VenueListingSearchItem[] = [];
     const seen = new Set<string>();
-    for (const doc of sortedPrefix) {
-      if (!seen.has(doc.listingId)) {
-        seen.add(doc.listingId);
-        results.push(toSearchItem(doc));
-        if (results.length >= LISTINGS_SEARCH_LIMIT) {
-          return { status: 'ok', items: results };
-        }
-      }
+    appendUniqueItems(results, seen, prefixDocs);
+    if (results.length >= LISTINGS_SEARCH_LIMIT) {
+      return { status: 'ok', items: results };
     }
 
     const words = trimmed.split(/\s+/).filter(Boolean);
-    const wordClauses = words.map((word) => {
-      const pattern = escapeRegexLiteral(word);
-      return {
-        $or: [
-          { name: { $regex: pattern, $options: 'i' } },
-          { city: { $regex: pattern, $options: 'i' } },
-        ],
-      };
-    });
+    const remaining = LISTINGS_SEARCH_LIMIT - results.length;
+    const wordDocs = await MapListing.aggregate<MapListingRecord>(
+      buildWordPipeline(escapedQuery, words, seen, remaining),
+    ).exec();
 
-    const wordDocs = await MapListing.find(
-      {
-        listingId: { $ne: MAP_LISTING_LOCK_ID },
-        $and: wordClauses,
-      },
-      SEARCH_PROJECTION,
-    )
-      .limit(100)
-      .lean()
-      .exec() as unknown as MapListingRecord[];
-
-    const wordsLower = words.map((w) => w.toLowerCase());
-    const sortedWords = [...wordDocs].sort((a, b) => compareByWordScore(a, b, wordsLower, queryLower));
-
-    for (const doc of sortedWords) {
-      if (!seen.has(doc.listingId)) {
-        seen.add(doc.listingId);
-        results.push(toSearchItem(doc));
-        if (results.length >= LISTINGS_SEARCH_LIMIT) {
-          break;
-        }
-      }
-    }
+    appendUniqueItems(results, seen, wordDocs);
 
     return { status: 'ok', items: results };
   } catch {
