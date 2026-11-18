@@ -87,10 +87,3 @@ export async function searchVenueAddress(addressQuery: string, apiKey?: string):
     return { status: 'unavailable' };
   }
 }
-
-// Address components are retained for the booking-address check. This lookup
-// simplifies not-found to unavailable for email formatting compatibility (#1173).
-export async function lookupVenuePlace(placeId: string, apiKey?: string): Promise<VenuePlaceLookup> {
-  const result = await verifyVenuePlace(placeId, apiKey);
-  return result.status === 'resolved' ? result : { status: 'unavailable' };
-}

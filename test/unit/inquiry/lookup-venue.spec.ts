@@ -1,73 +1,9 @@
 import { vi } from 'vitest';
 import {
   hasStreetAddress,
-  lookupVenuePlace,
   searchVenueAddress,
   verifyVenuePlace,
 } from '#src/model/inquiry/lookup-venue.js';
-
-describe('lookupVenuePlace', () => {
-  const fetchMock = vi.fn<typeof fetch>();
-
-  beforeEach(() => vi.stubGlobal('fetch', fetchMock));
-  afterEach(() => vi.unstubAllGlobals());
-
-  it('requests only the address fields and retains components for the later address check', async () => {
-    const addressComponents = [{ longText: '123', types: ['street_number'] }];
-    fetchMock.mockResolvedValue(Response.json({ formattedAddress: ' 123 Main St ', addressComponents }));
-    const timeout = vi.spyOn(AbortSignal, 'timeout');
-
-    expect(await lookupVenuePlace('place/with ?characters', 'artist-test-key')).toEqual({
-      status: 'resolved', formattedAddress: '123 Main St', addressComponents,
-    });
-    expect(fetchMock).toHaveBeenCalledWith('https://places.googleapis.com/v1/places/place%2Fwith%20%3Fcharacters', {
-      method: 'GET',
-      headers: {
-        'X-Goog-Api-Key': 'artist-test-key',
-        'X-Goog-FieldMask': 'formattedAddress,addressComponents',
-      },
-      signal: expect.any(AbortSignal),
-    });
-    expect(timeout).toHaveBeenCalledWith(5000);
-    timeout.mockRestore();
-  });
-
-  it('resolves an address without enforcing street components yet', async () => {
-    fetchMock.mockResolvedValue(Response.json({ formattedAddress: 'Salem, VA' }));
-    expect(await lookupVenuePlace('city', 'artist-test-key')).toEqual({
-      status: 'resolved', formattedAddress: 'Salem, VA', addressComponents: [],
-    });
-  });
-
-  it.each([undefined, '', '   '])('skips Google without a usable key (%s)', async (key) => {
-    expect(await lookupVenuePlace('place-id', key)).toEqual({ status: 'unavailable' });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it.each([403, 404, 429, 500])('treats HTTP %s as unavailable', async (status) => {
-    fetchMock.mockResolvedValue(new Response(null, { status }));
-    expect(await lookupVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
-  });
-
-  it.each([null, {}, { formattedAddress: '' }, { formattedAddress: '  ' }, { formattedAddress: 123 }])(
-    'treats an unresolved response (%j) as unavailable', async (data) => {
-      fetchMock.mockResolvedValue(Response.json(data));
-      expect(await lookupVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
-    },
-  );
-
-  it('treats invalid JSON as unavailable', async () => {
-    fetchMock.mockResolvedValue(new Response('invalid JSON'));
-    expect(await lookupVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
-  });
-
-  it.each([new Error('network error'), new DOMException('timed out', 'TimeoutError')])(
-    'treats a failed request (%s) as unavailable', async (error) => {
-      fetchMock.mockRejectedValue(error);
-      expect(await lookupVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
-    },
-  );
-});
 
 describe('hasStreetAddress', () => {
   it('requires both street_number and route components', () => {
@@ -87,17 +23,68 @@ describe('verifyVenuePlace', () => {
   beforeEach(() => vi.stubGlobal('fetch', fetchMock));
   afterEach(() => vi.unstubAllGlobals());
 
-  it('distinguishes not-found (404 or empty place) from lookup unavailable (403/500/network)', async () => {
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
-    expect(await verifyVenuePlace('bad-place', 'artist-test-key')).toEqual({ status: 'not-found' });
+  it('requests only the address fields and retains components for the address check', async () => {
+    const addressComponents = [{ longText: '123', types: ['street_number'] }];
+    fetchMock.mockResolvedValue(Response.json({ formattedAddress: ' 123 Main St ', addressComponents }));
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
 
-    fetchMock.mockResolvedValueOnce(Response.json({}));
-    expect(await verifyVenuePlace('empty-place', 'artist-test-key')).toEqual({ status: 'not-found' });
+    expect(await verifyVenuePlace('place/with ?characters', 'artist-test-key')).toEqual({
+      status: 'resolved', formattedAddress: '123 Main St', addressComponents,
+    });
+    expect(fetchMock).toHaveBeenCalledWith('https://places.googleapis.com/v1/places/place%2Fwith%20%3Fcharacters', {
+      method: 'GET',
+      headers: {
+        'X-Goog-Api-Key': 'artist-test-key',
+        'X-Goog-FieldMask': 'formattedAddress,addressComponents',
+      },
+      signal: expect.any(AbortSignal),
+    });
+    expect(timeout).toHaveBeenCalledWith(5000);
+    timeout.mockRestore();
+  });
 
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 403 }));
+  it('resolves a city-level place; street-level enforcement belongs to hasStreetAddress', async () => {
+    fetchMock.mockResolvedValue(Response.json({ formattedAddress: 'Salem, VA' }));
+    expect(await verifyVenuePlace('city', 'artist-test-key')).toEqual({
+      status: 'resolved', formattedAddress: 'Salem, VA', addressComponents: [],
+    });
+  });
+
+  it.each([undefined, '', '   '])('skips Google without a usable key (%s)', async (key) => {
+    expect(await verifyVenuePlace('place-id', key)).toEqual({ status: 'unavailable' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([403, 429, 500])('treats HTTP %s as unavailable', async (status) => {
+    fetchMock.mockResolvedValue(new Response(null, { status }));
     expect(await verifyVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
+  });
 
-    expect(await verifyVenuePlace('place-id', '')).toEqual({ status: 'unavailable' });
+  it.each([null, {}, { formattedAddress: '' }, { formattedAddress: '  ' }, { formattedAddress: 123 }])(
+    'treats an unresolved response (%j) as not-found', async (data) => {
+      fetchMock.mockResolvedValue(Response.json(data));
+      expect(await verifyVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'not-found' });
+    },
+  );
+
+  it('treats invalid JSON as unavailable', async () => {
+    fetchMock.mockResolvedValue(new Response('invalid JSON'));
+    expect(await verifyVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
+  });
+
+  it.each([new Error('network error'), new DOMException('timed out', 'TimeoutError')])(
+    'treats a failed request (%s) as unavailable', async (error) => {
+      fetchMock.mockRejectedValue(error);
+      expect(await verifyVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
+    },
+  );
+
+  it('treats a 404 as not-found and a blank place id as not-found without calling Google', async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
+    expect(await verifyVenuePlace('bad-place', 'artist-test-key')).toEqual({ status: 'not-found' });
+    fetchMock.mockClear();
+    expect(await verifyVenuePlace('   ', 'artist-test-key')).toEqual({ status: 'not-found' });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
