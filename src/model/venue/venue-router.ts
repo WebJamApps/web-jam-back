@@ -10,11 +10,25 @@ import routeUtils from '../../lib/routeUtils.js';
 // (privilege-first, admin-role fallback). web-jam-back#819.
 const router = express.Router();
 
-// Rate limiter for Google Places lookup routes (#1159): at most 60 requests
-// a minute per caller, keyed on the authenticated user ID (sub) derived from
-// the Authorization header so multiple valid tokens and alternate accepted
-// header forms for the same admin share the same bucket (#1160).
-export const placesRateLimiter = rateLimit({
+// Rate limiter for GET /venue/listings/search (#1217): at most 60 requests a
+// minute per caller, keyed directly on the Authorization header so no proxy
+// setting changes.
+export const listingsSearchRateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  keyGenerator: (req) => {
+    const authHeader = req.headers.authorization;
+    return typeof authHeader === 'string' && authHeader.trim() ? authHeader.trim() : 'anonymous';
+  },
+  validate: false,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Rate limiter for Nominatim place discovery (#1219): at most 60 requests a
+// minute per caller, keyed on the authenticated user ID (sub) derived from the
+// Authorization header so multiple tokens for the same admin share one bucket.
+export const discoverPlaceRateLimiter = rateLimit({
   windowMs: 60 * 1000,
   limit: 60,
   keyGenerator: (req) => {
@@ -46,26 +60,18 @@ router.route('/cities')
     void action();
   });
 
-// GET /venue/places/suggest — autocomplete suggestions via Places API (New) (#1159).
-// Registered BEFORE /:id so Express does not read "places" as a venue id.
-router.route('/places/suggest')
-  .get(placesRateLimiter, (req, res) => {
-    const action = routeUtils.makeAction(req, res, 'suggestPlaces', controller, authUtils);
-    void action();
-  });
-
-// GET /venue/places/:placeId — place details via Places API (New) (#1159).
-// Registered BEFORE /:id so Express does not read "places" as a venue id.
-router.route('/places/:placeId')
-  .get(placesRateLimiter, (req, res) => {
-    const action = routeUtils.makeAction(req, res, 'getPlaceDetails', controller, authUtils);
+// GET /venue/listings/search?q=<text> — search the Overture listings copy (#1217).
+// Registered BEFORE /:id so Express does not read "listings" as a venue id.
+router.route('/listings/search')
+  .get(listingsSearchRateLimiter, (req, res) => {
+    const action = routeUtils.makeAction(req, res, 'searchListings', controller, authUtils);
     void action();
   });
 
 // GET /venue/discover/place?q=<text> — turn a place name into a position (#1219).
 // Registered BEFORE /:id so Express does not read "discover" as a venue id.
 router.route('/discover/place')
-  .get(placesRateLimiter, (req, res) => {
+  .get(discoverPlaceRateLimiter, (req, res) => {
     const action = routeUtils.makeAction(req, res, 'discoverPlace', controller, authUtils);
     void action();
   });

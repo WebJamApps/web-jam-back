@@ -792,6 +792,122 @@
         }
       }
     },
+    "/venue/listings/search": {
+      "get": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "searchVenueListings",
+        "summary": "Search cached Overture business listings by venue name and city",
+        "description": "Admin-only lookup returning up to five matching business listings from mapListing (prefix matches first, then word matches across name and city), rate-limited at 60 requests per minute per Authorization header.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to five matching listings (empty list when q is empty or under two characters).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "listingId",
+                      "name",
+                      "street",
+                      "city",
+                      "state",
+                      "zipCode",
+                      "website",
+                      "lat",
+                      "lng"
+                    ],
+                    "properties": {
+                      "listingId": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "street": {
+                        "type": "string"
+                      },
+                      "city": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      },
+                      "zipCode": {
+                        "type": "string"
+                      },
+                      "website": {
+                        "type": "string"
+                      },
+                      "lat": {
+                        "type": "number"
+                      },
+                      "lng": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "description": "Too many requests (over 60 requests within one minute).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Address lookup is unavailable (database read failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Venue listings have not loaded yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/venue/{id}": {
       "parameters": [
         {
