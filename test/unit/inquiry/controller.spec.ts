@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import type { Request, Response } from 'express';
 import InquiryController, { googlePlacesKeyForArtist, senderForArtist } from '#src/model/inquiry/InquiryController.js';
+import { hasValidFormLoadTime, MIN_FORM_FILL_MS } from '#src/model/inquiry/inquiry-checks.js';
 
 // NODE_ENV is 'test' for the whole suite (see test/setup), so sendEmail never
 // hits the real Gmail transporter — it always short-circuits to the 200
@@ -456,7 +457,9 @@ describe('InquiryController.handleInquiry', () => {
       const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
       const now = Date.now();
 
-      for (const bad of [undefined, '1000', Number.NaN, -1, now + 1000, now - 2999]) {
+      // 2000 ms, not MIN_FORM_FILL_MS - 1: the handler reads the clock after this line, so a
+      // value one millisecond under the limit would drift over it and the test would flake.
+      for (const bad of [undefined, '1000', Number.NaN, -1, now + 1000, now - 2000]) {
         const res = mockRes();
         // eslint-disable-next-line no-await-in-loop
         await controller.handleInquiry({
@@ -473,6 +476,15 @@ describe('InquiryController.handleInquiry', () => {
       } as unknown as Request, okRes);
       expect(okRes.statusCode).toBe(200);
       expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('check 4 (speed check): the limit is exactly 3 seconds, judged against a fixed clock', () => {
+      const nowMs = 1_800_000_000_000;
+      expect(MIN_FORM_FILL_MS).toBe(3000);
+      expect(hasValidFormLoadTime(nowMs - 2999, nowMs)).toBe(false);
+      expect(hasValidFormLoadTime(nowMs - 3000, nowMs)).toBe(true);
+      expect(hasValidFormLoadTime(nowMs, nowMs)).toBe(false);
+      expect(hasValidFormLoadTime(nowMs + 1, nowMs)).toBe(false);
     });
 
     it('per-form rule: webjam-homepage skips booking fields, venue check, and sales-pitch check', async () => {
