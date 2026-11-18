@@ -28,6 +28,11 @@ describe('lib/cors', () => {
     expect(isAllowedOrigin('null', [], false)).toBe(false);
   });
 
+  it('does not treat a whitespace-only Origin as missing', () => {
+    expect(isAllowedOrigin(' ', [])).toBe(false);
+    expect(isAllowedOrigin(' ', [], false)).toBe(false);
+  });
+
   it('allows configured static origins', () => {
     expect(isAllowedOrigin('https://jammusic.com', ['https://jammusic.com'])).toBe(true);
   });

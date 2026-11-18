@@ -34,7 +34,7 @@ export function isAllowedOrigin(
   staticOrigins: string[],
   allowMissing = true,
 ): boolean {
-  const normalized = typeof origin === 'string' ? origin.trim() : '';
+  const normalized = typeof origin === 'string' ? origin : '';
   if (!normalized) return allowMissing;
   if (staticOrigins.includes(normalized)) return true;
   if (TIM_ORIGINS.includes(normalized)) return true;
