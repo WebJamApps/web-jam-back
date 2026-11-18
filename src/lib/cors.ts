@@ -26,12 +26,19 @@ export function readStaticOrigins(): string[] {
 }
 
 // True when the given request Origin is permitted.
-export function isAllowedOrigin(origin: string | undefined, staticOrigins: string[]): boolean {
-  // No Origin header (server-to-server, curl, same-origin navigations) — allow.
-  if (!origin) return true;
-  if (staticOrigins.includes(origin)) return true;
-  if (TIM_ORIGINS.includes(origin)) return true;
-  return PAGES_DEV.test(origin);
+// By default (`allowMissing = true`), requests with no Origin header
+// (server-to-server, curl, same-origin navigations) are allowed; callers that
+// require a browser Origin (e.g. POST /inquiry) pass `allowMissing = false`.
+export function isAllowedOrigin(
+  origin: string | null | undefined,
+  staticOrigins: string[],
+  allowMissing = true,
+): boolean {
+  const normalized = typeof origin === 'string' ? origin.trim() : '';
+  if (!normalized) return allowMissing;
+  if (staticOrigins.includes(normalized)) return true;
+  if (TIM_ORIGINS.includes(normalized)) return true;
+  return PAGES_DEV.test(normalized);
 }
 
 export function makeCorsOptions(): CorsOptions {

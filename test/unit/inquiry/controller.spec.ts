@@ -123,10 +123,21 @@ describe('senderForArtist', () => {
 
 describe('InquiryController.handleInquiry', () => {
   const origEnv = { ...process.env };
+  const ALLOWED_ORIGINS = [
+    'https://web-jam.com',
+    'https://www.web-jam.com',
+    'https://joshandmariamusic.com',
+    'https://www.joshandmariamusic.com',
+  ];
+  const DEFAULT_HEADERS = { origin: 'https://web-jam.com' };
   const STREET_COMPONENTS = [
     { longText: '123', types: ['street_number'] },
     { longText: 'Main St', types: ['route'] },
   ];
+
+  beforeEach(() => {
+    process.env.AllowUrl = JSON.stringify({ urls: ALLOWED_ORIGINS });
+  });
 
   function futureDate(): string {
     const d = new Date(Date.now() + 30 * 86_400_000);
@@ -182,6 +193,7 @@ describe('InquiryController.handleInquiry', () => {
     const res = mockRes();
 
     await controller.handleInquiry({
+      headers: DEFAULT_HEADERS,
       body: validBookingBody({
         artist,
         form,
@@ -225,6 +237,7 @@ describe('InquiryController.handleInquiry', () => {
       const res = mockRes();
 
       await controller.handleInquiry({
+        headers: DEFAULT_HEADERS,
         body: validBookingBody({ artist, form, venuePlaceId: 'place-id' }),
       } as unknown as Request, res);
 
@@ -251,6 +264,7 @@ describe('InquiryController.handleInquiry', () => {
     const res = mockRes();
 
     await controller.handleInquiry({
+      headers: DEFAULT_HEADERS,
       body: validBookingBody({ venuePlaceId: '', venueAddress: '123 Main St, Salem VA' }),
     } as unknown as Request, res);
 
@@ -298,6 +312,7 @@ describe('InquiryController.handleInquiry', () => {
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
     await controller.handleInquiry({
+      headers: { origin: 'https://timshermanmusic.com' },
       body: validBookingBody({
         artist: 'tim',
         form: 'tim-booking',
@@ -330,6 +345,7 @@ describe('InquiryController.handleInquiry', () => {
     const controller = new InquiryController();
     const res = mockRes();
     await controller.handleInquiry({
+      headers: { origin: 'https://timshermanmusic.com' },
       body: validBookingBody({
         artist: 'tim', form: 'tim-booking', name: 'John Doe', email: 'john@example.com',
         phone: '555-123-4567', eventDate: futureDate(), message: 'Wedding gig',
@@ -342,6 +358,7 @@ describe('InquiryController.handleInquiry', () => {
     const controller = new InquiryController();
     const res = mockRes();
     await controller.handleInquiry({
+      headers: DEFAULT_HEADERS,
       body: validHomepageBody({ emailaddress: 'yo@yo.com' }),
     } as unknown as Request, res);
     expect(res.statusCode).toBe(200);
@@ -352,6 +369,7 @@ describe('InquiryController.handleInquiry', () => {
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
     await controller.handleInquiry({
+      headers: DEFAULT_HEADERS,
       body: validHomepageBody({ email: '  customer@example.com  ' }),
     } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenCalledWith(
@@ -371,6 +389,7 @@ describe('InquiryController.handleInquiry', () => {
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
     await controller.handleInquiry({
+      headers: DEFAULT_HEADERS,
       body: validHomepageBody({ email: undefined, emailaddress: '  legacy@example.com  ' }),
     } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenCalledWith(
@@ -390,6 +409,7 @@ describe('InquiryController.handleInquiry', () => {
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
     await controller.handleInquiry({
+      headers: DEFAULT_HEADERS,
       body: validHomepageBody({ email: undefined }),
     } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenCalledWith(
@@ -409,6 +429,7 @@ describe('InquiryController.handleInquiry', () => {
     const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
     const res = mockRes();
     await controller.handleInquiry({
+      headers: DEFAULT_HEADERS,
       body: validHomepageBody({ email: '   ', emailaddress: '   ' }),
     } as unknown as Request, res);
     expect(sendEmailSpy).toHaveBeenLastCalledWith(
@@ -430,6 +451,7 @@ describe('InquiryController.handleInquiry', () => {
         const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
         const res = mockRes();
         await controller.handleInquiry({
+          headers: DEFAULT_HEADERS,
           body: validHomepageBody({ form }),
         } as unknown as Request, res);
         expect(res.statusCode).toBe(200);
@@ -438,12 +460,49 @@ describe('InquiryController.handleInquiry', () => {
       },
     );
 
+    it.each([undefined, '', null, 'null', 'https://evil.example.com', 'http://web-jam.com', 'https://web-jam.com.evil.example.com'])(
+      'check 2 (allowed site): silently drops missing or disallowed Origin (%j) with 200 without emailing', async (origin) => {
+        const controller = new InquiryController();
+        const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
+        const res = mockRes();
+        await controller.handleInquiry({
+          headers: origin === undefined ? {} : { origin },
+          body: validHomepageBody(),
+        } as unknown as Request, res);
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toEqual({ message: 'email sent' });
+        expect(sendEmailSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      'https://web-jam.com',
+      'https://www.web-jam.com',
+      'https://joshandmariamusic.com',
+      'https://www.joshandmariamusic.com',
+      'https://timshermanmusic.com',
+      'https://www.timshermanmusic.com',
+      'https://abc123.timshermanmusic.pages.dev',
+    ])('check 2 (allowed site): sends inquiry when Origin is %s', async (origin) => {
+      const controller = new InquiryController();
+      const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
+      const res = mockRes();
+      await controller.handleInquiry({
+        headers: { origin },
+        body: validHomepageBody(),
+      } as unknown as Request, res);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ message: 'email sent' });
+      expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+    });
+
     it.each(['https://spam.example', 'x', ' ', 1, true])(
       'check 3 (hidden trap): silently drops when website holds %j', async (website) => {
         const controller = new InquiryController();
         const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
         const res = mockRes();
         await controller.handleInquiry({
+          headers: DEFAULT_HEADERS,
           body: validHomepageBody({ website }),
         } as unknown as Request, res);
         expect(res.statusCode).toBe(200);
@@ -463,6 +522,7 @@ describe('InquiryController.handleInquiry', () => {
         const res = mockRes();
         // eslint-disable-next-line no-await-in-loop
         await controller.handleInquiry({
+          headers: DEFAULT_HEADERS,
           body: validHomepageBody({ formLoadedAt: bad }),
         } as unknown as Request, res);
         expect(res.statusCode).toBe(200);
@@ -472,6 +532,7 @@ describe('InquiryController.handleInquiry', () => {
 
       const okRes = mockRes();
       await controller.handleInquiry({
+        headers: DEFAULT_HEADERS,
         body: validHomepageBody({ formLoadedAt: now - 3000 }),
       } as unknown as Request, okRes);
       expect(okRes.statusCode).toBe(200);
@@ -495,6 +556,7 @@ describe('InquiryController.handleInquiry', () => {
       const res = mockRes();
 
       await controller.handleInquiry({
+        headers: DEFAULT_HEADERS,
         body: validHomepageBody({
           comments: 'We offer virtual assistants and lead generation. Open for discussion?',
           venuePlaceId: 'should-not-lookup',
@@ -512,11 +574,29 @@ describe('InquiryController.handleInquiry', () => {
       const res = mockRes();
 
       await controller.handleInquiry({
+        headers: DEFAULT_HEADERS,
         body: { form: 'jam-bookus', website: 'bot-filled', formLoadedAt: Date.now() - 10_000 },
       } as unknown as Request, res);
 
       expect(res.statusCode).toBe(200);
       expect(res.body).toEqual({ message: 'email sent' });
+      expect(sendEmailSpy).not.toHaveBeenCalled();
+    });
+
+    it('runs check 2 (allowed site) before check 5 so missing/disallowed Origin on a booking form drops silently (200) even with missing booking fields', async () => {
+      const controller = new InquiryController();
+      const sendEmailSpy = vi.spyOn(controller, 'sendEmail');
+
+      for (const headers of [{}, { origin: 'https://evil.example.com' }]) {
+        const res = mockRes();
+        // eslint-disable-next-line no-await-in-loop
+        await controller.handleInquiry({
+          headers,
+          body: { form: 'jam-bookus', website: '', formLoadedAt: Date.now() - 10_000 },
+        } as unknown as Request, res);
+        expect(res.statusCode).toBe(200);
+        expect(res.body).toEqual({ message: 'email sent' });
+      }
       expect(sendEmailSpy).not.toHaveBeenCalled();
     });
 
@@ -538,6 +618,7 @@ describe('InquiryController.handleInquiry', () => {
       const res = mockRes();
 
       await controller.handleInquiry({
+        headers: DEFAULT_HEADERS,
         body: validBookingBody(overrides),
       } as unknown as Request, res);
 
@@ -568,6 +649,7 @@ describe('InquiryController.handleInquiry', () => {
         const res = mockRes();
         // eslint-disable-next-line no-await-in-loop
         await controller.handleInquiry({
+          headers: DEFAULT_HEADERS,
           body: validBookingBody({ form, artist: form === 'tim-booking' ? 'tim' : undefined, ...venueOverride }),
         } as unknown as Request, res);
         expect(res.statusCode).toBe(400);
@@ -585,6 +667,7 @@ describe('InquiryController.handleInquiry', () => {
       const res = mockRes();
 
       await controller.handleInquiry({
+        headers: DEFAULT_HEADERS,
         body: validBookingBody({ venuePlaceId: '', venueAddress: '106 Eagle Dr, Salem VA' }),
       } as unknown as Request, res);
 
@@ -607,6 +690,7 @@ describe('InquiryController.handleInquiry', () => {
 
       const spamRes = mockRes();
       await controller.handleInquiry({
+        headers: DEFAULT_HEADERS,
         body: validBookingBody({
           comments: 'We offer trained human Virtual Assistants and Lead Generation. Open for discussion?',
         }),
@@ -617,6 +701,7 @@ describe('InquiryController.handleInquiry', () => {
 
       const wineryRes = mockRes();
       await controller.handleInquiry({
+        headers: { origin: 'https://timshermanmusic.com' },
         body: validBookingBody({
           form: 'tim-booking',
           artist: 'tim',
