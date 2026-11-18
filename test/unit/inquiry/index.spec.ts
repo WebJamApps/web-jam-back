@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 import app from '#src/index.js';
 import InquiryController from '#src/model/inquiry/InquiryController.js';
+import { UNVERIFIED_ADDRESS_MESSAGE } from '#src/model/inquiry/inquiry-checks.js';
 import request from '../../helpers/api.js';
 
 const realFetch = globalThis.fetch.bind(globalThis);
@@ -177,6 +178,89 @@ describe('Inquiry Router', () => {
       expect(r.status).toBe(200);
       expect(Array.isArray(r.body)).toBe(true);
     });
+  });
+
+  it.each([
+    { form: 'jam-bookus', artist: undefined, ip: '198.51.100.10' },
+    { form: 'tim-booking', artist: 'tim', ip: '198.51.100.11' },
+  ])('returns 400 with the address message on POST /inquiry for a not-found place ID on $form', async ({ form, artist, ip }) => {
+    process.env.GOOGLE_PLACES_API_KEY = 'default-places-test-key';
+    process.env.TimGooglePlacesApiKey = 'tim-places-test-key';
+    const sendEmailSpy = vi.spyOn(InquiryController.prototype, 'sendEmail');
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.startsWith('https://places.googleapis.com/')) {
+        return Promise.resolve(Response.json({
+          error: { code: 400, message: 'The provided Place ID: abc is not valid.', status: 'INVALID_ARGUMENT' },
+        }, { status: 400 }));
+      }
+      return realFetch(input, init);
+    });
+
+    const future = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
+    const r = await request(app)
+      .post('/inquiry')
+      .set('Origin', 'https://web-jam.com')
+      .set('X-Forwarded-For', ip)
+      .send({
+        form,
+        artist,
+        website: '',
+        formLoadedAt: Date.now() - 10_000,
+        name: 'Jane Smith',
+        email: 'jane@example.com',
+        phone: '555-123-4567',
+        eventDate: future,
+        eventType: 'brewery-winery',
+        venuePlaceId: 'abc',
+        message: 'Checking booking availability.',
+      });
+
+    expect(r.status).toBe(400);
+    expect(r.body).toEqual({ message: UNVERIFIED_ADDRESS_MESSAGE });
+    expect(sendEmailSpy).not.toHaveBeenCalled();
+  });
+
+  it('still delivers on POST /inquiry when Google Places returns HTTP 400 with reason API_KEY_INVALID', async () => {
+    process.env.GOOGLE_PLACES_API_KEY = 'default-places-test-key';
+    const sendEmailSpy = vi.spyOn(InquiryController.prototype, 'sendEmail');
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.startsWith('https://places.googleapis.com/')) {
+        return Promise.resolve(Response.json({
+          error: {
+            code: 400,
+            message: 'API key not valid.',
+            status: 'INVALID_ARGUMENT',
+            details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID' }],
+          },
+        }, { status: 400 }));
+      }
+      return realFetch(input, init);
+    });
+
+    const future = new Date(Date.now() + 14 * 86_400_000).toISOString().slice(0, 10);
+    const r = await request(app)
+      .post('/inquiry')
+      .set('Origin', 'https://web-jam.com')
+      .set('X-Forwarded-For', '198.51.100.12')
+      .send({
+        form: 'jam-bookus',
+        website: '',
+        formLoadedAt: Date.now() - 10_000,
+        name: 'Jane Smith',
+        email: 'jane@example.com',
+        phone: '555-123-4567',
+        eventDate: future,
+        eventType: 'brewery-winery',
+        venuePlaceId: 'valid-place-id',
+        message: 'Checking booking availability.',
+      });
+
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ message: 'email sent' });
+    expect(sendEmailSpy).toHaveBeenCalledTimes(1);
+    expect(sendEmailSpy.mock.calls[0][5]).toContain('Venue address: not verified (lookup unavailable)');
   });
 
   it('should wait unit tests finish before exiting', async () => { // eslint-disable-line vitest/expect-expect

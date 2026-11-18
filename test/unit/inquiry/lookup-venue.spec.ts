@@ -43,6 +43,23 @@ describe('verifyVenuePlace', () => {
     timeout.mockRestore();
   });
 
+  it('resolves HTTP 200 with street_number and route components', async () => {
+    const addressComponents = [
+      { longText: '123', types: ['street_number'] },
+      { longText: 'Main St', types: ['route'] },
+    ];
+    fetchMock.mockResolvedValue(Response.json({
+      formattedAddress: '123 Main St, Salem, VA 24153, USA',
+      addressComponents,
+    }));
+
+    expect(await verifyVenuePlace('valid-place-id', 'artist-test-key')).toEqual({
+      status: 'resolved',
+      formattedAddress: '123 Main St, Salem, VA 24153, USA',
+      addressComponents,
+    });
+  });
+
   it('resolves a city-level place; street-level enforcement belongs to hasStreetAddress', async () => {
     fetchMock.mockResolvedValue(Response.json({ formattedAddress: 'Salem, VA' }));
     expect(await verifyVenuePlace('city', 'artist-test-key')).toEqual({
@@ -57,6 +74,60 @@ describe('verifyVenuePlace', () => {
 
   it.each([403, 429, 500])('treats HTTP %s as unavailable', async (status) => {
     fetchMock.mockResolvedValue(new Response(null, { status }));
+    expect(await verifyVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
+  });
+
+  it.each([
+    ['no details field', { error: { code: 400, message: 'The provided Place ID: abc is not valid.', status: 'INVALID_ARGUMENT' } }],
+    ['empty details array', { error: { code: 400, message: 'The provided Place ID: abc is not valid.', status: 'INVALID_ARGUMENT', details: [] } }],
+    [
+      'LocalizedMessage-only detail',
+      {
+        error: {
+          code: 400,
+          message: 'The provided Place ID: abc is not valid.',
+          status: 'INVALID_ARGUMENT',
+          details: [{ '@type': 'type.googleapis.com/google.rpc.LocalizedMessage', locale: 'en-US', message: 'Invalid place ID' }],
+        },
+      },
+    ],
+  ])('treats HTTP 400 with %s as not-found', async (_label, body) => {
+    fetchMock.mockResolvedValue(Response.json(body, { status: 400 }));
+    expect(await verifyVenuePlace('abc', 'artist-test-key')).toEqual({ status: 'not-found' });
+  });
+
+  it.each([
+    [
+      'reason API_KEY_INVALID',
+      {
+        error: {
+          code: 400,
+          message: 'API key not valid. Please pass a valid API key.',
+          status: 'INVALID_ARGUMENT',
+          details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_INVALID' }],
+        },
+      },
+    ],
+    [
+      'reason API_KEY_EXPIRED',
+      {
+        error: {
+          code: 400,
+          message: 'API key expired. Please renew the API key.',
+          status: 'INVALID_ARGUMENT',
+          details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'API_KEY_EXPIRED' }],
+        },
+      },
+    ],
+    ['null JSON payload', null],
+    ['non-error JSON object', {}],
+  ])('treats HTTP 400 with %s as unavailable', async (_label, body) => {
+    fetchMock.mockResolvedValue(Response.json(body, { status: 400 }));
+    expect(await verifyVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
+  });
+
+  it('treats HTTP 400 with a non-JSON body as unavailable', async () => {
+    fetchMock.mockResolvedValue(new Response('<html>Bad Request</html>', { status: 400 }));
     expect(await verifyVenuePlace('place-id', 'artist-test-key')).toEqual({ status: 'unavailable' });
   });
 

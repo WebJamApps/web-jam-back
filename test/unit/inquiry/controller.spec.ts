@@ -216,7 +216,7 @@ describe('InquiryController.handleInquiry', () => {
     expect(res.body).toEqual({ message: 'email sent' });
   });
 
-  it.each(['no key', 'no Tim key', 'Google error', 'network error', 'timeout', 'malformed JSON'])(
+  it.each(['no key', 'no Tim key', 'Google error', 'API_KEY_INVALID 400', 'network error', 'timeout', 'malformed JSON'])(
     'still delivers with an unavailable venue row for %s', async (scenario) => {
       process.env.GOOGLE_PLACES_API_KEY = 'default-places-test-key';
       process.env.TimGooglePlacesApiKey = 'tim-places-test-key';
@@ -228,6 +228,16 @@ describe('InquiryController.handleInquiry', () => {
         case 'no key': delete process.env.GOOGLE_PLACES_API_KEY; break;
         case 'no Tim key': delete process.env.TimGooglePlacesApiKey; artist = 'tim'; form = 'tim-booking'; break;
         case 'Google error': fetchMock.mockResolvedValue(new Response(null, { status: 403 })); break;
+        case 'API_KEY_INVALID 400':
+          fetchMock.mockResolvedValue(Response.json({
+            error: {
+              code: 400,
+              message: 'API key not valid.',
+              status: 'INVALID_ARGUMENT',
+              details: [{ reason: 'API_KEY_INVALID' }],
+            },
+          }, { status: 400 }));
+          break;
         case 'network error': fetchMock.mockRejectedValue(new Error('network error')); break;
         case 'timeout': fetchMock.mockRejectedValue(new DOMException('timed out', 'TimeoutError')); break;
         default: fetchMock.mockResolvedValue(new Response('invalid JSON')); break;
@@ -627,7 +637,7 @@ describe('InquiryController.handleInquiry', () => {
       expect(sendEmailSpy).not.toHaveBeenCalled();
     });
 
-    it.each(['jam-bookus', 'tim-booking'])('check 6 (address verification): returns 400 for unresolved or city-only address on %s', async (form) => {
+    it.each(['jam-bookus', 'tim-booking'])('check 6 (address verification): returns 400 for unresolved, invalid-place-id 400, or city-only address on %s', async (form) => {
       process.env.GOOGLE_PLACES_API_KEY = 'default-places-test-key';
       process.env.TimGooglePlacesApiKey = 'tim-places-test-key';
       const fetchMock = vi.fn<typeof fetch>()
@@ -636,6 +646,9 @@ describe('InquiryController.handleInquiry', () => {
           addressComponents: [{ longText: 'Salem', types: ['locality'] }],
         }))
         .mockResolvedValueOnce(new Response(null, { status: 404 }))
+        .mockResolvedValueOnce(Response.json({
+          error: { code: 400, message: 'The provided Place ID: abc is not valid.', status: 'INVALID_ARGUMENT' },
+        }, { status: 400 }))
         .mockResolvedValueOnce(Response.json({ places: [] }));
       vi.stubGlobal('fetch', fetchMock);
       const controller = new InquiryController();
@@ -644,6 +657,7 @@ describe('InquiryController.handleInquiry', () => {
       for (const venueOverride of [
         { venuePlaceId: 'city-only' },
         { venuePlaceId: 'missing-id' },
+        { venuePlaceId: 'abc' },
         { venuePlaceId: '', venueAddress: 'Nonexistent venue' },
       ]) {
         const res = mockRes();
