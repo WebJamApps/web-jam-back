@@ -405,7 +405,7 @@ describe('Listings Copy Search & Retired Google Routes (#1217)', () => {
         downloadedAt: sampleNow,
       }));
       const exactPrefixLast = {
-        listingId: 'ov-prefix-exact-last',
+        listingId: 'ov-zz-prefix-exact-last',
         name: 'Oakridge',
         street: '999 Oak St',
         city: 'Roanoke',
@@ -430,8 +430,8 @@ describe('Listings Copy Search & Retired Google Routes (#1217)', () => {
         downloadedAt: sampleNow,
       }));
       const bestWordLast = {
-        listingId: 'ov-word-best-last',
-        name: 'Cedar Blacksburg Lounge',
+        listingId: 'ov-zz-word-best-last',
+        name: 'The Cedar Blacksburg Lounge',
         street: '500 Main St',
         city: 'Salem',
         state: 'VA',
@@ -451,7 +451,7 @@ describe('Listings Copy Search & Retired Google Routes (#1217)', () => {
       expect(prefixRes.status).toBe(200);
       const prefixItems = prefixRes.body as Array<{ listingId: string }>;
       expect(prefixItems).toHaveLength(5);
-      expect(prefixItems[0].listingId).toBe('ov-prefix-exact-last');
+      expect(prefixItems[0].listingId).toBe('ov-zz-prefix-exact-last');
 
       const wordRes = await request(app)
         .get('/venue/listings/search')
@@ -460,7 +460,7 @@ describe('Listings Copy Search & Retired Google Routes (#1217)', () => {
       expect(wordRes.status).toBe(200);
       const wordItems = wordRes.body as Array<{ listingId: string }>;
       expect(wordItems).toHaveLength(5);
-      expect(wordItems[0].listingId).toBe('ov-word-best-last');
+      expect(wordItems[0].listingId).toBe('ov-zz-word-best-last');
     });
 
     it('awards word-boundary bonus when a word matches mid-word first and standalone later', async () => {
