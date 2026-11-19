@@ -19,6 +19,34 @@ describe('formatInquiryEmail', () => {
     expect(text).not.toContain('Untrusted address');
   });
 
+  it('shows Google formatted address alongside typed text when searchText resolves', () => {
+    const { html, text } = formatInquiryEmail({ venueAddress: '123 Main St, Salem' }, undefined, {
+      status: 'resolved', formattedAddress: '123 Main St, Salem, VA 24153, USA', addressComponents: [],
+    });
+    expect(text).toBe([
+      'Venue Address: 123 Main St, Salem, VA 24153, USA',
+      'Venue Address (typed by customer): 123 Main St, Salem',
+    ].join('\n'));
+    expect(html).toContain('>Venue Address</td>');
+    expect(html).toContain('>123 Main St, Salem, VA 24153, USA</td>');
+    expect(html).toContain('>Venue Address (typed by customer)</td>');
+    expect(html).toContain('>123 Main St, Salem</td>');
+  });
+
+  it('shows unavailable notice alongside typed text when searchText lookup is unavailable', () => {
+    const { html, text } = formatInquiryEmail(
+      { venueAddress: '123 Main St, Salem' },
+      undefined,
+      { status: 'unavailable' },
+    );
+    expect(text).toBe([
+      'Venue address: not verified (lookup unavailable)',
+      'Venue Address (typed by customer): 123 Main St, Salem',
+    ].join('\n'));
+    expect(html).toContain('>not verified (lookup unavailable)</td>');
+    expect(html).toContain('>123 Main St, Salem</td>');
+  });
+
   it('trims typed addresses and ignores blank or non-string place IDs', () => {
     for (const venuePlaceId of ['  ', 123, null]) {
       const { html, text } = formatInquiryEmail({ venuePlaceId, venueAddress: ' 123 Main St ' });

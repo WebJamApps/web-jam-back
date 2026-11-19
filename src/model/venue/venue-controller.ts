@@ -7,6 +7,7 @@ import { isFacebookPageId } from '#src/lib/instagram-fields.js';
 import venueModel from './venue-facade.js';
 import { normalizeAddress } from './normalize-address.js';
 import { censusLocationUpdate, hasVenueAddressUpdate } from './census-geocoder.js';
+import { searchVenueListings } from './listings-search.js';
 import userModel from '../user/user-facade.js';
 import gigModel from '../gig/gig-facade.js';
 import {
@@ -47,29 +48,6 @@ type AuthRequest = Request & { user?: string };
 type AuthIdRequest = Request<{ id: string }> & { user?: string };
 type AuthzError = { status: number; message: string };
 type AuthzResult = AuthzError | null;
-
-interface PlaceSuggestionRaw {
-  placePrediction?: {
-    placeId?: string;
-    place?: string;
-    text?: { text?: string } | string;
-  };
-}
-
-interface AddressComponentRaw {
-  longText?: string;
-  shortText?: string;
-  types?: string[];
-}
-
-interface PlaceDetailsRaw {
-  formattedAddress?: string;
-  location?: {
-    latitude?: number;
-    longitude?: number;
-  };
-  addressComponents?: AddressComponentRaw[];
-}
 
 interface VenueBody {
   _id?: string;
@@ -482,99 +460,6 @@ function checkAccess(user: AuthedUser, required: string[]): AuthzResult {
     return { status: 403, message: 'not authorized for venue management' };
   }
   return null;
-}
-
-function sanitizeGoogleError(message: string): string {
-  const key = process.env.GOOGLE_PLACES_API_KEY;
-  if (key && message.includes(key)) {
-    return message.replaceAll(key, '[REDACTED]');
-  }
-  return message;
-}
-
-async function extractGoogleStatusText(response: globalThis.Response): Promise<string> {
-  if (response.statusText) return response.statusText;
-  try {
-    const errBody = (await response.json()) as { error?: { status?: string; message?: string } };
-    return errBody?.error?.status || errBody?.error?.message || 'Google Places API error';
-  } catch {
-    return 'Google Places API error';
-  }
-}
-
-async function fetchGooglePlaces<T>(
-  url: string,
-  init: RequestInit,
-): Promise<{ data?: T; errorStatus?: number; errorMessage?: string }> {
-  let response: globalThis.Response;
-  try {
-    response = await fetch(url, {
-      ...init,
-      signal: AbortSignal.timeout(5000),
-    });
-  } catch (err) {
-    const isTimeout = (err as Error).name === 'TimeoutError';
-    const statusText = isTimeout ? 'Google Places API request timed out' : ((err as Error).message || 'Google Places API error');
-    return { errorStatus: 502, errorMessage: sanitizeGoogleError(statusText) };
-  }
-
-  if (!response.ok) {
-    const statusText = await extractGoogleStatusText(response);
-    return { errorStatus: 502, errorMessage: sanitizeGoogleError(statusText) };
-  }
-
-  try {
-    const data = (await response.json()) as T;
-    return { data };
-  } catch (e) {
-    return { errorStatus: 502, errorMessage: sanitizeGoogleError((e as Error).message) };
-  }
-}
-
-function mapSuggestions(suggestions: PlaceSuggestionRaw[] = []): { placeId: string; text: string }[] {
-  return suggestions.map((s) => {
-    const placeId = s.placePrediction?.placeId || (s.placePrediction?.place ? s.placePrediction.place.replace('places/', '') : '');
-    const textObj = s.placePrediction?.text;
-    const text = typeof textObj === 'string' ? textObj : (textObj?.text || '');
-    return { placeId, text };
-  });
-}
-
-function mapPlaceDetails(data: PlaceDetailsRaw): Record<string, unknown> {
-  const components = data.addressComponents || [];
-  const findComp = (type: string) => components.find((c) => c.types && c.types.includes(type));
-
-  const streetNumberComp = findComp('street_number');
-  const routeComp = findComp('route');
-  const streetNumber = streetNumberComp?.longText || streetNumberComp?.shortText || '';
-  const route = routeComp?.longText || routeComp?.shortText || '';
-  const street = [streetNumber, route].filter(Boolean).join(' ');
-
-  const cityComp = findComp('locality') || findComp('sublocality') || findComp('postal_town');
-  const city = cityComp?.longText || cityComp?.shortText || '';
-
-  const stateComp = findComp('administrative_area_level_1');
-  const state = stateComp?.shortText || stateComp?.longText || '';
-
-  const countryComp = findComp('country');
-  const country = countryComp?.shortText || countryComp?.longText || '';
-
-  const zipComp = findComp('postal_code');
-  const zipCode = zipComp?.longText || zipComp?.shortText || '';
-
-  const lat = typeof data.location?.latitude === 'number' ? data.location.latitude : null;
-  const lng = typeof data.location?.longitude === 'number' ? data.location.longitude : null;
-
-  return {
-    formattedAddress: data.formattedAddress || '',
-    street,
-    city,
-    state,
-    country,
-    zipCode,
-    lat,
-    lng,
-  };
 }
 
 interface NominatimResultRaw {
@@ -1175,64 +1060,24 @@ class VenueController extends Controller {
     return null;
   }
 
-  // GET /venue/places/suggest — autocomplete suggestions via Places API (New) (#1159).
-  async suggestPlaces(req: Request, res: Response): Promise<unknown> {
+  // GET /venue/listings/search?q=<text> — admin-only search over the Overture listings copy (#1217).
+  async searchListings(req: Request, res: Response): Promise<unknown> {
     const guardErr = await this.authorizeAdminOnly(req as AuthRequest);
     if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
 
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-    if (!apiKey) return res.status(503).json({ message: 'Address lookup is not configured' });
-
-    const payload: Record<string, unknown> = {
-      input: typeof req.query.input === 'string' ? req.query.input : '',
-    };
-    if (typeof req.query.sessionToken === 'string' && req.query.sessionToken.trim()) {
-      payload.sessionToken = req.query.sessionToken.trim();
-    }
-    if (typeof req.query.regionCode === 'string' && req.query.regionCode.trim()) {
-      payload.includedRegionCodes = [req.query.regionCode.trim()];
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (q.length < 2) {
+      return res.status(200).json([]);
     }
 
-    const { data, errorStatus, errorMessage } = await fetchGooglePlaces<{ suggestions?: PlaceSuggestionRaw[] }>(
-      'https://places.googleapis.com/v1/places:autocomplete',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey,
-        },
-        body: JSON.stringify(payload),
-      },
-    );
-
-    if (errorStatus) return res.status(errorStatus).json({ message: errorMessage });
-    return res.status(200).json(mapSuggestions(data?.suggestions));
-  }
-
-  // GET /venue/places/:placeId — place details via Places API (New) (#1159).
-  async getPlaceDetails(req: Request, res: Response): Promise<unknown> {
-    const guardErr = await this.authorizeAdminOnly(req as AuthRequest);
-    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
-
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-    if (!apiKey) return res.status(503).json({ message: 'Address lookup is not configured' });
-
-    const placeId = (req.params as Record<string, string>).placeId || (req.params as Record<string, string>).id;
-    let url = `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`;
-    if (typeof req.query.sessionToken === 'string' && req.query.sessionToken.trim()) {
-      url += `?sessionToken=${encodeURIComponent(req.query.sessionToken.trim())}`;
+    const result = await searchVenueListings(q);
+    if (result.status === 'not-loaded') {
+      return res.status(503).json({ message: 'Venue listings have not loaded yet' });
     }
-
-    const { data, errorStatus, errorMessage } = await fetchGooglePlaces<PlaceDetailsRaw>(url, {
-      method: 'GET',
-      headers: {
-        'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': 'formattedAddress,addressComponents,location',
-      },
-    });
-
-    if (errorStatus) return res.status(errorStatus).json({ message: errorMessage });
-    return res.status(200).json(mapPlaceDetails(data || {}));
+    if (result.status === 'unavailable') {
+      return res.status(502).json({ message: 'Address lookup is unavailable' });
+    }
+    return res.status(200).json(result.items);
   }
 
   // GET /venue/discover/place?q=<text> — turn a place name into a position (#1219).

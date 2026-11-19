@@ -2,8 +2,24 @@ import nodemailer, { Transporter } from 'nodemailer';
 import { Request, Response } from 'express';
 import Debug from 'debug';
 import { DEFAULT_ARTIST, normalizeArtist } from '#src/lib/artist.js';
+import { isAllowedOrigin, readStaticOrigins } from '#src/lib/cors.js';
 import { extractCustomerEmail, formatInquiryEmail } from '#src/model/inquiry/format-inquiry.js';
-import { lookupVenuePlace } from '#src/model/inquiry/lookup-venue.js';
+import {
+  extractMessage,
+  hasTrapValue,
+  hasValidFormLoadTime,
+  isBookingForm,
+  parseKnownForm,
+  UNVERIFIED_ADDRESS_MESSAGE,
+  validateBookingFields,
+} from '#src/model/inquiry/inquiry-checks.js';
+import {
+  hasStreetAddress,
+  searchVenueAddress,
+  type VenuePlaceLookup,
+  verifyVenuePlace,
+} from '#src/model/inquiry/lookup-venue.js';
+import { isSalesPitchMessage } from '#src/model/inquiry/sales-pitch.js';
 
 const debug = Debug('web-jam-back:InquiryController');
 
@@ -101,13 +117,55 @@ class InquiryController {
 
   async handleInquiry(req: Request, res: Response) {
     debug(req.body);
-    const artist = (req.body as { artist?: unknown })?.artist;
+    const body = (req.body || {}) as Record<string, unknown>;
+
+    // Check 2: Known form and site — missing/unrecognized form, or missing/disallowed Origin, drops silently.
+    const form = parseKnownForm(body.form);
+    if (!form) return res.status(200).json({ message: 'email sent' });
+    if (!isAllowedOrigin(req.headers?.origin, readStaticOrigins(), false)) {
+      return res.status(200).json({ message: 'email sent' });
+    }
+
+    // Check 3: Hidden trap field — any value in `website` drops silently.
+    if (hasTrapValue(body.website)) return res.status(200).json({ message: 'email sent' });
+
+    // Check 4: Speed check — missing, non-number, future, or < 3s drops silently.
+    if (!hasValidFormLoadTime(body.formLoadedAt)) return res.status(200).json({ message: 'email sent' });
+
+    const artist = body.artist;
+    let venue: VenuePlaceLookup | undefined;
+
+    if (isBookingForm(form)) {
+      // Check 5: Required booking fields (jam-bookus and tim-booking only).
+      const fieldError = validateBookingFields(body);
+      if (fieldError) return res.status(400).json({ message: fieldError });
+
+      // Check 6: Verified venue address (Places details or searchText).
+      const apiKey = googlePlacesKeyForArtist(artist);
+      const placeId = typeof body.venuePlaceId === 'string' ? body.venuePlaceId.trim() : '';
+      const typedAddress = typeof body.venueAddress === 'string' ? body.venueAddress.trim() : '';
+      const verification = placeId
+        ? await verifyVenuePlace(placeId, apiKey)
+        : await searchVenueAddress(typedAddress, apiKey);
+
+      if (
+        verification.status === 'not-found'
+        || (verification.status === 'resolved' && !hasStreetAddress(verification.addressComponents))
+      ) {
+        return res.status(400).json({ message: UNVERIFIED_ADDRESS_MESSAGE });
+      }
+      venue = verification;
+
+      // Check 7: Message wording — two or more distinct sales-pitch entries drops silently.
+      if (isSalesPitchMessage(extractMessage(body))) {
+        return res.status(200).json({ message: 'email sent' });
+      }
+    }
+
+    // Check 8: Send.
     const { to, cc } = recipientForArtist(artist);
     const sender = senderForArtist(artist);
-    const body = (req.body || {}) as Record<string, unknown>;
     const replyTo = extractCustomerEmail(body) || undefined;
-    const placeId = typeof body.venuePlaceId === 'string' ? body.venuePlaceId.trim() : '';
-    const venue = placeId ? await lookupVenuePlace(placeId, googlePlacesKeyForArtist(artist)) : undefined;
     const { subject, html, text } = formatInquiryEmail(body, req.headers?.origin, venue);
     return this.sendEmail(html, to, subject, res, cc, text, sender, replyTo);
   }

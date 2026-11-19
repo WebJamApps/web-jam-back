@@ -18,8 +18,19 @@ describe('lib/cors', () => {
     expect(readStaticOrigins()).toEqual([]);
   });
 
-  it('allows requests with no Origin header', () => {
+  it('allows requests with no Origin header by default and rejects them when allowMissing is false', () => {
     expect(isAllowedOrigin(undefined, [])).toBe(true);
+    expect(isAllowedOrigin('', [])).toBe(true);
+    expect(isAllowedOrigin(null, [])).toBe(true);
+    expect(isAllowedOrigin(undefined, [], false)).toBe(false);
+    expect(isAllowedOrigin('', [], false)).toBe(false);
+    expect(isAllowedOrigin(null, [], false)).toBe(false);
+    expect(isAllowedOrigin('null', [], false)).toBe(false);
+  });
+
+  it('does not treat a whitespace-only Origin as missing', () => {
+    expect(isAllowedOrigin(' ', [])).toBe(false);
+    expect(isAllowedOrigin(' ', [], false)).toBe(false);
   });
 
   it('allows configured static origins', () => {
