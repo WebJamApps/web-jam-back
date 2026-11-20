@@ -23,6 +23,44 @@ jobs:
             fi
             echo "OK: PR base/head branch verification passed (Target: ${TARGET:-default}, Source: $SOURCE)"
       - run:
+          name: Version bump check (PR branches only)
+          command: |
+            # web-jam-tools#1849 "ci: web-jam-back and WebJamSocketCluster refuse an unbumped version in CircleCI":
+            # a PR branch's package.json version must be strictly greater than origin/dev's.
+            # Skipped on dev/main (nothing to diff against itself).
+            BRANCH="${CIRCLE_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
+            if [ "$BRANCH" = "dev" ] || [ "$BRANCH" = "main" ]; then
+              echo "On $BRANCH — version-bump check only applies to PR branches, skipping."
+              exit 0
+            fi
+            git fetch --quiet origin dev
+            HEAD_VERSION="$(node -e 'console.log(JSON.parse(require("fs").readFileSync("package.json", "utf8")).version)')"
+            DEV_VERSION="$(git show origin/dev:package.json | node -e 'console.log(JSON.parse(require("fs").readFileSync(0, "utf8")).version)')"
+            echo "Branch: $BRANCH"
+            echo "origin/dev version: $DEV_VERSION"
+            echo "HEAD version:       $HEAD_VERSION"
+            node -e '
+              const [dev, head] = process.argv.slice(1);
+              const valid = /^\d+\.\d+\.\d+$/;
+              for (const [label, v] of [["origin/dev", dev], ["package.json", head]]) {
+                if (!valid.test(v)) {
+                  console.error(`FAIL: invalid semver format in ${label}: ${v}`);
+                  process.exit(1);
+                }
+              }
+              const d = dev.split(".").map(Number);
+              const h = head.split(".").map(Number);
+              let cmp = 0;
+              for (let i = 0; i < 3 && cmp === 0; i++) cmp = h[i] - d[i];
+              if (cmp <= 0) {
+                console.error(`FAIL: package.json "version" (${head}) must be strictly greater than origin/dev (${dev}).`);
+                console.error(`Next available patch version on origin/dev is ${d[0]}.${d[1]}.${d[2] + 1}.`);
+                console.error("Bump the version in package.json (once per PR, on the first commit) before merging.");
+                process.exit(1);
+              }
+              console.log(`OK: version bumped from ${dev} on origin/dev to ${head}`);
+            ' "$DEV_VERSION" "$HEAD_VERSION"
+      - run:
           name: Test install (skip postinstall — frontend not needed for tests)
           command: npm ci --ignore-scripts
       - run:
