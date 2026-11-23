@@ -3,7 +3,7 @@
   "info": {
     "title": "web-jam-back API",
     "version": "1.0.0",
-    "description": "The API specification of web-jam-back. Every authenticated route first runs the login check: the bearer token must be valid and name an existing user, and the user's role must pass the route's AUTH_ROLES entry when one is set; a failure there answers 401. The capability check follows. A caller whose user record carries a privileges list must hold one of the capabilities named in x-required-capabilities; a caller with no list must have the role JaM-admin or Developer; anyone else is answered 403 and nothing is written. A caller tied to one artist (an artist slug on the account) may write only that artist's gigs, and is answered 403 otherwise.",
+    "description": "The API specification of web-jam-back. Every authenticated route first runs the login check: the bearer token must be valid and name an existing user, and the user's role must pass the route's AUTH_ROLES entry when one is set; a failure there answers 401. The capability check follows. A caller whose user record carries a non-empty privileges list must hold one of the capabilities named in x-required-capabilities; a caller with an empty or absent list must have the role JaM-admin or Developer; anyone else is answered 403 and nothing is written. A caller tied to one artist (an artist slug on the account) may write only that artist's gigs, and is answered 403 otherwise.",
     "license": {
       "name": "MIT",
       "identifier": "MIT"
@@ -47,6 +47,14 @@
     {
       "name": "books",
       "description": "Shared book collection, slideshow photos and per-artist page content documents."
+    },
+    {
+      "name": "templates",
+      "description": "Pitch templates and their assets."
+    },
+    {
+      "name": "venue-mining",
+      "description": "Completed venue-mining sweeps."
     }
   ],
   "security": [],
@@ -790,6 +798,94 @@
             "$ref": "#/components/responses/ServerError"
           }
         }
+      },
+      "get": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "listVenues",
+        "summary": "List venues",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires any listed venue capability, or JaM-admin or Developer when the privileges list is empty. Archived venues are hidden unless status is supplied. eligibleFor excludes venues with a nearby gig.",
+        "x-required-capabilities": [
+          "venue:create",
+          "venue:edit",
+          "venue:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching venues with derived booking status and gig links.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Venue"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unknown record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "venueType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "outreachEligible",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only the strings true and false are applied."
+          },
+          {
+            "name": "eligibleFor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A parseable target date."
+          }
+        ]
       }
     },
     "/venue/listings/search": {
@@ -799,7 +895,7 @@
         ],
         "operationId": "searchVenueListings",
         "summary": "Search cached Overture business listings by venue name and city",
-        "description": "Admin-only lookup returning up to five matching business listings from mapListing (prefix matches first, then word matches across name and city), rate-limited at 60 requests per minute per Authorization header.",
+        "description": "Admin-only lookup returning up to five matching business listings from mapListing (prefix matches first, then word matches across name and city), rate-limited at 60 requests per minute per Authorization header. Requires JaM-admin or Developer with an empty privileges list.",
         "security": [
           {
             "bearerAuth": []
@@ -876,11 +972,11 @@
             "$ref": "#/components/responses/Forbidden"
           },
           "429": {
-            "description": "Too many requests (over 60 requests within one minute).",
+            "description": "Too many requests.",
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
-                  "$ref": "#/components/schemas/Message"
+                  "type": "string"
                 }
               }
             }
@@ -904,6 +1000,9 @@
                 }
               }
             }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
           }
         }
       }
@@ -925,7 +1024,7 @@
         ],
         "operationId": "updateVenue",
         "summary": "Update one venue",
-        "description": "Merges only the submitted fields into the selected venue. instagramUsername is checked before writes: only letters, numbers, periods and underscores, at most 30 characters, without @. Empty string clears it; omission leaves an existing username unchanged. Operator and dotted updates targeting instagramUsername are refused.",
+        "description": "Merges only the submitted fields into the selected venue. instagramUsername is checked before writes: only letters, numbers, periods and underscores, at most 30 characters, without @. Empty string clears it; omission leaves an existing username unchanged. Operator and dotted updates targeting instagramUsername are refused. An existing address cannot be removed. An existing ZIP code cannot be removed.",
         "security": [
           {
             "bearerAuth": []
@@ -1021,6 +1120,76 @@
           },
           "500": {
             "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "deleteVenue",
+        "summary": "Archive one venue",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Soft-deletes the venue by setting its status to archived. An optional actor overrides the authenticated subject.",
+        "x-required-capabilities": [
+          "venue:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "The archived venue and confirmation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "venue": {
+                      "$ref": "#/components/schemas/Venue"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unknown record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "actor": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2480,6 +2649,724 @@
           }
         }
       }
+    },
+    "/venue/cities": {
+      "get": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "listVenueCities",
+        "summary": "List venue cities",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires any listed venue capability, or JaM-admin or Developer when the privileges list is empty.",
+        "x-required-capabilities": [
+          "venue:create",
+          "venue:edit",
+          "venue:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "Distinct non-empty city values.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/venue/discover/place": {
+      "get": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "discoverVenuePlace",
+        "summary": "Find a place position",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires JaM-admin or Developer with an empty privileges list. Limited to 60 requests per minute per authenticated user. Empty q returns an empty object.",
+        "responses": {
+          "200": {
+            "description": "Latitude, longitude and display name, or an empty object if no result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lat": {
+                      "type": "number"
+                    },
+                    "lng": {
+                      "type": "number"
+                    },
+                    "displayName": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "description": "Too many requests.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "description": "Place lookup failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Place name to look up in the United States."
+          }
+        ]
+      }
+    },
+    "/venue/{id}/touch": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "addVenueTouch",
+        "summary": "Append a venue touch",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "venue:edit"
+        ],
+        "responses": {
+          "201": {
+            "description": "Venue with the appended touch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Venue"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unknown record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VenueTouchInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/template": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "operationId": "listTemplates",
+        "summary": "List templates",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires any listed template capability, or JaM-admin or Developer when the privileges list is empty.",
+        "x-required-capabilities": [
+          "template:create",
+          "template:edit",
+          "template:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching templates.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Template"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "stage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only the strings true and false are applied."
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "templates"
+        ],
+        "operationId": "createTemplate",
+        "summary": "Create or update a matching template",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Matches by type and stage (default cold); a match is reactivated unless active is supplied. Text is sanitized and photoData is write-only.",
+        "x-required-capabilities": [
+          "template:create"
+        ],
+        "responses": {
+          "200": {
+            "description": "Existing type and stage updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Template"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Template created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Template"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unknown record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/TemplateInput"
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/template/assets/{ref}": {
+      "parameters": [
+        {
+          "name": "ref",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "operationId": "getTemplateAsset",
+        "summary": "Read a template photo",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires any listed template capability, or JaM-admin or Developer when the privileges list is empty.",
+        "x-required-capabilities": [
+          "template:create",
+          "template:edit",
+          "template:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "JPEG photo.",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unknown record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Asset not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/template/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "operationId": "getTemplate",
+        "summary": "Read one template",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Requires any listed template capability, or JaM-admin or Developer when the privileges list is empty.",
+        "x-required-capabilities": [
+          "template:create",
+          "template:edit",
+          "template:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "Template with sanitized text.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Template"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unknown record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "templates"
+        ],
+        "operationId": "updateTemplate",
+        "summary": "Update one template",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Partial update; text is sanitized and photoData is write-only.",
+        "x-required-capabilities": [
+          "template:edit"
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated template.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Template"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unknown record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateInput"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "templates"
+        ],
+        "operationId": "deleteTemplate",
+        "summary": "Deactivate one template",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Sets active to false. An optional actor overrides the authenticated subject.",
+        "x-required-capabilities": [
+          "template:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "Confirmation and deactivated template.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "template": {
+                      "$ref": "#/components/schemas/Template"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unknown record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "actor": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/venue-mining/sweep": {
+      "get": {
+        "tags": [
+          "venue-mining"
+        ],
+        "operationId": "listVenueMiningSweeps",
+        "summary": "List sweep history",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "venue-mining:create"
+        ],
+        "responses": {
+          "200": {
+            "description": "Sweeps, newest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/VenueMiningSweep"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "metroSlug",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional exact metro slug filter."
+          }
+        ],
+        "description": "Requires venue-mining:create, or JaM-admin or Developer when the privileges list is empty."
+      },
+      "post": {
+        "tags": [
+          "venue-mining"
+        ],
+        "operationId": "createVenueMiningSweep",
+        "summary": "Record a completed sweep",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "The metro slug and UTC calendar date must be unique. Requires venue-mining:create, or JaM-admin or Developer when the privileges list is empty.",
+        "x-required-capabilities": [
+          "venue-mining:create"
+        ],
+        "responses": {
+          "201": {
+            "description": "Created sweep.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VenueMiningSweep"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unknown record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "A sweep for this metro and date already exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VenueMiningSweepInput"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2860,6 +3747,128 @@
               "venue.name_1",
               ""
             ]
+          },
+          "contactName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "secondaryEmail": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "venueType": {
+            "type": "string",
+            "enum": [
+              "",
+              "Originals",
+              "PubFestivalBrewery",
+              "MidRangeCafeBar"
+            ]
+          },
+          "templateOverride": {
+            "type": "string",
+            "enum": [
+              "",
+              "Originals",
+              "PubFestivalBrewery",
+              "MidRangeCafeBar"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "",
+              "active",
+              "archived"
+            ]
+          },
+          "outreachEligible": {
+            "type": "boolean"
+          },
+          "payAmount": {
+            "type": "number",
+            "minimum": 0
+          },
+          "audienceAttention": {
+            "type": "string",
+            "enum": [
+              "",
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "personalFavorite": {
+            "type": "boolean"
+          },
+          "familyNearby": {
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "const": ""
+              }
+            ],
+            "description": "A boolean sets a manual override; null or an empty string restores derivation."
+          },
+          "gigInterval": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "location": {
+            "type": "object",
+            "required": [
+              "type",
+              "coordinates"
+            ],
+            "properties": {
+              "type": {
+                "const": "Point"
+              },
+              "coordinates": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 2,
+                "maxItems": 2,
+                "description": "Longitude, latitude."
+              }
+            }
+          },
+          "lastVerified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastContacted": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "resumeBooking": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bookedThrough": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bookedDate": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -2888,6 +3897,64 @@
             "properties": {
               "_id": {
                 "type": "string",
+                "readOnly": true
+              },
+              "bookingStatus": {
+                "type": "string",
+                "enum": [
+                  "booking",
+                  "not-booking",
+                  "booked"
+                ],
+                "readOnly": true
+              },
+              "familyNearbyOverride": {
+                "type": "boolean",
+                "readOnly": true
+              },
+              "touches": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/VenueTouchInput"
+                }
+              },
+              "lastModifiedBy": {
+                "type": "string"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "updated_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "distanceKm": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "readOnly": true
+              },
+              "lastGig": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "readOnly": true
+              },
+              "nextGig": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "readOnly": true
+              },
+              "locationFallback": {
+                "type": [
+                  "object",
+                  "null"
+                ],
                 "readOnly": true
               }
             }
@@ -3833,6 +4900,263 @@
             "type": "string"
           }
         }
+      },
+      "VenueTouchInput": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "visit",
+              "form",
+              "card",
+              "call",
+              "email",
+              "gig",
+              "other",
+              "outcome"
+            ]
+          },
+          "note": {
+            "type": "string"
+          },
+          "templateType": {
+            "type": "string"
+          },
+          "targetWeekend": {
+            "type": "object",
+            "required": [
+              "start",
+              "end"
+            ],
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "replied",
+              "interested",
+              "not-interested",
+              "booked",
+              "target-filled"
+            ]
+          },
+          "bookedDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "outreachId": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          }
+        },
+        "description": "Outcome is required only for an outcome touch; bookedDate is required for the booked outcome. The target weekend start must not be after its end."
+      },
+      "TemplateInput": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Originals",
+              "PubFestivalBrewery",
+              "MidRangeCafeBar",
+              "OnlineForm"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "cold",
+              "returning",
+              "upcoming",
+              "second-pitch",
+              "second-pitch-returning",
+              "second-pitch-upcoming"
+            ],
+            "default": "cold"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "introHtml": {
+            "type": "string"
+          },
+          "bodyHtml": {
+            "type": "string"
+          },
+          "footerPhotoRef": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "photoData": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "Image data URL, or an empty string to clear the photo reference."
+          }
+        }
+      },
+      "Template": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Originals",
+              "PubFestivalBrewery",
+              "MidRangeCafeBar",
+              "OnlineForm"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "cold",
+              "returning",
+              "upcoming",
+              "second-pitch",
+              "second-pitch-returning",
+              "second-pitch-upcoming"
+            ],
+            "default": "cold"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "introHtml": {
+            "type": "string"
+          },
+          "bodyHtml": {
+            "type": "string"
+          },
+          "footerPhotoRef": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "_id": {
+            "type": "string"
+          },
+          "lastModifiedBy": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "VenueMiningSweepInput": {
+        "type": "object",
+        "required": [
+          "metroSlug",
+          "sweptAt",
+          "publication",
+          "venuesCreatedCount"
+        ],
+        "properties": {
+          "metroSlug": {
+            "type": "string"
+          },
+          "sweptAt": {
+            "description": "Parseable date, normalized to UTC midnight.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "publication": {
+            "type": "object",
+            "required": [
+              "name",
+              "url"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "api": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              }
+            }
+          },
+          "coverageArea": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludeKeywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "venuesCreatedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
+      "VenueMiningSweep": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/VenueMiningSweepInput"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "_id": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        ]
       }
     }
   }
