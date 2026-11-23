@@ -4968,7 +4968,7 @@
             "type": "string"
           }
         },
-        "description": "Outcome is required only for an outcome touch; bookedDate is required for the booked outcome. The target weekend start must not be after its end."
+        "description": "Outcome is required for an outcome touch and is only valid on an outcome touch; bookedDate is required for the booked outcome. The target weekend start must not be after its end."
       },
       "TemplateInput": {
         "type": "object",
