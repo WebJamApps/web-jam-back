@@ -4,10 +4,9 @@ import authUtils from '../../auth/authUtils.js';
 import routeUtils from '../../lib/routeUtils.js';
 
 // Outreach log + batch send-pitch (web-jam-back#823, reworked to batch target-
-// list approval in #844). Booking-outreach data, NOT public. Every route runs
-// makeAction → ensureAuthenticated (populates req.user from the token); the
-// controller then does the per-capability outreach:* check (privilege-first,
-// admin-role fallback), same as venue (#819) / template (#822).
+// list approval in #844). Protected routes use makeAction → ensureAuthenticated
+// to populate req.user. The controller checks the outreach:* capability with
+// admin-role fallback, same as venue (#819) / template (#822).
 const router = express.Router();
 
 // Static routes are declared above /:id so words like "send" / "batch" aren't
@@ -17,7 +16,7 @@ const router = express.Router();
 // Body accepts two optional, independent slots (#903, supersedes #900's
 // prepend): `customIntro` REPLACES the template's own intro; `customBody` is
 // INSERTED at the template's [Custom Body] marker. Still goes through the
-// full tracked pipeline (record, PITCH_CC, cadence).
+// tracked send pipeline (record and PITCH_CC).
 router.route('/send')
   .post((req, res) => {
     const action = routeUtils.makeAction(req, res, 'sendPitch', controller, authUtils);
@@ -56,11 +55,10 @@ router.route('/preview')
     void action();
   });
 
-// POST /outreach/advance — cadence engine tick (#824). Driven by the Deno Cron (#100).
+// POST /outreach/advance — permanently refuse legacy automatic follow-up calls.
 router.route('/advance')
-  .post((req, res) => {
-    const action = routeUtils.makeAction(req, res, 'advanceCadence', controller, authUtils);
-    void action();
+  .post((_req, res) => {
+    res.status(410).json({ message: 'Automatic follow-ups are retired. Use the approved second pitch workflow.' });
   });
 
 // GET /outreach/replies/pending — the "replies to review" queue (#825).
@@ -86,7 +84,7 @@ router.route('/:id/apply-suggestion')
 
 // POST /outreach/:id/outcome — record an outcome (interested / not-interested
 // / booked / target-filled) on a pitch (#898). The single choke point: stamps
-// outcomeAt/outcomeBy, halts the cadence, writes the venue timeline event, and
+// outcomeAt/outcomeBy, clears any legacy next-touch date, writes the venue timeline event, and
 // runs the not-interested/booked side effects (incl. the target-filled
 // auto-flip on booking). See outreach-controller.recordOutcome.
 router.route('/:id/outcome')

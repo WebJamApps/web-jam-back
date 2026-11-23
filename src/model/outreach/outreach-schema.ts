@@ -117,10 +117,8 @@ const outreachSchema = new Schema({
   // Which AI agent or human sent this pitch (#818 `actor` field).
   sentBy: { type: String, required: false, trim: true },
   followUps: { type: [followUpSchema], required: false, default: [] },
-  // Cadence engine (#824/#825). `step` is the touch number already completed
-  // (1 = the pitch). `nextTouchDue` is when the next touch (email or call) is
-  // due; the advance endpoint actions everything due and bumps these. Null
-  // nextTouchDue = no more touches scheduled (sequence finished or halted).
+  // `step` records completed legacy touches (1 = the pitch). `nextTouchDue` is
+  // retained for existing records and Reopen. New pitches leave it null.
   step: { type: Number, required: false, default: 1 },
   nextTouchDue: { type: Date, required: false, default: null },
   lastModifiedBy: { type: String, required: false },

@@ -5,7 +5,7 @@
 - **No Real Identifiers in Public Tests**: Never use real account numbers, writer IPIs, or work numbers in tests or committed fixtures in public repositories. Always use clearly fabricated test identifiers (`TEST-BMI-001`, `FAKE-IPI-001`).
 
 
-- **No Raw `any` in Test Suites & Mock Typing**: New or modified TypeScript tests must never introduce raw `any` (`outreachDoc as any`, `mockData as any`). Declare test fixtures with their exported interfaces (e.g. `OutreachDoc`) or use strict double-casts (`as unknown as OutreachDoc`) once at definition. Export internal document and param interfaces from controllers when helper functions (such as `buildFollowUpEmail`) require them so consumers and test specs remain strictly typed without type escapes.
+- **No Raw `any` in Test Suites & Mock Typing**: New or modified TypeScript tests must never introduce raw `any` (`outreachDoc as any`, `mockData as any`). Declare test fixtures with their exported interfaces (e.g. `OutreachDoc`) or use strict double-casts (`as unknown as OutreachDoc`) once at definition. Export internal document and param interfaces from controllers when helper functions (such as `buildPitchEmail`) require them so consumers and test specs remain strictly typed without type escapes.
 
 
 - **Model Stub & Express Request Typing in Tests**: Never cast test doubles with raw `as any` (e.g. `(model as any).findById = ...`, `const req: any = ...`). Use typed double-casts (`(model as unknown as { findById: ReturnType<typeof vi.fn> })`) and typed Express request types (`req as unknown as Request`) to preserve static type guarantees across test suites.
