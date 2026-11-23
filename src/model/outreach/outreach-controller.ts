@@ -9,7 +9,6 @@ import { Icontroller } from '#src/lib/routeUtils.js';
 import { sendMail } from '#src/lib/mailer.js';
 import { mustStopDispatch } from '#src/lib/mail-failure.js';
 import { EMAIL_RE, isValidEmail } from '#src/lib/email.js';
-import { createCallTaskEvent } from '#src/lib/calendar.js';
 import { isAiAgentAccount } from '#src/auth/capabilities.js';
 import outreachModel from './outreach-facade.js';
 import outreachReportModel from './outreach-report-facade.js';
@@ -24,7 +23,7 @@ import gigModel from '../gig/gig-facade.js';
 import {
   JOSH_GIGS_FILTER, groupGigsByVenue, type LinkableGig, type LinkableVenue,
 } from '#src/lib/gig-venue-link.js';
-import { MAX_STEP, nextTouchDueAfter, touchAt } from './cadence.js';
+import { nextTouchDueAfter } from './cadence.js';
 import {
   dueFromApproval, PITCH_COOLDOWN_DAYS, pitchEligibility, venueApprovalTime,
   type PitchEligibility, type PitchRecord,
@@ -793,7 +792,7 @@ export function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: Se
 }
 
 // #974 (reshaped 2026-07-18 per Josh — secondary goes in Cc, not To): every
-// outreach email — pitch, batch, or follow-up cadence touch — addresses `To`
+// outreach pitch, single or batch, addresses `To`
 // to the primary `email` ONLY. When a venue carries a secondaryEmail (and it
 // looks like a real address), it's APPENDED to the Cc list instead — the base
 // Cc (either the caller's own `body.cc` override, or the default PITCH_CC) is
@@ -801,72 +800,11 @@ export function buildPitchEmail(venue: VenueDoc, template: TemplateDoc, body: Se
 // secondary, or when the secondary on file doesn't validate (defense-in-depth
 // — the venue write path already validates format at save time). The caller
 // is expected to have already confirmed the PRIMARY is valid (the #974
-// sendability guard, see resolvePitch/doEmailTouch) before this ever runs.
+// sendability guard, see resolvePitch) before this ever runs.
 function resolveCc(venue: VenueDoc, baseCc: string | string[]): string | string[] {
   if (!isValidEmail(venue.secondaryEmail)) return baseCc;
   const base = Array.isArray(baseCc) ? baseCc : [baseCc];
   return [...base, venue.secondaryEmail as string];
-}
-
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-function fmtDate(d: Date): string { return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`; }
-
-// Build a cadence follow-up email (#824) for an outreach record: a short,
-// personalized nudge referencing the original pitch date + target window, with
-// the same inline-CID footer photo as the pitch.
-export function buildFollowUpEmail(venue: VenueDoc, outreach: OutreachDoc): {
-  subject: string; html: string; attachments: { filename: string; path: string; cid: string }[];
-} {
-  const contact = contactFirstName(venue.contactName) || 'there';
-  const venueName = venue.name || 'your venue';
-  const dates = outreach.targetDates || 'an upcoming date';
-  const orig = outreach.sentAt ? fmtDate(new Date(outreach.sentAt)) : 'earlier this season';
-  // #917 — routed through the same choke point as buildPitchEmail; this
-  // literal already names the venue, so it's a no-op here, but keeping both
-  // paths on one guarantee means a future subject rewrite can't drop it.
-  const subject = ensureVenueInSubject(`Following up — Josh & Maria at ${venueName}`, venueName);
-  const html = [
-    `<p>Hi ${contact},</p>`,
-    `<p>Just following up on my note from ${orig} about Josh &amp; Maria — my wife and I are a husband-wife `
-      + `acoustic duo here in Salem, VA. We'd still love to be considered for a slot at ${venueName} around ${dates}.</p>`,
-    "<p>Completely understand if the calendar's full; even a later window would be great. "
-      + 'Happy to send more live samples or work around your schedule.</p>',
-    '<p>Best,<br>Josh &amp; Maria<br>540-494-8035<br><a href="https://www.joshandmariamusic.com">joshandmariamusic.com</a></p>',
-  ].join('\n');
-  const templateType = outreach?.templateUsed || 'follow-up';
-  const footer = appendFooterPhoto(html, templateType, 'follow-up', 'footer-josh-maria');
-  return { subject, html: wrapDarkEmail(footer.html), attachments: footer.attachments };
-}
-
-// Title + phone-script body for a CALL touch (#825), used as the Google Calendar
-// event's summary + description. A call can't be auto-dialed, so the cadence
-// lands a dated task carrying a ready-to-read script. Plain text (a calendar
-// description, not HTML); the venue phone is included when known.
-function buildCallTitle(venue: VenueDoc, outreach: OutreachDoc): string {
-  const dates = outreach.targetDates || 'upcoming dates';
-  return `Call ${venue.name || 'venue'} re: ${dates}`;
-}
-
-function buildCallScript(venue: VenueDoc, outreach: OutreachDoc): string {
-  const contact = venue.contactName || 'whoever books music';
-  const venueName = venue.name || 'the venue';
-  const dates = outreach.targetDates || 'an upcoming date';
-  const phone = venue.phone ? `Phone: ${venue.phone}` : 'Phone: (not on file — look up before calling)';
-  return [
-    `Follow-up call to ${venueName} — ask for ${contact}.`,
-    phone,
-    '',
-    'Script:',
-    `"Hi, this is Josh from Josh & Maria — my wife and I are a husband-wife acoustic duo here in `
-      + `Salem, VA. I emailed about playing a slot at ${venueName} around ${dates} and wanted to follow `
-      + `up to see if that's something you book."`,
-    '',
-    '- If interested: offer to send live samples + work around their calendar.',
-    '- If full: ask about a later window or being kept on file.',
-    '- If voicemail: leave the above + 540-494-8035 and joshandmariamusic.com.',
-    '',
-    'After the call, mark the outreach replied/not-interested/booked in the admin (PUT /outreach/:id).',
-  ].join('\n');
 }
 
 export const TABLE_SORT_JS = `function copyPitch(id, btn) {
@@ -1190,13 +1128,7 @@ class OutreachController extends Controller {
     }
     const update: Record<string, unknown> = { lastModifiedBy: resolveActor(req, body) };
     if (body.status !== undefined) update.status = body.status;
-    // Halting a campaign must clear any pending cadence touch so a halted record
-    // can NEVER fire a follow-up (#850). The cadence engine only advances `sent`
-    // records, so moving to ANY other status — replied/no-response, or (#923)
-    // any of the new outcome values interested/not-interested/booked/
-    // target-filled — means there is no next touch; the `!== 'sent'` check
-    // below is intentionally generic so it covers every future status too,
-    // never a hardcoded list.
+    // Clear the legacy next-touch date once a record leaves 'sent'.
     if (body.status !== undefined && body.status !== 'sent') update.nextTouchDue = null;
     if (body.gmailThreadId !== undefined) update.gmailThreadId = body.gmailThreadId;
     let doc;
@@ -1356,8 +1288,7 @@ class OutreachController extends Controller {
   // POST /outreach/:id/outcome — the single choke point for recording an
   // outcome on a pitch (#898, per #923's design). Sets status (interested /
   // not-interested / booked / target-filled), stamps outcomeAt + outcomeBy,
-  // nulls nextTouchDue (the same #850 "any non-sent status halts the cadence"
-  // rule updateOutreach already applies), writes the corresponding venue
+  // clears the legacy next-touch date, writes the corresponding venue
   // timeline event, and runs the status-specific side effects documented on
   // applyOutcomeSideEffects above. Distinct from the generic updateOutreach
   // (PUT /outreach/:id, which only does status/gmailThreadId and does NOT
@@ -1555,8 +1486,8 @@ class OutreachController extends Controller {
   }
 
   // The single place an email actually leaves: render + send + write the outreach
-  // record as `sent` with cadence touch 1. Returns a result envelope so both the
-  // single-send and batch paths can relay/aggregate it.
+  // record as `sent` with step 1 and no automatic follow-up date. Both the
+  // single-send and batch paths use the result.
   async performSend(
     venue: VenueDoc,
     template: TemplateDoc,
@@ -1590,7 +1521,7 @@ class OutreachController extends Controller {
       // #923 — canonical target identity; validated required by sendPitch/sendBatch before this ever runs.
       targetWeekend: parseTargetWeekend(body.targetWeekend) || undefined,
       sentAt, status: 'sent', messageId: sent.messageId, sentBy: actor, lastModifiedBy: actor,
-      step: 1, nextTouchDue: nextTouchDueAfter(1, sentAt),
+      step: 1, nextTouchDue: null,
     };
     let record;
     try { record = await this.model.create(fields); } catch (e) { return { ok: false, status: 500, message: (e as Error).message }; }
@@ -2472,111 +2403,6 @@ class OutreachController extends Controller {
     }
   }
 
-  // Append a completed touch and reschedule (or finish) the record. Returns
-  // false on a write failure so the caller can report 'skipped'. Shared by the
-  // email and call touch handlers.
-  async recordTouch(o: OutreachDoc, touchNum: number, followUp: FollowUp): Promise<boolean> {
-    const followUps = [...(o.followUps || []), followUp];
-    try {
-      await this.model.findByIdAndUpdate(String(o._id), {
-        step: touchNum,
-        nextTouchDue: nextTouchDueAfter(touchNum, new Date(o.sentAt || Date.now())),
-        followUps,
-        lastModifiedBy: 'cadence-engine',
-      });
-      return true;
-    } catch { return false; }
-  }
-
-  // EMAIL touch: send the follow-up nudge and record it. Skips a venue with no
-  // VALID primary address (#974 sendability guard — the pitch needs a real
-  // inbox; a call touch does not). CCs secondaryEmail too when present (#974,
-  // resolveCc — reshaped 2026-07-18: secondary rides in Cc, never To).
-  async doEmailTouch(o: OutreachDoc, venue: VenueDoc, touchNum: number): Promise<'sent' | 'skipped'> {
-    if (!isValidEmail(venue.email)) return 'skipped';
-    let emailData: { subject: string; html: string; attachments: { filename: string; path: string; cid: string }[] };
-    try {
-      emailData = buildFollowUpEmail(venue, o);
-    } catch (e) {
-      // Not recorded, so this touch retries on every cadence tick until the
-      // footer resolves — a missing bundled photo needs a redeploy (D-73).
-      console.error(`[outreach cadence] follow-up skipped for outreach ${String(o._id)}: ${(e as Error).message}`); // eslint-disable-line no-console
-      return 'skipped';
-    }
-    const { subject, html, attachments } = emailData;
-    let sent: { messageId: string };
-    try {
-      sent = await sendMail({
-        to: venue.email || '', cc: resolveCc(venue, PITCH_CC), subject, html, attachments,
-      });
-    } catch { return 'skipped'; }
-    const ok = await this.recordTouch(o, touchNum, { sentAt: new Date(), type: 'email', messageId: sent.messageId, step: touchNum });
-    return ok ? 'sent' : 'skipped';
-  }
-
-  // CALL touch (#825): drop an all-day call-task event on Josh's calendar with
-  // the phone script, then record it. The event lands on the touch's scheduled
-  // day, or today if the cron is running it late (a call task in the past is no
-  // use). A missing/failed Google credential just skips the touch (caught here)
-  // rather than crashing the whole tick.
-  async doCallTouch(o: OutreachDoc, venue: VenueDoc, touchNum: number): Promise<'called' | 'skipped'> {
-    const step = o.step || 1;
-    const scheduled = nextTouchDueAfter(step, new Date(o.sentAt || Date.now())) || /* istanbul ignore next */ new Date();
-    const now = new Date();
-    const date = scheduled.getTime() > now.getTime() ? scheduled : now;
-    let event: { id: string };
-    try {
-      event = await createCallTaskEvent({ date, title: buildCallTitle(venue, o), scriptBody: buildCallScript(venue, o) });
-    } catch { return 'skipped'; }
-    const ok = await this.recordTouch(o, touchNum, { sentAt: new Date(), type: 'call', eventId: event.id, step: touchNum });
-    return ok ? 'called' : 'skipped';
-  }
-
-  // Action one due touch for an outreach record, or park it as no-response once
-  // the sequence is exhausted. Branches on the next touch type (#825): EMAIL
-  // sends a follow-up; CALL creates a Google Calendar call task. Returns the
-  // per-record outcome. Helper for advanceCadence.
-  async processDue(o: OutreachDoc): Promise<'sent' | 'called' | 'parked' | 'skipped'> {
-    const step = o.step || 1;
-    if (step >= MAX_STEP) {
-      try {
-        await this.model.findByIdAndUpdate(String(o._id), { status: 'no-response', nextTouchDue: null, lastModifiedBy: 'cadence-engine' });
-        return 'parked';
-      } catch { return 'skipped'; }
-    }
-    let venue: VenueDoc | null;
-    try { venue = await venueModel.findById(String(o.venueId)) as unknown as VenueDoc | null; } catch { return 'skipped'; }
-    if (!venue || venue.status === 'archived') return 'skipped';
-
-    const touch = touchAt(step); // the touch about to be actioned
-    const touchNum = step + 1;
-    if (touch && touch.type === 'call') return this.doCallTouch(o, venue, touchNum);
-    return this.doEmailTouch(o, venue, touchNum);
-  }
-
-  // POST /outreach/advance — cadence tick. Actions every touch that's due
-  // (status 'sent', nextTouchDue <= now): EMAIL touches send a follow-up, CALL
-  // touches create a Google Calendar call task (#825); each is rescheduled, and
-  // exhausted sequences are parked as no-response. Meant to be hit on a schedule
-  // (Deno Cron, #100). Reply-detection (the gmail half of #825) still arrives
-  // later; for now a venue reply is marked by hand via PUT /outreach/:id, which
-  // halts the campaign.
-  async advanceCadence(req: AuthRequest, res: Response): Promise<unknown> {
-    const guardErr = await this.authorize(req, ['outreach:edit']);
-    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
-    const now = new Date();
-    let due: OutreachDoc[];
-    try { due = await this.model.find({ status: 'sent', nextTouchDue: { $ne: null, $lte: now } }) as unknown as OutreachDoc[]; } catch (e) {
-      return res.status(500).json({ message: (e as Error).message });
-    }
-    const result = { processed: due.length, sent: 0, called: 0, parked: 0, skipped: 0 };
-    for (const o of due) {
-      const outcome = await this.processDue(o); // eslint-disable-line no-await-in-loop
-      result[outcome] += 1;
-    }
-    return res.status(200).json(result);
-  }
-
   // Is a bounce item still pending? (#825 option B, decision 2026-07-02 — bounce
   // items AUTO-CLEAR from venue state; there is no dismiss button.) A bounce
   // stays in the queue only while its venue still needs attention: it drops out
@@ -2653,8 +2479,8 @@ class OutreachController extends Controller {
   }
 
   // Re-open a record whose detected "reply" wasn't a real venue reply (false
-  // positive, or an auto-responder): revert to `sent`, restore the next cadence
-  // touch from its step/sentAt so follow-ups resume, and clear the reply fields.
+  // positive or auto-responder): revert to `sent`, restore the legacy date
+  // from its step/sentAt, and clear the reply fields.
   // The record drops out of the review queue because it's no longer `replied`.
   async reopenOutreach(id: string, o: OutreachDoc, actor: string, res: Response): Promise<unknown> {
     const update = {
@@ -2676,7 +2502,7 @@ class OutreachController extends Controller {
   // Default: writes the venue's bookingStatus (from the edited body, else the
   // suggestion's proposed value) and marks the suggestion reviewed so it
   // leaves the queue. `dismiss: true` reviews WITHOUT writing the venue.
-  // `reopen: true` reverts a false-positive back to `sent` (cadence resumes).
+  // `reopen: true` reverts a false-positive back to `sent`.
   // The apply path is the ONLY one that turns an AI suggestion into a venue
   // write — guarded by venue:edit, never automatic.
   async applySuggestion(req: AuthIdRequest, res: Response): Promise<unknown> {
