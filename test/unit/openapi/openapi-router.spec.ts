@@ -177,6 +177,37 @@ describe('OpenAPI Specification Router (GET /openapi.json)', () => {
   });
 
   describe('OpenAPI Specification Content Verification', () => {
+    it('describes booking routes and distinguishes creation from partial updates', () => {
+      const spec = JSON.parse(fs.readFileSync(resolveOpenApiPath(), 'utf8'));
+      const operations: [string, string[]][] = [
+        ['/venue', ['get', 'post']],
+        ['/venue/{id}', ['get', 'patch', 'delete']],
+        ['/venue/{id}/touch', ['post']],
+        ['/venue/cities', ['get']],
+        ['/venue/listings/search', ['get']],
+        ['/venue/discover/place', ['get']],
+        ['/template', ['get', 'post']],
+        ['/template/{id}', ['get', 'put', 'delete']],
+        ['/template/assets/{ref}', ['get']],
+        ['/venue-mining/sweep', ['get', 'post']],
+      ];
+      for (const [route, methods] of operations) {
+        for (const method of methods) {
+          expect(spec.paths[route][method].security).toEqual([{ bearerAuth: [] }]);
+          expect(spec.paths[route][method].responses).toBeDefined();
+        }
+      }
+      const schemas = spec.components.schemas;
+      expect(schemas.VenueInput.allOf[1].required).toEqual(['name', 'address', 'zipCode']);
+      expect(schemas.VenueUpdateInput.required).toBeUndefined();
+      const templatePost = spec.paths['/template'].post.requestBody.content['application/json'].schema;
+      expect(templatePost.allOf[1].required).toEqual(['type']);
+      expect(schemas.TemplateInput.required).toBeUndefined();
+      expect(spec.paths['/template/{id}'].put.requestBody.content['application/json'].schema.$ref)
+        .toBe('#/components/schemas/TemplateInput');
+      expect(schemas.VenueTouchInput.description).toContain('only valid on an outcome touch');
+    });
+
     it('describes gig and setlist routes accurately and excludes delete-many routes', async () => {
       mockUser('Developer');
       const res: ApiResponse = await request(app)
