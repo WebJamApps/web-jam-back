@@ -11,12 +11,6 @@ vi.mock('#src/lib/mailer.js', () => ({
   default: { sendMail },
 }));
 
-const createCallTaskEvent = vi.fn(() => Promise.resolve({ id: 'evt-1' }));
-vi.mock('#src/lib/calendar.js', () => ({
-  createCallTaskEvent,
-  default: { createCallTaskEvent },
-}));
-
 const {
   default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
   OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
@@ -92,8 +86,6 @@ describe('Outreach Controller (#844 batch model)', () => {
     payload = undefined;
     sendMail.mockClear();
     sendMail.mockResolvedValue({ messageId: 'mid-123' });
-    createCallTaskEvent.mockClear();
-    createCallTaskEvent.mockResolvedValue({ id: 'evt-1' });
     asAgent();
     (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue()));
     (venueModel as any).find = vi.fn(() => Promise.resolve([]));
@@ -2321,7 +2313,6 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(c.model.find).not.toHaveBeenCalled();
       expect(c.model.findByIdAndUpdate).not.toHaveBeenCalled();
       expect(sendMail).not.toHaveBeenCalled();
-      expect(createCallTaskEvent).not.toHaveBeenCalled();
     });
   });
 
