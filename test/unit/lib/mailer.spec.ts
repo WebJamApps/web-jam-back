@@ -5,7 +5,7 @@ vi.mock('nodemailer', () => ({ default: { createTransport } }));
 
 // #909 — Gmail's inbox LIST/preview reads the text/plain part of a message,
 // not text/html. mailer.sendMail falls back to htmlToText(html) whenever a
-// caller (outreach-controller's buildPitchEmail/buildFollowUpEmail) sends only
+// caller (outreach-controller's buildPitchEmail) sends only
 // an `html` body — so that fallback must strip tags AND decode entities, not
 // just reuse the raw HTML string.
 describe('mailer.ts — htmlToText', () => {

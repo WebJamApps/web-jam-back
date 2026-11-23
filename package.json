@@ -1,6 +1,6 @@
 {
   "name": "web-jam-back",
-  "version": "2.43.1",
+  "version": "2.43.4",
   "description": "web-jam.com",
   "type": "module",
   "main": "build/src/index.js",
@@ -45,6 +45,7 @@
     "dev": "rimraf build && tsc && npm run copy:assets && concurrently --raw \"npm:ts-start\" \"npm:ts-watch\"",
     "copy:assets": "node scripts/copy-assets.mjs",
     "seed:outreach": "node scripts/seed-outreach.mjs",
+    "clear:next-touch-dates": "node scripts/clear-next-touch-dates.mjs",
     "migrate:target-weekend": "node build/src/scripts/migrate-target-weekend.js",
     "migrate:gig-venue-id": "node build/src/scripts/migrate-gig-venue-id.js",
     "migrate:drop-in-scope": "node build/src/scripts/migrate-drop-in-scope.js",

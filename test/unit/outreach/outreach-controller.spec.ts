@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import fs from 'node:fs';
+import express from 'express';
 import mongoose from 'mongoose';
-import type { OutreachDoc } from '#src/model/outreach/outreach-controller.js';
+import request from '../../helpers/api.js';
 import { EMAIL_RE } from '#src/lib/email.js';
 
 const sendMail = vi.fn(() => Promise.resolve({ messageId: 'mid-123' }));
@@ -10,16 +11,10 @@ vi.mock('#src/lib/mailer.js', () => ({
   default: { sendMail },
 }));
 
-const createCallTaskEvent = vi.fn(() => Promise.resolve({ id: 'evt-1' }));
-vi.mock('#src/lib/calendar.js', () => ({
-  createCallTaskEvent,
-  default: { createCallTaskEvent },
-}));
-
 const {
   default: controller, DEFAULT_TEMPLATE_TYPE, DEFAULT_GIG_SPACING_MONTHS, UNKNOWN_VENUE_NAME,
   OUTREACH_COOLDOWN_DAYS, parseTargetDates, parseTargetWeekend,
-  buildPitchEmail, buildFollowUpEmail, MissingFooterError, resolveFooterAsset,
+  buildPitchEmail, MissingFooterError, resolveFooterAsset,
   computeDraftFingerprint,
   contactFirstName,
   wrapDarkEmail, DARK_WRAPPER_BG, DARK_WRAPPER_TEXT, DARK_WRAPPER_LINK, DARK_WRAPPER_START, DARK_WRAPPER_END,
@@ -91,8 +86,6 @@ describe('Outreach Controller (#844 batch model)', () => {
     payload = undefined;
     sendMail.mockClear();
     sendMail.mockResolvedValue({ messageId: 'mid-123' });
-    createCallTaskEvent.mockClear();
-    createCallTaskEvent.mockResolvedValue({ id: 'evt-1' });
     asAgent();
     (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue()));
     (venueModel as any).find = vi.fn(() => Promise.resolve([]));
@@ -294,7 +287,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(sendMail).not.toHaveBeenCalled();
     });
 
-    it('an approver sends immediately as a sent record', async () => {
+    it('an approver sends immediately and records no automatic follow-up date', async () => {
       asApprover();
       await c.sendPitch({ user: 'josh', body: body() }, resStub);
       expect(status).toBe(201);
@@ -303,7 +296,7 @@ describe('Outreach Controller (#844 batch model)', () => {
       const rec = (c.model.create as any).mock.calls[0][0];
       expect(rec.status).toBe('sent');
       expect(rec.step).toBe(1);
-      expect(rec.nextTouchDue).toBeInstanceOf(Date);
+      expect(rec.nextTouchDue).toBeNull();
     });
 
     // #974 (reshaped 2026-07-18 per Josh — secondary rides in Cc, not To): a
@@ -1967,18 +1960,6 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(payload[0].subject).toBe('Venue One — Performance Inquiry: Josh and Maria');
       expect(payload[1].subject).toBe('Venue Two — Performance Inquiry: Josh and Maria');
     });
-
-    it('advanceCadence: a due EMAIL follow-up names the venue in the subject', async () => {
-      c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({}));
-      c.model.find = vi.fn(() => Promise.resolve([{
-        _id: 'o1', venueId: oid(), sentAt: new Date('2026-06-01T12:00:00Z'), step: 1, targetDates: 'Aug 14-16', followUps: [],
-      }]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(status).toBe(200);
-      expect(sendMail).toHaveBeenCalledTimes(1);
-      const sentSubject = (sendMail as any).mock.calls[0][0].subject;
-      expect(sentSubject).toContain('The Spot on Kirk');
-    });
   });
 
   describe('customIntro + customBody (#903, supersedes #900)', () => {
@@ -2052,11 +2033,11 @@ describe('Outreach Controller (#844 batch model)', () => {
       expect(html).toContain('<p>Hey Pat, following up!</p>');
       expect(html).not.toContain('Hi Pat,');
       expect(html).toContain('<p>We met at the farmers market.</p><p>we are booking our August run');
-      // cc / tracking / cadence stay intact regardless of the custom slots.
+      // Custom slots preserve CC and send tracking without scheduling a follow-up.
       expect((sendMail as any).mock.calls[0][0].cc).toEqual(['joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com']);
       const rec = (c.model.create as any).mock.calls[0][0];
       expect(rec.status).toBe('sent');
-      expect(rec.nextTouchDue).toBeInstanceOf(Date);
+      expect(rec.nextTouchDue).toBeNull();
     });
 
     it('sendPitch: a customBody supplied against an un-migrated (marker-less) template is appended, never dropped', async () => {
@@ -2316,143 +2297,22 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
-  describe('advanceCadence (#824)', () => {
-    const dueRecord = (over = {}) => ({
-      _id: 'o1', venueId: oid(), sentAt: new Date('2026-06-01T12:00:00Z'), step: 1, targetDates: 'Aug 14-16', followUps: [], ...over,
-    });
+  describe('POST /outreach/advance', () => {
+    it.each([false, true])('refuses automatic follow-ups with authorization present: %s', async (withHeader) => {
+      const { default: outreachRouter } = await import('#src/model/outreach/outreach-router.js');
+      const app = express();
+      app.use(express.json());
+      app.use('/outreach', outreachRouter);
+      const call = request(app).post('/outreach/advance');
+      if (withHeader) call.set('Authorization', 'unused-by-retired-route');
+      const response = await call.send({});
 
-    beforeEach(() => { c.model.findByIdAndUpdate = vi.fn(() => Promise.resolve({})); });
-
-    it('403s without the outreach:edit capability', async () => {
-      asAgent(['outreach:create']);
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(status).toBe(403);
-    });
-
-    it('sends a due EMAIL follow-up (step 1 -> day-3 touch) and reschedules', async () => {
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(status).toBe(200);
-      expect(payload).toMatchObject({ processed: 1, sent: 1, called: 0, parked: 0, skipped: 0 });
-      expect(sendMail).toHaveBeenCalledTimes(1);
-      expect(createCallTaskEvent).not.toHaveBeenCalled();
-      const upd = (c.model.findByIdAndUpdate as any).mock.calls[0][1];
-      expect(upd.step).toBe(2);
-      expect(upd.nextTouchDue).toBeInstanceOf(Date);
-      expect(upd.followUps).toHaveLength(1);
-      expect(upd.followUps[0]).toMatchObject({ step: 2, type: 'email', messageId: 'mid-123' });
-    });
-
-    it('creates a CALL task (step 2 -> day-7 touch) instead of an email', async () => {
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 2 })]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, called: 1, sent: 0, skipped: 0 });
-      expect(createCallTaskEvent).toHaveBeenCalledTimes(1);
+      expect(response.status).toBe(410);
+      expect(response.body).toEqual({ message: expect.stringContaining('second pitch') });
+      expect(userModel.findById).not.toHaveBeenCalled();
+      expect(c.model.find).not.toHaveBeenCalled();
+      expect(c.model.findByIdAndUpdate).not.toHaveBeenCalled();
       expect(sendMail).not.toHaveBeenCalled();
-      const arg = (createCallTaskEvent.mock.calls[0] as any)[0];
-      expect(arg.title).toContain('The Spot on Kirk');
-      expect(arg.scriptBody).toContain('Salem, VA');
-      expect(arg.date).toBeInstanceOf(Date);
-      const upd = (c.model.findByIdAndUpdate as any).mock.calls[0][1];
-      expect(upd.step).toBe(3);
-      expect(upd.followUps[0]).toMatchObject({ step: 3, type: 'call', eventId: 'evt-1' });
-    });
-
-    it('skips a CALL touch when the calendar insert fails (no crash)', async () => {
-      createCallTaskEvent.mockRejectedValueOnce(new Error('google down'));
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 2 })]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, skipped: 1, called: 0 });
-    });
-
-    it('parks an exhausted sequence as no-response (no touch)', async () => {
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 5 })]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, parked: 1 });
-      expect(sendMail).not.toHaveBeenCalled();
-      expect(createCallTaskEvent).not.toHaveBeenCalled();
-      const upd = (c.model.findByIdAndUpdate as any).mock.calls[0][1];
-      expect(upd.status).toBe('no-response');
-      expect(upd.nextTouchDue).toBeNull();
-    });
-
-    it('skips a record whose venue is archived', async () => {
-      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ status: 'archived' })));
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, skipped: 1, sent: 0 });
-      expect(sendMail).not.toHaveBeenCalled();
-    });
-
-    it('skips an EMAIL touch when its venue has no email', async () => {
-      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ email: '' })));
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, skipped: 1, sent: 0 });
-      expect(sendMail).not.toHaveBeenCalled();
-    });
-
-    // #974 — the sendability guard applies to the cadence too: an
-    // invalid-format primary (not just an empty one) skips the touch.
-    it('skips an EMAIL touch when its venue primary email is not a valid format (#974)', async () => {
-      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ email: 'not-an-email' })));
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, skipped: 1, sent: 0 });
-      expect(sendMail).not.toHaveBeenCalled();
-    });
-
-    // #974 (reshaped 2026-07-18 — secondary rides in Cc, not To) — applies to
-    // follow-up touches too.
-    it('CCs secondaryEmail (never To) on a follow-up when the venue has one (#974)', async () => {
-      (venueModel as any).findById = vi.fn(() => Promise.resolve(validVenue({ secondaryEmail: 'chelsea@slowplaybrewing.com' })));
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, sent: 1 });
-      expect((sendMail as any).mock.calls[0][0].to).toBe('booking@spotonkirk.com');
-      expect((sendMail as any).mock.calls[0][0].cc).toEqual([
-        'joshua.v.sherman@gmail.com', 'chemmariasherman@gmail.com', 'chelsea@slowplaybrewing.com',
-      ]);
-    });
-
-    it('skips a record when its follow-up send fails', async () => {
-      sendMail.mockRejectedValueOnce(new Error('smtp down'));
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, skipped: 1 });
-    });
-
-    it('skips when the reschedule write fails after a send', async () => {
-      c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db write')));
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, skipped: 1 });
-    });
-
-    it('skips when parking write fails', async () => {
-      c.model.findByIdAndUpdate = vi.fn(() => Promise.reject(new Error('db write')));
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord({ step: 5 })]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, skipped: 1, parked: 0 });
-    });
-
-    it('skips when the venue lookup throws', async () => {
-      (venueModel as any).findById = vi.fn(() => Promise.reject(new Error('db')));
-      c.model.find = vi.fn(() => Promise.resolve([dueRecord()]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 1, skipped: 1 });
-    });
-
-    it('500s when the due query throws', async () => {
-      c.model.find = vi.fn(() => Promise.reject(new Error('db down')));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(status).toBe(500);
-    });
-
-    it('reports an empty tick when nothing is due', async () => {
-      c.model.find = vi.fn(() => Promise.resolve([]));
-      await c.advanceCadence({ user: 'a' }, resStub);
-      expect(payload).toMatchObject({ processed: 0, sent: 0, parked: 0, skipped: 0 });
     });
   });
 
@@ -2629,7 +2489,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({ 'suggestion.reviewed': true }));
       });
 
-      it('reopen reverts a false positive to sent + resumes cadence, no venue write', async () => {
+      it('reopen reverts a false positive to sent and restores the legacy date', async () => {
         asAgent(['venue:edit']);
         const rec = {
           _id: oid(), venueId: oid(), step: 1, sentAt: new Date('2026-06-23T00:00:00Z'), status: 'replied', suggestion: { sentiment: 'needs-info' },
@@ -2639,6 +2499,7 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect((venueModel as any).findByIdAndUpdate).not.toHaveBeenCalled();
         expect(c.model.findByIdAndUpdate).toHaveBeenCalledWith(String(rec._id), expect.objectContaining({
           status: 'sent', repliedAt: null, replySnippet: null, suggestion: null,
+          nextTouchDue: new Date('2026-06-26T00:00:00Z'),
         }));
         expect(status).toBe(200);
       });
@@ -3247,17 +3108,9 @@ describe('Outreach Controller (#844 batch model)', () => {
     });
   });
 
-  describe('refuse to preview or send pitches or follow-ups lacking photo footer (#1099, D-73)', () => {
+  describe('refuse to preview or send pitches lacking photo footer (#1099, D-73)', () => {
     const venue = validVenue();
     const sendBody = { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND };
-    const outreachDoc = {
-      _id: oid(),
-      venueId: venue._id,
-      sentAt: new Date('2026-08-01'),
-      step: 1,
-      targetDates: 'Aug 14-16',
-      templateUsed: 'Originals',
-    };
 
     describe('buildPitchEmail', () => {
       it('Outcome 1: proceeds normally and includes footer attachment when footer resolves', () => {
@@ -3318,51 +3171,6 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(() => buildPitchEmail(venue, template, sendBody)).toThrow(MissingFooterError);
         expect(() => buildPitchEmail(venue, template, sendBody)).toThrow(
           "missing photo footer for template 'Originals' (stage: cold): failed to resolve footer asset 'footer-josh-maria': EACCES: permission denied",
-        );
-        existsSpy.mockRestore();
-      });
-    });
-
-    describe('buildFollowUpEmail', () => {
-      it('Outcome 1: proceeds normally and includes footer attachment when footer resolves', () => {
-        const email = buildFollowUpEmail(venue, outreachDoc);
-        expect(email.subject).toContain('Following up');
-        expect(email.html).toContain('cid:footerphoto');
-        expect(email.html).toContain('alt="Josh and Maria performing"');
-        expect(email.attachments).toEqual([
-          expect.objectContaining({
-            filename: 'josh-maria.jpg',
-            cid: 'footerphoto',
-            path: expect.stringContaining('footer-josh-maria.jpg'),
-          }),
-        ]);
-      });
-
-      it('Outcome 2: refuses and throws naming template when footer photo file cannot be found', () => {
-        const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
-        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(MissingFooterError);
-        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(
-          "missing photo footer for template 'Originals' (stage: follow-up)",
-        );
-        existsSpy.mockRestore();
-      });
-
-      it('Outcome 2: names fallback follow-up when templateUsed is missing', () => {
-        const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
-        const bareOutreach = { ...outreachDoc, templateUsed: undefined };
-        expect(() => buildFollowUpEmail(venue, bareOutreach)).toThrow(
-          "missing photo footer for template 'follow-up' (stage: follow-up)",
-        );
-        existsSpy.mockRestore();
-      });
-
-      it('Outcome 3: refuses and throws on file-system error during footer resolution', () => {
-        const existsSpy = vi.spyOn(fs, 'existsSync').mockImplementation(() => {
-          throw new Error('EACCES: permission denied');
-        });
-        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(MissingFooterError);
-        expect(() => buildFollowUpEmail(venue, outreachDoc)).toThrow(
-          "missing photo footer for template 'Originals' (stage: follow-up): failed to resolve footer asset 'footer-josh-maria': EACCES: permission denied",
         );
         existsSpy.mockRestore();
       });
@@ -3536,27 +3344,6 @@ describe('Outreach Controller (#844 batch model)', () => {
       });
     });
 
-    describe('advanceCadence follow-up skipping on missing footer', () => {
-      it('skips email touch and does not send when follow-up footer cannot be resolved', async () => {
-        const existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
-        const touchVenue = validVenue({ _id: oid() });
-        const touchOutreach = {
-          _id: oid(),
-          venueId: touchVenue._id,
-          sentAt: new Date(Date.now() - 4 * 86400000),
-          step: 1,
-          targetDates: 'Aug 14-16',
-        };
-        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-        const result = await c.doEmailTouch(touchOutreach, touchVenue, 2);
-        expect(result).toBe('skipped');
-        expect(sendMail).not.toHaveBeenCalled();
-        expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('missing photo footer'));
-        errSpy.mockRestore();
-        existsSpy.mockRestore();
-      });
-    });
-
     describe('greet first word of venue contact name (#1098, D-69)', () => {
       describe('contactFirstName', () => {
         it('extracts first word from multi-word name', () => {
@@ -3616,53 +3403,12 @@ describe('Outreach Controller (#844 batch model)', () => {
           expect(email.html).toContain('<p>Hi Liza, we are booking our upcoming run');
         });
       });
-
-      describe('buildFollowUpEmail greeting', () => {
-        const outreachDoc: OutreachDoc = {
-          _id: oid(),
-          venueId: oid(),
-          sentAt: new Date('2026-08-01'),
-          step: 1,
-          targetDates: 'Aug 14-16',
-          templateUsed: 'Originals',
-        };
-
-        it('greets "Hi Liza," for a multi-word contact name ("Liza Crowder")', () => {
-          const venue = validVenue({ contactName: 'Liza Crowder' });
-          const email = buildFollowUpEmail(venue, outreachDoc);
-          expect(email.html).toContain('<p>Hi Liza,</p>');
-        });
-
-        it('greets "Hi Tanya," for a single-word contact name ("Tanya")', () => {
-          const venue = validVenue({ contactName: 'Tanya' });
-          const email = buildFollowUpEmail(venue, outreachDoc);
-          expect(email.html).toContain('<p>Hi Tanya,</p>');
-        });
-
-        it('greets "Hi there," when contactName is empty or undefined', () => {
-          const venueEmpty = validVenue({ contactName: '' });
-          const emailEmpty = buildFollowUpEmail(venueEmpty, outreachDoc);
-          expect(emailEmpty.html).toContain('<p>Hi there,</p>');
-
-          const venueUndef = validVenue({ contactName: undefined });
-          const emailUndef = buildFollowUpEmail(venueUndef, outreachDoc);
-          expect(emailUndef.html).toContain('<p>Hi there,</p>');
-        });
-      });
     });
   });
 
   describe('dark email wrapper (web-jam-back#1094, D-72)', () => {
     const venue = validVenue();
     const sendBody = { targetDates: 'Aug 14-16', targetWeekend: VALID_WEEKEND };
-    const outreachDoc = {
-      _id: oid(),
-      venueId: venue._id,
-      sentAt: new Date('2026-08-01'),
-      step: 1,
-      targetDates: 'Aug 14-16',
-      templateUsed: 'Originals',
-    };
 
     const relativeLuminance = (hex: string): number => {
       const channels = [1, 3, 5].map((idx) => parseInt(hex.slice(idx, idx + 2), 16) / 255);
@@ -3751,20 +3497,6 @@ describe('Outreach Controller (#844 batch model)', () => {
         expect(pitch.html).toContain('cid:footerphoto');
         expect(pitch.attachments).toHaveLength(1);
         expect(pitch.attachments[0].cid).toBe('footerphoto');
-      });
-    });
-
-    describe('buildFollowUpEmail dark wrapping', () => {
-      it('wraps follow-up email body and photo footer inside dark presentation table', () => {
-        const email = buildFollowUpEmail(venue, outreachDoc);
-
-        expect(email.html.startsWith(DARK_WRAPPER_START)).toBe(true);
-        expect(email.html.endsWith(DARK_WRAPPER_END)).toBe(true);
-        expect(email.html).toContain('following up on');
-        expect(email.html).toContain('<a style="color:#4fc3f7;" href="https://www.joshandmariamusic.com">');
-        expect(email.html).toContain('cid:footerphoto');
-        expect(email.attachments).toHaveLength(1);
-        expect(email.attachments[0].cid).toBe('footerphoto');
       });
     });
   });
