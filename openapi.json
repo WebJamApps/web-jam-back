@@ -2772,6 +2772,444 @@
         ]
       }
     },
+    "/venue/discover": {
+      "get": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "discoverVenueListings",
+        "summary": "Search cached Overture business listings by distance",
+        "description": "Admin-only discovery search over the nine Find New Venues kinds in mapListing within 5 to 100 miles (default 25), filtering out existing venues in the same city, non-music/theater/large-hall and sweep excludeKeywords, and rejected listings (unless showRejected=true). Limited to 60 requests per minute per Authorization header.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "radiusMiles",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 5,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "showRejected",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Filtered listings sorted nearest first, with last download timestamp and copy reach.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "rows",
+                    "lastDownloadedAt",
+                    "copyRadiusMiles"
+                  ],
+                  "properties": {
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "listingId",
+                          "name",
+                          "kind",
+                          "street",
+                          "city",
+                          "state",
+                          "zipCode",
+                          "phone",
+                          "website",
+                          "lat",
+                          "lng",
+                          "distanceMiles",
+                          "rejected"
+                        ],
+                        "properties": {
+                          "listingId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "street": {
+                            "type": "string"
+                          },
+                          "city": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          },
+                          "zipCode": {
+                            "type": "string"
+                          },
+                          "phone": {
+                            "type": "string"
+                          },
+                          "website": {
+                            "type": "string"
+                          },
+                          "lat": {
+                            "type": "number"
+                          },
+                          "lng": {
+                            "type": "number"
+                          },
+                          "distanceMiles": {
+                            "type": "number"
+                          },
+                          "rejected": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    },
+                    "lastDownloadedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "copyRadiusMiles": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid latitude, longitude, radiusMiles, or showRejected parameter.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "description": "Too many requests.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "description": "Venue discovery is unavailable (venue, rejection, sweep, or listing read failed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Venue listings have not loaded yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/venue/discover/{listingId}/reject": {
+      "parameters": [
+        {
+          "name": "listingId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "rejectDiscoverVenueListing",
+        "summary": "Reject a discovered map listing",
+        "description": "Admin-only route recording a listing rejection in mapListingRejection. Limited to 60 requests per minute per Authorization header.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Existing rejection updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "listingId",
+                    "name",
+                    "rejectedBy",
+                    "rejectedAt"
+                  ],
+                  "properties": {
+                    "listingId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "rejectedBy": {
+                      "type": "string"
+                    },
+                    "rejectedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Rejection created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "listingId",
+                    "name",
+                    "rejectedBy",
+                    "rejectedAt"
+                  ],
+                  "properties": {
+                    "listingId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "rejectedBy": {
+                      "type": "string"
+                    },
+                    "rejectedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid listingId.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Listing not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "description": "Venue discovery is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Venue listings have not loaded yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "venues"
+        ],
+        "operationId": "undoRejectDiscoverVenueListing",
+        "summary": "Undo a map listing rejection",
+        "description": "Admin-only route removing a listing rejection from mapListingRejection. Limited to 60 requests per minute per Authorization header.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rejection removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "listingId",
+                    "deleted"
+                  ],
+                  "properties": {
+                    "listingId": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid listingId.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/NotLoggedIn"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "Rejection not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "502": {
+            "description": "Venue discovery is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Venue listings have not loaded yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/venue/{id}/touch": {
       "parameters": [
         {

@@ -8,6 +8,13 @@ import venueModel from './venue-facade.js';
 import { normalizeAddress } from './normalize-address.js';
 import { censusLocationUpdate, hasVenueAddressUpdate } from './census-geocoder.js';
 import { searchVenueListings } from './listings-search.js';
+import {
+  discoverVenueListings,
+  parseDiscoverQuery,
+  rejectDiscoverListing,
+  undoRejectDiscoverListing,
+} from './discover-listings.js';
+import { MAP_LISTING_LOCK_ID } from './map-listing-refresh.js';
 import userModel from '../user/user-facade.js';
 import gigModel from '../gig/gig-facade.js';
 import {
@@ -43,7 +50,12 @@ const VENUE_WRITE_CAPS = ['venue:create', 'venue:edit', 'venue:delete'];
 // ±2-month clear-window for the eligibility filter (web-jam-back#819).
 const ELIGIBILITY_WINDOW_MONTHS = 2;
 
-interface AuthedUser { userType?: string; privileges?: string[] }
+interface AuthedUser {
+  userType?: string;
+  privileges?: string[];
+  name?: string;
+  email?: string;
+}
 type AuthRequest = Request & { user?: string };
 type AuthIdRequest = Request<{ id: string }> & { user?: string };
 type AuthzError = { status: number; message: string };
@@ -1047,17 +1059,22 @@ class VenueController extends Controller {
 
   // Load the token's user, allowing only admin logins without capabilities (#1159).
   // A login that works through venue:* capabilities is refused.
-  async authorizeAdminOnly(req: AuthRequest): Promise<AuthzResult> { // eslint-disable-line class-methods-use-this
+  async authorizeAdminUser(req: AuthRequest): Promise<{ error: AuthzError } | { user: AuthedUser }> { // eslint-disable-line class-methods-use-this
     let user: AuthedUser | null;
     try { user = await userModel.findById(req.user || '') as unknown as AuthedUser | null; } catch (e) {
-      return { status: 500, message: (e as Error).message };
+      return { error: { status: 500, message: (e as Error).message } };
     }
-    if (!user) return { status: 401, message: 'user not found' };
+    if (!user) return { error: { status: 401, message: 'user not found' } };
     const privileges = user.privileges || [];
     if (privileges.length || ALLOWED_ROLES.indexOf(user.userType || '') === -1) {
-      return { status: 403, message: 'admin role required' };
+      return { error: { status: 403, message: 'admin role required' } };
     }
-    return null;
+    return { user };
+  }
+
+  async authorizeAdminOnly(req: AuthRequest): Promise<AuthzResult> {
+    const auth = await this.authorizeAdminUser(req);
+    return 'error' in auth ? auth.error : null;
   }
 
   // GET /venue/listings/search?q=<text> — admin-only search over the Overture listings copy (#1217).
@@ -1111,6 +1128,75 @@ class VenueController extends Controller {
       lng,
       displayName: first.display_name || '',
     });
+  }
+
+  // GET /venue/discover — search cached Overture listings by distance (#1215).
+  async discoverListings(req: Request, res: Response): Promise<unknown> {
+    const guardErr = await this.authorizeAdminOnly(req as AuthRequest);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+
+    const parsed = parseDiscoverQuery((req.query || {}) as Record<string, unknown>);
+    if (!parsed.ok) return res.status(400).json({ message: parsed.message });
+
+    const result = await discoverVenueListings(parsed.params);
+    if (result.status === 'not-loaded') {
+      return res.status(503).json({ message: 'Venue listings have not loaded yet' });
+    }
+    if (result.status === 'unavailable') {
+      return res.status(502).json({ message: 'Venue discovery is unavailable' });
+    }
+    return res.status(200).json({
+      rows: result.rows,
+      lastDownloadedAt: result.lastDownloadedAt,
+      copyRadiusMiles: result.copyRadiusMiles,
+    });
+  }
+
+  // POST /venue/discover/:listingId/reject — record a listing rejection (#1215).
+  async rejectDiscoverListing(req: Request<{ listingId: string }>, res: Response): Promise<unknown> {
+    const auth = await this.authorizeAdminUser(req as AuthRequest);
+    if ('error' in auth) return res.status(auth.error.status).json({ message: auth.error.message });
+
+    const listingId = typeof req.params.listingId === 'string' ? req.params.listingId.trim() : '';
+    if (!listingId || listingId === MAP_LISTING_LOCK_ID) {
+      return res.status(400).json({ message: 'listingId is required' });
+    }
+
+    const rejectedBy = (auth.user.email || auth.user.name || (req as AuthRequest).user || '').trim();
+    const result = await rejectDiscoverListing(listingId, rejectedBy);
+    if (result.status === 'not-loaded') {
+      return res.status(503).json({ message: 'Venue listings have not loaded yet' });
+    }
+    if (result.status === 'not-found') {
+      return res.status(404).json({ message: 'Listing not found' });
+    }
+    if (result.status === 'unavailable') {
+      return res.status(502).json({ message: 'Venue discovery is unavailable' });
+    }
+    return res.status(result.status === 'created' ? 201 : 200).json(result.rejection);
+  }
+
+  // DELETE /venue/discover/:listingId/reject — undo a listing rejection (#1215).
+  async undoRejectDiscoverListing(req: Request<{ listingId: string }>, res: Response): Promise<unknown> {
+    const guardErr = await this.authorizeAdminOnly(req as AuthRequest);
+    if (guardErr) return res.status(guardErr.status).json({ message: guardErr.message });
+
+    const listingId = typeof req.params.listingId === 'string' ? req.params.listingId.trim() : '';
+    if (!listingId || listingId === MAP_LISTING_LOCK_ID) {
+      return res.status(400).json({ message: 'listingId is required' });
+    }
+
+    const result = await undoRejectDiscoverListing(listingId);
+    if (result.status === 'not-loaded') {
+      return res.status(503).json({ message: 'Venue listings have not loaded yet' });
+    }
+    if (result.status === 'not-found') {
+      return res.status(404).json({ message: 'Rejection not found' });
+    }
+    if (result.status === 'unavailable') {
+      return res.status(502).json({ message: 'Venue discovery is unavailable' });
+    }
+    return res.status(200).json({ listingId: result.listingId, deleted: true });
   }
 }
 
