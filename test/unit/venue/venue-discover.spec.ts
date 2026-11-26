@@ -251,7 +251,9 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
     it('answers 502 and fails closed when the venue list cannot be read', async () => {
       await seedLockDoc();
       await MapListing.insertMany([makeListing({ listingId: 'ov-1', name: 'Open Taproom' })]);
-      vi.spyOn(venueModel, 'find').mockRejectedValue(new Error('venue read failed'));
+      vi.spyOn(venueModel.Schema, 'find').mockImplementation(() => {
+        throw new Error('venue read failed');
+      });
 
       const r = await request(app)
         .get(`/venue/discover?lat=${salemLat}&lng=${salemLng}`)
@@ -363,7 +365,7 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
           lng: -80.4139,
           lat: 37.2296,
         }),
-        // ~35 miles (Lynchburg) — outside default 25mi, inside 100mi
+        // ~50 miles (Lynchburg) — outside default 25mi, inside 100mi
         makeListing({
           listingId: 'ov-far',
           name: 'Lynchburg Distillery',
@@ -451,7 +453,7 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
     it('enforces every literal row of the closed case list plus sweep excludeKeywords', async () => {
       await seedLockDoc();
 
-      // Existing DB venues: active and archived Parkway Brewing in Salem, and Starr Hill Brewing in Crozet
+      // Existing DB venues: active Parkway Brewing in Salem, archived Parkway Brewing in Blacksburg, and Starr Hill Brewing in Crozet
       await venueModel.create({
         name: 'Starr Hill Brewing',
         address: '5391 Three Notchd Rd',
@@ -506,6 +508,12 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
           kind: 'brewery',
           city: 'Blacksburg',
         }),
+        makeListing({
+          listingId: 'ov-parkway-roanoke',
+          name: 'Parkway Brewing Company',
+          kind: 'brewery',
+          city: 'Roanoke',
+        }),
         makeListing({ listingId: 'ov-sharkeys', name: "Sharkey's", city: 'Radford' }),
         makeListing({ listingId: 'ov-elks', name: 'Salem Elks Lodge 305', city: 'Salem' }),
         makeListing({ listingId: 'ov-church', name: 'Old Church Pub', city: 'Salem' }),
@@ -527,14 +535,21 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
         .set(adminHeaders());
       expect(reRejectRes.status).toBe(200);
 
-      // showRejected=false (default): Macarena Grill & Starr Hill kept; Theatre/Pavilion/Theater/Parkway active & archived/Sharkey's/Elks/Church removed
+      // showRejected=false (default): Macarena Grill, Roanoke Parkway (different city), and Starr Hill kept;
+      // Theatre/Pavilion/Theater/same-city Parkway active & archived/Sharkey's/Elks/Church removed
       const hideRejectedRes = await request(app)
         .get(`/venue/discover?lat=${salemLat}&lng=${salemLng}&showRejected=false`)
         .set(adminHeaders());
       expect(hideRejectedRes.status).toBe(200);
       const hiddenRows = (hideRejectedRes.body as DiscoverResponseBody).rows;
+      expect(hiddenRows.map((r) => r.listingId)).toEqual([
+        'ov-macarena',
+        'ov-parkway-roanoke',
+        'ov-starr-hill',
+      ]);
       expect(hiddenRows.map((r) => r.name)).toEqual([
         'Macarena Grill',
+        'Parkway Brewing Company',
         'Starr Hill Pilot Brewery & Side Stage',
       ]);
       expect(hiddenRows.every((r) => r.rejected === false)).toBe(true);
@@ -547,6 +562,7 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
       const shownRows = (showRejectedRes.body as DiscoverResponseBody).rows;
       expect(shownRows.map((r) => r.name)).toEqual([
         'Macarena Grill',
+        'Parkway Brewing Company',
         "Sharkey's",
         'Starr Hill Pilot Brewery & Side Stage',
       ]);
@@ -567,6 +583,7 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
       const afterUndoRows = (afterUndoRes.body as DiscoverResponseBody).rows;
       expect(afterUndoRows.map((r) => r.name)).toEqual([
         'Macarena Grill',
+        'Parkway Brewing Company',
         "Sharkey's",
         'Starr Hill Pilot Brewery & Side Stage',
       ]);

@@ -285,8 +285,7 @@ async function getListingsCopyStatus(): Promise<
   { loaded: true; lastDownloadedAt: Date } | { loaded: false }
 > {
   const [sample, lockDoc] = await Promise.all([
-    MapListing.findOne({ listingId: { $ne: MAP_LISTING_LOCK_ID } }, { downloadedAt: 1 })
-      .sort({ downloadedAt: -1 })
+    MapListing.findOne({ listingId: { $ne: MAP_LISTING_LOCK_ID } }, { _id: 1 })
       .lean()
       .exec(),
     MapListing.findOne({ listingId: MAP_LISTING_LOCK_ID }, { lastCommittedAt: 1 })
@@ -296,10 +295,23 @@ async function getListingsCopyStatus(): Promise<
   if (!sample) return { loaded: false };
 
   const committed = toValidDate((lockDoc as { lastCommittedAt?: unknown } | null)?.lastCommittedAt);
-  const sampled = toValidDate((sample as { downloadedAt?: unknown }).downloadedAt);
+  if (committed) {
+    return {
+      loaded: true,
+      lastDownloadedAt: committed,
+    };
+  }
+
+  const fallbackDoc = await MapListing.findOne(
+    { listingId: { $ne: MAP_LISTING_LOCK_ID } },
+    { downloadedAt: 1 },
+  )
+    .lean()
+    .exec();
+  const sampled = toValidDate((fallbackDoc as { downloadedAt?: unknown } | null)?.downloadedAt);
   return {
     loaded: true,
-    lastDownloadedAt: committed ?? sampled ?? new Date(0),
+    lastDownloadedAt: sampled ?? new Date(0),
   };
 }
 
@@ -375,7 +387,7 @@ export async function discoverVenueListings(
 
     const [geoDocs, venues, rejections, sweeps] = await Promise.all([
       MapListing.aggregate<GeoAggListingDoc>(buildDiscoverGeoPipeline(params)).exec(),
-      venueModel.find({}),
+      venueModel.Schema.find({}, { name: 1, city: 1 }).lean().exec(),
       MapListingRejection.find({}, { listingId: 1 }).lean().exec(),
       VenueMiningSweep.find({}, { excludeKeywords: 1 }).lean().exec(),
     ]);
