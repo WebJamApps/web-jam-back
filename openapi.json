@@ -55,6 +55,10 @@
     {
       "name": "venue-mining",
       "description": "Completed venue-mining sweeps."
+    },
+    {
+      "name": "outreach",
+      "description": "Pitch sends, outreach records, batch approvals and run reports."
     }
   ],
   "security": [],
@@ -3805,6 +3809,2200 @@
           }
         }
       }
+    },
+    "/outreach": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "listOutreach",
+        "summary": "List outreach records",
+        "description": "Returns every record matching the filters. Other query parameters are ignored, as is a filter given more than once. Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "parameters": [
+          {
+            "name": "venueId",
+            "in": "query",
+            "required": false,
+            "description": "Only records for this venue. A value that is not a valid id answers 500.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Only records with this status.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching records.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Outreach"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/send": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "sendOutreachPitch",
+        "summary": "Send one pitch to a vetted venue now",
+        "description": "Sends the email and records it. The venue must exist, not be archived, be outreach-eligible, have a valid primary email and be open to a pitch for the target weekend. The email is copied to the default addresses unless cc is given, plus the venue's secondary email when valid. The body is validated before the send permission: a caller holding only outreach:create, or an AI-agent account holding outreach:create or outreach:approve, receives 400 for an invalid body and 403 for a valid one. An AI-agent account can never send here. Requires outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:approve"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachSendInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The email was sent; the new record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outreach"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"valid venueId is required\", \"targetDates is required\", \"targetWeekend {start, end} is required\", the venue is missing, archived, not outreach-eligible or has no valid primary email, no active template exists for the type, or the template's footer photo is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "description": "The caller lacks the capability, or is an AI-agent account (\"AI agents may draft but never send\").",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The venue is not open to a pitch for this target weekend; the message gives the reason.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "A lookup failed, or the email was sent and saving its record failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "\"email send failed: ...\"",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/outreach/batch/preflight": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "preflightOutreachBatch",
+        "summary": "Check a whole batch and store a dispatch record",
+        "description": "Sends nothing. Requires a Gate 1 venue-set approval and a Gate 2 draft fingerprint approval for the batch; the venues listed must be exactly the approved venues due a pitch, and each rendered draft must match its approved fingerprint. On success the send parameters are stored under a new dispatchId for POST /outreach/batch. Give targetWeekend as an object here: the string form cannot be stored and answers 500. Requires any one of outreach:create, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:approve"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachBatchInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The batch passed and the dispatch record is stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDispatchRef"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "venueIds is missing, empty or holds an invalid id, targetDates or targetWeekend is missing or invalid, or venueCustomizations is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "description": "The caller lacks the capability, or \"dispatch refused: ...\": an approval is missing or does not match the batch, a draft cannot be rendered or does not match its fingerprint, or a footer photo is missing. Nothing is stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The approvals, pitch history or drafts could not be checked, or the dispatch record could not be stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/outreach/batch": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "sendOutreachBatch",
+        "summary": "Send an approved batch",
+        "description": "Two body forms. With dispatchId (from the preflight) every send parameter comes from the stored dispatch record and any other body field except actor is ignored; the call stops starting new sends after 12 seconds and reports how many venues remain, so call it again until remaining is 0. Without dispatchId the body carries the batch itself, which must pass the same Gate 1 and Gate 2 checks as the preflight, and each venue is checked and sent in turn. Requires any one of outreach:create, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:approve"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/OutreachDispatchSendInput"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OutreachBatchInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The send loop ran. A venue that could not be sent is listed in skipped. A dispatch already completed answers with zero counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OutreachDispatchResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OutreachBatchResult"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "dispatchId is not a non-empty string, or, without dispatchId, venueIds, targetDates, targetWeekend or venueCustomizations is missing or invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "description": "The caller lacks the capability, or \"dispatch refused: ...\": an approval is missing, changed or does not match, a draft cannot be rendered or does not match its fingerprint, a footer photo is missing, or the dispatch has already ended (aborted). A dispatch refused for its approvals or drafts is marked aborted and lists unsentVenues.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDispatchRefusal"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "\"dispatch refused: unknown dispatchId '...'\"",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The dispatch record, approvals, pitch history or drafts could not be read or checked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Dispatch form only: the mail account or connection failed on the first venue of this call, so nothing was handled. The dispatch can be called again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDispatchRefusal"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/outreach/candidates": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "listOutreachCandidates",
+        "summary": "Propose venues to pitch",
+        "description": "Read-only. Returns venues that are outreach-eligible, not archived, have a valid primary email, have no future resumeBooking date, are not booked through the start of the target window, are open to a pitch for it and have no gig within their gig interval (two months when unset). Without a readable targetDates the window is today and the response is a plain array. Bracketed query names such as targetWeekend[start] are not read. Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "parameters": [
+          {
+            "name": "targetDates",
+            "in": "query",
+            "required": false,
+            "description": "Target weekend, for example \"2026-10-16 to 2026-10-18\"; \" - \" and \"/\" also separate the two dates, and a single YYYY-MM-DD date is accepted. A value that cannot be read is ignored.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "targetWeekend",
+            "in": "query",
+            "required": false,
+            "description": "Sending this without targetDates answers 400; its value is never used as the weekend.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cities",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated city names. Giving the parameter more than once answers 401.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "lat",
+            "in": "query",
+            "required": false,
+            "description": "Latitude from -90 to 90. Give lat, lng and radiusMiles together.",
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "lng",
+            "in": "query",
+            "required": false,
+            "description": "Longitude from -180 to 180.",
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "radiusMiles",
+            "in": "query",
+            "required": false,
+            "description": "Search radius in miles, greater than 0. Venues with no stored location are left out.",
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An array of candidates, or, when the target weekend was read, the candidates with the gigs falling in that weekend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OutreachCandidate"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/OutreachCandidatesForWeekend"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The location parameters are incomplete or out of range, or \"targetWeekend must include valid start and end\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/preview": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "previewOutreachPitch",
+        "summary": "Render pitch emails without sending",
+        "description": "Read-only; eligibility and earlier pitches do not block a preview. With venueIds the response is an array, and ids that are invalid or cannot be rendered are left out. Otherwise venueId is required and the response is one object. Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "parameters": [
+          {
+            "name": "venueIds",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated venue ids. Takes precedence over venueId. Giving the parameter more than once answers 401.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "venueId",
+            "in": "query",
+            "required": false,
+            "description": "A single venue id, used when venueIds is absent or empty.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "templateType",
+            "in": "query",
+            "required": false,
+            "description": "Template type overriding the venue's own.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "targetDates",
+            "in": "query",
+            "required": false,
+            "description": "Target dates text placed in the email, also read as the weekend when targetWeekend is absent.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "targetWeekend",
+            "in": "query",
+            "required": false,
+            "description": "Target weekend as one string, for example \"2026-10-16 to 2026-10-18\". Bracketed names such as targetWeekend[start] are not read.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bookingPeriod",
+            "in": "query",
+            "required": false,
+            "description": "Booking period text placed in the email.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customIntro",
+            "in": "query",
+            "required": false,
+            "description": "Replaces the template's introduction.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customBody",
+            "in": "query",
+            "required": false,
+            "description": "Inserted at the template's custom body marker.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "With venueIds, an array of rendered drafts; otherwise one draft.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OutreachBatchPreviewItem"
+                      }
+                    },
+                    {
+                      "$ref": "#/components/schemas/OutreachPreview"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A footer photo is missing, or, in the single-venue form, venueId is invalid, the venue is missing, archived or has no valid primary email, or no active template exists.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/advance": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "advanceOutreach",
+        "summary": "Retired automatic follow-up",
+        "description": "Public, with no login check. Always refuses.",
+        "security": [],
+        "deprecated": true,
+        "responses": {
+          "410": {
+            "description": "\"Automatic follow-ups are retired. Use the approved second pitch workflow.\"",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/outreach/replies/pending": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "listPendingOutreachReplies",
+        "summary": "List replies waiting for review",
+        "description": "Replied records with an unreviewed suggestion, plus bounced records whose venue still exists, is not archived and is not outreach-eligible. A bounced record whose venue cannot be read is kept. Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "responses": {
+          "200": {
+            "description": "The records waiting for review.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Outreach"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/{id}/apply-suggestion": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Outreach record id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "applyOutreachSuggestion",
+        "summary": "Apply, dismiss or reopen a reply suggestion",
+        "description": "reopen returns the record to sent and clears the reply, whether or not it has a suggestion. Otherwise the record must have a suggestion: unless dismiss is true, the venue's bookingStatus is set from the body or else the suggestion; the suggestion is then marked reviewed. Requires venue:edit, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "venue:edit"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachApplySuggestionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outreach"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Update id is invalid\", \"Id Not Found\", \"no suggestion to apply\" or \"bookingStatus not valid\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/{id}/outcome": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Outreach record id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "recordOutreachOutcome",
+        "summary": "Record the outcome of a pitch",
+        "description": "Sets the status, stamps who and when, and adds an entry to the venue timeline. not-interested also makes the venue not outreach-eligible and appends a venue note. booked also stores bookedDate on the venue and, when the record has a target weekend, marks other sent records for an overlapping weekend target-filled. Requires outreach:edit, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:edit"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachOutcomeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outreach"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Update id is invalid\", \"Id Not Found\", an unknown status, booked without a valid bookedDate, or target-filled with a targetWeekend that is invalid, missing from both body and record, or different from the record's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/report": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "listOutreachReports",
+        "summary": "List stored run reports",
+        "description": "Administrator only: the caller's role must be JaM-admin or Developer; privileges are not consulted. Newest update first, without the HTML.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored reports.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OutreachReportSummary"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "description": "\"administrator login required\"",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "saveOutreachReport",
+        "summary": "Save or replace a run report",
+        "description": "One report per weekend key; saving the same key again replaces it. Requires any one of outreach:create, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:approve"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachReportInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The replaced report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachReport"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The new report.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"weekend is required\" or \"htmlContent is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/report/{weekend}": {
+      "parameters": [
+        {
+          "name": "weekend",
+          "in": "path",
+          "required": true,
+          "description": "Weekend key the report was saved under, for example 2026-10-16-to-2026-10-18. Surrounding spaces are trimmed.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "getOutreachReport",
+        "summary": "Read a run report page",
+        "description": "Public. Serves the stored HTML, cacheable for 300 seconds.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The report page.",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"weekend parameter is required\" (blank value).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No report, or no HTML, for the weekend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "deleteOutreachReport",
+        "summary": "Delete a run report",
+        "description": "Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "responses": {
+          "200": {
+            "description": "The report was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"weekend parameter is required\" (blank value).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "No report for the weekend.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/table-sort.js": {
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "getOutreachTableSortScript",
+        "summary": "Script used by the report pages",
+        "description": "Public. A fixed script, cacheable for one year.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The script.",
+            "content": {
+              "application/javascript": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/outreach/approval/venue-set": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "recordVenueSetApproval",
+        "summary": "Record the Gate 1 venue-set approval",
+        "description": "Replaces the approval with the same batchId, or else the latest one for the same weekend, otherwise creates one. A venue set may only be widened. Carried-over venues keep their approval time unless named in reapproveVenueIds. approver defaults to actor, then to the caller's user id. Requires any one of outreach:create, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:approve"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachVenueApprovalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The replaced approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachVenueApproval"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The new approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachVenueApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "venueIds or reapproveVenueIds is invalid, the batch is not identified, or a carried-over venue was removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "findVenueSetApproval",
+        "summary": "Read the Gate 1 venue-set approval by query",
+        "description": "One of batchId or weekend is required; batchId is used when both are given. The value is matched against either stored field. Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "query",
+            "required": false,
+            "description": "Batch id or weekend key.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "weekend",
+            "in": "query",
+            "required": false,
+            "description": "Weekend key, used when batchId is absent.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachVenueApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"batchId parameter is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "No Gate 1 venue-set approval for the batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/approval/venue-set/{batchId}": {
+      "parameters": [
+        {
+          "name": "batchId",
+          "in": "path",
+          "required": true,
+          "description": "Batch id or weekend key; matched against either stored field.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "getVenueSetApproval",
+        "summary": "Read the Gate 1 venue-set approval",
+        "description": "Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "responses": {
+          "200": {
+            "description": "The approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachVenueApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"batchId parameter is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "No Gate 1 venue-set approval for the batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/approval/gate1": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "recordGate1Approval",
+        "summary": "Record the Gate 1 venue-set approval",
+        "description": "Replaces the approval with the same batchId, or else the latest one for the same weekend, otherwise creates one. A venue set may only be widened. Carried-over venues keep their approval time unless named in reapproveVenueIds. approver defaults to actor, then to the caller's user id. Requires any one of outreach:create, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:approve"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachVenueApprovalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The replaced approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachVenueApproval"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The new approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachVenueApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "venueIds or reapproveVenueIds is invalid, the batch is not identified, or a carried-over venue was removed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "findGate1Approval",
+        "summary": "Read the Gate 1 venue-set approval by query",
+        "description": "One of batchId or weekend is required; batchId is used when both are given. The value is matched against either stored field. Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "query",
+            "required": false,
+            "description": "Batch id or weekend key.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "weekend",
+            "in": "query",
+            "required": false,
+            "description": "Weekend key, used when batchId is absent.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachVenueApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"batchId parameter is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "No Gate 1 venue-set approval for the batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/approval/gate1/{batchId}": {
+      "parameters": [
+        {
+          "name": "batchId",
+          "in": "path",
+          "required": true,
+          "description": "Batch id or weekend key; matched against either stored field.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "getGate1Approval",
+        "summary": "Read the Gate 1 venue-set approval",
+        "description": "Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "responses": {
+          "200": {
+            "description": "The approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachVenueApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"batchId parameter is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "No Gate 1 venue-set approval for the batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/approval/draft-fingerprints": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "recordDraftFingerprintsApproval",
+        "summary": "Record the Gate 2 draft fingerprint approval",
+        "description": "Replaces an approval with the same batchId or weekend, otherwise creates one. approver defaults to actor, then to the caller's user id. Requires any one of outreach:create, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:approve"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachDraftApprovalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The replaced approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDraftApproval"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The new approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDraftApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The fingerprints are missing or invalid, or the batch is not identified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "findDraftFingerprintsApproval",
+        "summary": "Read the Gate 2 draft fingerprint approval by query",
+        "description": "One of batchId or weekend is required; batchId is used when both are given. The value is matched against either stored field. Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "query",
+            "required": false,
+            "description": "Batch id or weekend key.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "weekend",
+            "in": "query",
+            "required": false,
+            "description": "Weekend key, used when batchId is absent.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDraftApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"batchId parameter is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "No Gate 2 draft fingerprint approval for the batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/approval/draft-fingerprints/{batchId}": {
+      "parameters": [
+        {
+          "name": "batchId",
+          "in": "path",
+          "required": true,
+          "description": "Batch id or weekend key; matched against either stored field.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "getDraftFingerprintsApproval",
+        "summary": "Read the Gate 2 draft fingerprint approval",
+        "description": "Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "responses": {
+          "200": {
+            "description": "The approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDraftApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"batchId parameter is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "No Gate 2 draft fingerprint approval for the batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/approval/gate2": {
+      "post": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "recordGate2Approval",
+        "summary": "Record the Gate 2 draft fingerprint approval",
+        "description": "Replaces an approval with the same batchId or weekend, otherwise creates one. approver defaults to actor, then to the caller's user id. Requires any one of outreach:create, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:approve"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachDraftApprovalInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The replaced approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDraftApproval"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The new approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDraftApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The fingerprints are missing or invalid, or the batch is not identified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "findGate2Approval",
+        "summary": "Read the Gate 2 draft fingerprint approval by query",
+        "description": "One of batchId or weekend is required; batchId is used when both are given. The value is matched against either stored field. Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "query",
+            "required": false,
+            "description": "Batch id or weekend key.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "weekend",
+            "in": "query",
+            "required": false,
+            "description": "Weekend key, used when batchId is absent.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDraftApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"batchId parameter is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "No Gate 2 draft fingerprint approval for the batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/approval/gate2/{batchId}": {
+      "parameters": [
+        {
+          "name": "batchId",
+          "in": "path",
+          "required": true,
+          "description": "Batch id or weekend key; matched against either stored field.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "getGate2Approval",
+        "summary": "Read the Gate 2 draft fingerprint approval",
+        "description": "Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "responses": {
+          "200": {
+            "description": "The approval.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachDraftApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"batchId parameter is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "No Gate 2 draft fingerprint approval for the batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/approval/{batchId}": {
+      "parameters": [
+        {
+          "name": "batchId",
+          "in": "path",
+          "required": true,
+          "description": "Batch id or weekend key; matched against either stored field.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "getOutreachBatchApproval",
+        "summary": "Read both approvals for a batch",
+        "description": "Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "responses": {
+          "200": {
+            "description": "Both gates; a gate with no record is null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutreachBatchApproval"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"batchId parameter is required\" (blank value).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "404": {
+            "description": "Neither approval exists for the batch.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
+    },
+    "/outreach/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Outreach record id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "getOutreach",
+        "summary": "Read one outreach record",
+        "description": "Requires any one of outreach:create, outreach:edit, outreach:delete, outreach:approve, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:create",
+          "outreach:edit",
+          "outreach:delete",
+          "outreach:approve"
+        ],
+        "responses": {
+          "200": {
+            "description": "The record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outreach"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Find id is invalid\" or \"nothing found with id provided\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "updateOutreach",
+        "summary": "Update a record's status or Gmail thread",
+        "description": "Only status, gmailThreadId and actor are read. A status other than sent clears nextTouchDue. No outcome is stamped; use POST /outreach/{id}/outcome for that. Requires outreach:edit, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:edit"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OutreachUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outreach"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Update id is invalid\", \"status not valid\" or \"Id Not Found\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "outreach"
+        ],
+        "operationId": "deleteOutreach",
+        "summary": "Delete an outreach record",
+        "description": "Requires outreach:delete, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "outreach:delete"
+        ],
+        "responses": {
+          "200": {
+            "description": "The deleted record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outreach"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Delete id is invalid\" or \"Id Not Found\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/OutreachUnauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/OutreachForbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3837,6 +6035,26 @@
       }
     },
     "responses": {
+      "OutreachUnauthorized": {
+        "description": "No valid token, no user for it, or the user's role is not allowed on this route. These routes also answer 401, with the error's message, when handling the request fails unexpectedly, for example on a body field of the wrong type.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
+      "OutreachForbidden": {
+        "description": "The caller lacks the capability (\"missing ... capability\"), or has no privileges list and is not JaM-admin or Developer (\"not authorized for outreach\").",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
       "NotLoggedIn": {
         "description": "No valid token, no user for it, or the user's role is not allowed on this route.",
         "content": {
@@ -5595,6 +7813,1101 @@
             }
           }
         ]
+      },
+      "OutreachTargetWeekend": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "OutreachTargetWeekendInput": {
+        "description": "The target weekend: start and end dates with start not after end, or one string such as \"2026-10-16 to 2026-10-18\".",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "start",
+              "end"
+            ],
+            "properties": {
+              "start": {
+                "type": "string"
+              },
+              "end": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "string"
+          }
+        ]
+      },
+      "Outreach": {
+        "type": "object",
+        "required": [
+          "_id",
+          "venueId"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "venueId": {
+            "type": "string"
+          },
+          "templateUsed": {
+            "type": "string"
+          },
+          "targetDates": {
+            "type": "string"
+          },
+          "targetWeekend": {
+            "$ref": "#/components/schemas/OutreachTargetWeekend"
+          },
+          "bookingPeriod": {
+            "type": "string"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "replied",
+              "no-response",
+              "interested",
+              "not-interested",
+              "booked",
+              "target-filled"
+            ]
+          },
+          "outcomeAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "outcomeBy": {
+            "type": "string"
+          },
+          "bookedDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "gmailThreadId": {
+            "type": "string"
+          },
+          "repliedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "replySnippet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "suggestion": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "sentiment": {
+                "type": "string",
+                "enum": [
+                  "positive",
+                  "negative",
+                  "needs-info"
+                ]
+              },
+              "proposedBookingStatus": {
+                "type": "string",
+                "enum": [
+                  "booking",
+                  "not-booking",
+                  "booked"
+                ]
+              },
+              "proposedInterested": {
+                "type": "boolean"
+              },
+              "rationale": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "reviewed": {
+                "type": "boolean"
+              }
+            }
+          },
+          "replyKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "bounce",
+              null
+            ]
+          },
+          "sentBy": {
+            "type": "string"
+          },
+          "followUps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sentAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "call"
+                  ]
+                },
+                "messageId": {
+                  "type": "string"
+                },
+                "eventId": {
+                  "type": "string"
+                },
+                "step": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "step": {
+            "type": "number"
+          },
+          "nextTouchDue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastModifiedBy": {
+            "type": "string"
+          }
+        }
+      },
+      "OutreachUpdateInput": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "replied",
+              "no-response",
+              "interested",
+              "not-interested",
+              "booked",
+              "target-filled"
+            ]
+          },
+          "gmailThreadId": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "description": "Recorded as lastModifiedBy; defaults to the caller's user id."
+          }
+        }
+      },
+      "OutreachOutcomeInput": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "replied",
+              "interested",
+              "not-interested",
+              "booked",
+              "target-filled"
+            ]
+          },
+          "bookedDate": {
+            "type": "string",
+            "description": "A readable date; required when status is booked."
+          },
+          "targetWeekend": {
+            "$ref": "#/components/schemas/OutreachTargetWeekendInput"
+          },
+          "actor": {
+            "type": "string"
+          }
+        }
+      },
+      "OutreachApplySuggestionInput": {
+        "type": "object",
+        "properties": {
+          "bookingStatus": {
+            "type": "string",
+            "enum": [
+              "booking",
+              "not-booking",
+              "booked"
+            ],
+            "description": "Overrides the suggested value."
+          },
+          "dismiss": {
+            "type": "boolean",
+            "description": "Mark reviewed without writing the venue."
+          },
+          "reopen": {
+            "type": "boolean",
+            "description": "Return the record to sent; takes precedence over the other fields."
+          },
+          "actor": {
+            "type": "string"
+          }
+        }
+      },
+      "OutreachEmailOptions": {
+        "type": "object",
+        "properties": {
+          "templateType": {
+            "type": "string",
+            "description": "Overrides the venue's template type."
+          },
+          "bookingPeriod": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "cc": {
+            "description": "Replaces the default copy addresses.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "customIntro": {
+            "type": "string",
+            "description": "Replaces the template's introduction."
+          },
+          "customBody": {
+            "type": "string",
+            "description": "Inserted at the template's custom body marker."
+          }
+        }
+      },
+      "OutreachSendInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OutreachEmailOptions"
+          },
+          {
+            "type": "object",
+            "required": [
+              "venueId",
+              "targetDates",
+              "targetWeekend"
+            ],
+            "properties": {
+              "venueId": {
+                "type": "string"
+              },
+              "targetDates": {
+                "type": "string",
+                "description": "Date text placed in the email."
+              },
+              "targetWeekend": {
+                "$ref": "#/components/schemas/OutreachTargetWeekendInput"
+              }
+            }
+          }
+        ]
+      },
+      "OutreachBatchInput": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OutreachEmailOptions"
+          },
+          {
+            "type": "object",
+            "required": [
+              "venueIds",
+              "targetDates",
+              "targetWeekend"
+            ],
+            "properties": {
+              "venueIds": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "targetDates": {
+                "type": "string",
+                "description": "Date text placed in the emails."
+              },
+              "targetWeekend": {
+                "$ref": "#/components/schemas/OutreachTargetWeekendInput"
+              },
+              "batchId": {
+                "type": "string",
+                "description": "Batch id of the approvals; defaults to weekend."
+              },
+              "weekend": {
+                "type": "string",
+                "description": "Weekend key; derived from targetWeekend when absent."
+              },
+              "venueCustomizations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "venueId"
+                  ],
+                  "properties": {
+                    "venueId": {
+                      "type": "string"
+                    },
+                    "customIntro": {
+                      "type": "string"
+                    },
+                    "customBody": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "description": "venueCustomizations names batch venues at most once each and overrides customIntro and customBody for them."
+      },
+      "OutreachDispatchSendInput": {
+        "type": "object",
+        "required": [
+          "dispatchId"
+        ],
+        "properties": {
+          "dispatchId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor": {
+            "type": "string"
+          }
+        }
+      },
+      "OutreachDispatchRef": {
+        "type": "object",
+        "required": [
+          "dispatchId",
+          "venueCount"
+        ],
+        "properties": {
+          "dispatchId": {
+            "type": "string"
+          },
+          "venueCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "OutreachSkippedVenue": {
+        "type": "object",
+        "required": [
+          "venueId",
+          "venueName",
+          "reason"
+        ],
+        "properties": {
+          "venueId": {
+            "type": "string"
+          },
+          "venueName": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "OutreachBatchResult": {
+        "type": "object",
+        "required": [
+          "requested",
+          "sent",
+          "skipped",
+          "records"
+        ],
+        "properties": {
+          "requested": {
+            "type": "integer"
+          },
+          "sent": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutreachSkippedVenue"
+            }
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Outreach"
+            }
+          }
+        }
+      },
+      "OutreachDispatchResult": {
+        "type": "object",
+        "required": [
+          "sent",
+          "skipped",
+          "records",
+          "remaining"
+        ],
+        "properties": {
+          "sent": {
+            "type": "integer"
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutreachSkippedVenue"
+            }
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Outreach"
+            }
+          },
+          "remaining": {
+            "type": "integer",
+            "description": "Venues in the dispatch not yet attempted."
+          },
+          "stopped": {
+            "$ref": "#/components/schemas/OutreachSkippedVenue",
+            "description": "Present when a mail account or connection failure stopped the call after earlier venues were handled; that venue stays unattempted."
+          }
+        }
+      },
+      "OutreachDispatchRefusal": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "unsentVenues": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "Venue name, or its id when names cannot be read."
+            }
+          }
+        }
+      },
+      "OutreachCandidate": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Venue"
+          },
+          {
+            "type": "object",
+            "required": [
+              "lastPitchDate",
+              "reason"
+            ],
+            "properties": {
+              "lastPitchDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "Latest pitch for the target weekend."
+              },
+              "reason": {
+                "type": "object",
+                "required": [
+                  "lastGigDate",
+                  "gigIntervalMonths",
+                  "nearestGigMonthsAway",
+                  "spacingNote",
+                  "resumeBookingExpired"
+                ],
+                "properties": {
+                  "lastGigDate": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "gigIntervalMonths": {
+                    "type": "number"
+                  },
+                  "nearestGigMonthsAway": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "spacingNote": {
+                    "type": "string"
+                  },
+                  "resumeBookingExpired": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "OutreachCandidatesForWeekend": {
+        "type": "object",
+        "required": [
+          "candidates",
+          "weekendGigs"
+        ],
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutreachCandidate"
+            }
+          },
+          "weekendGigs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Gig"
+            }
+          }
+        }
+      },
+      "OutreachPreview": {
+        "type": "object",
+        "required": [
+          "to",
+          "cc",
+          "subject",
+          "html"
+        ],
+        "properties": {
+          "to": {
+            "type": "string"
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "html": {
+            "type": "string"
+          }
+        }
+      },
+      "OutreachBatchPreviewItem": {
+        "type": "object",
+        "required": [
+          "venueId",
+          "venueName",
+          "subject",
+          "body"
+        ],
+        "properties": {
+          "venueId": {
+            "type": "string"
+          },
+          "venueName": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string",
+            "description": "Rendered HTML."
+          }
+        }
+      },
+      "OutreachReportInput": {
+        "type": "object",
+        "required": [
+          "weekend",
+          "htmlContent"
+        ],
+        "properties": {
+          "weekend": {
+            "type": "string"
+          },
+          "htmlContent": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "Defaults to \"Outreach Report - \" and the weekend."
+          },
+          "candidatesCount": {
+            "type": "number",
+            "description": "Stored as 0 when not a number."
+          },
+          "dispatchedCount": {
+            "type": "number",
+            "description": "Stored as 0 when not a number."
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "OutreachReportSummary": {
+        "type": "object",
+        "required": [
+          "_id",
+          "weekend",
+          "title"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "weekend": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "candidatesCount": {
+            "type": "number"
+          },
+          "dispatchedCount": {
+            "type": "number"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        }
+      },
+      "OutreachReport": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/OutreachReportSummary"
+          },
+          {
+            "type": "object",
+            "required": [
+              "htmlContent"
+            ],
+            "properties": {
+              "htmlContent": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "OutreachVenueApprovalInput": {
+        "type": "object",
+        "required": [
+          "venueIds"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "description": "Batch id; defaults to weekend."
+          },
+          "weekend": {
+            "type": "string",
+            "description": "Weekend key; derived from targetWeekend when absent."
+          },
+          "targetWeekend": {
+            "$ref": "#/components/schemas/OutreachTargetWeekendInput"
+          },
+          "approver": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "venueIds": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "reapproveVenueIds": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "A subset of venueIds to approve afresh."
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "batchId"
+            ]
+          },
+          {
+            "required": [
+              "weekend"
+            ]
+          },
+          {
+            "required": [
+              "targetWeekend"
+            ]
+          }
+        ]
+      },
+      "OutreachDraftFingerprint": {
+        "type": "object",
+        "required": [
+          "venueId",
+          "fingerprint"
+        ],
+        "properties": {
+          "venueId": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string",
+            "description": "SHA-256 of the rendered subject and body."
+          },
+          "subject": {
+            "type": "string"
+          }
+        }
+      },
+      "OutreachDraftFingerprintsValue": {
+        "description": "A list of fingerprints, or an object mapping each venue id to its fingerprint.",
+        "oneOf": [
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/OutreachDraftFingerprint"
+            }
+          },
+          {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "OutreachDraftApprovalInput": {
+        "type": "object",
+        "properties": {
+          "batchId": {
+            "type": "string",
+            "description": "Batch id; defaults to weekend."
+          },
+          "weekend": {
+            "type": "string",
+            "description": "Weekend key; derived from targetWeekend when absent."
+          },
+          "targetWeekend": {
+            "$ref": "#/components/schemas/OutreachTargetWeekendInput"
+          },
+          "approver": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "draftFingerprints": {
+            "$ref": "#/components/schemas/OutreachDraftFingerprintsValue"
+          },
+          "fingerprints": {
+            "$ref": "#/components/schemas/OutreachDraftFingerprintsValue"
+          }
+        },
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "draftFingerprints"
+                ]
+              },
+              {
+                "required": [
+                  "fingerprints"
+                ]
+              }
+            ]
+          },
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "batchId"
+                ]
+              },
+              {
+                "required": [
+                  "weekend"
+                ]
+              },
+              {
+                "required": [
+                  "targetWeekend"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "OutreachVenueApproval": {
+        "type": "object",
+        "required": [
+          "_id",
+          "batchId",
+          "venueIds",
+          "approver"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "weekend": {
+            "type": "string"
+          },
+          "targetWeekend": {
+            "$ref": "#/components/schemas/OutreachTargetWeekend"
+          },
+          "approver": {
+            "type": "string"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "venueIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "venueApprovals": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "venueId": {
+                  "type": "string"
+                },
+                "approvedAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          }
+        }
+      },
+      "OutreachDraftApproval": {
+        "type": "object",
+        "required": [
+          "_id",
+          "batchId",
+          "draftFingerprints",
+          "approver"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "weekend": {
+            "type": "string"
+          },
+          "targetWeekend": {
+            "$ref": "#/components/schemas/OutreachTargetWeekend"
+          },
+          "approver": {
+            "type": "string"
+          },
+          "approvedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "draftFingerprints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutreachDraftFingerprint"
+            }
+          }
+        }
+      },
+      "OutreachBatchApproval": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "gate1",
+          "gate2",
+          "venueApproval",
+          "draftApproval",
+          "complete"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "gate1": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OutreachVenueApproval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "gate2": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OutreachDraftApproval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "venueApproval": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OutreachVenueApproval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draftApproval": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OutreachDraftApproval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "complete": {
+            "type": "boolean"
+          }
+        }
       }
     }
   }
