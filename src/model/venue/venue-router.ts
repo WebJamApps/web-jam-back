@@ -76,6 +76,26 @@ router.route('/discover/place')
     void action();
   });
 
+// GET /venue/discover — search cached Overture listings by distance (#1215).
+// Registered BEFORE /:id so Express does not read "discover" as a venue id.
+router.route('/discover')
+  .get(listingsSearchRateLimiter, (req, res) => {
+    const action = routeUtils.makeAction(req, res, 'discoverListings', controller, authUtils);
+    void action();
+  });
+
+// POST / DELETE /venue/discover/:listingId/reject — record or undo rejection (#1215).
+// Registered BEFORE /:id so Express does not read "discover" as a venue id.
+router.route('/discover/:listingId/reject')
+  .post(listingsSearchRateLimiter, (req, res) => {
+    const action = routeUtils.makeAction(req, res, 'rejectDiscoverListing', controller, authUtils);
+    void action();
+  })
+  .delete(listingsSearchRateLimiter, (req, res) => {
+    const action = routeUtils.makeAction(req, res, 'undoRejectDiscoverListing', controller, authUtils);
+    void action();
+  });
+
 router.route('/:id')
   .get((req, res) => {
     const action = routeUtils.makeAction(req, res, 'getVenue', controller, authUtils);
