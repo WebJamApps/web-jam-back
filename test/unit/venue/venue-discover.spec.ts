@@ -40,6 +40,7 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
     lat?: number;
     phone?: string;
     website?: string;
+    downloadedAt?: Date;
   }) {
     return {
       listingId: overrides.listingId,
@@ -56,7 +57,7 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
         coordinates: [overrides.lng ?? salemLng, overrides.lat ?? salemLat],
       },
       release: '2026-10-21.0',
-      downloadedAt,
+      downloadedAt: overrides.downloadedAt ?? downloadedAt,
     };
   }
 
@@ -438,14 +439,30 @@ describe('Venue Discovery Search & Rejection Routes (#1215)', () => {
     });
 
     it('falls back to listing downloadedAt when lock doc has no lastCommittedAt', async () => {
-      await MapListing.insertMany([makeListing({ listingId: 'ov-no-lock', name: 'Salem Lounge', kind: 'lounge' })]);
+      const olderDownloadedAt = new Date('2026-10-01T00:00:00.000Z');
+      // Insert the older row first so natural order would return it without `.sort({ downloadedAt: -1 })`.
+      await MapListing.insertMany([
+        makeListing({
+          listingId: 'ov-no-lock-older',
+          name: 'Roanoke Tavern',
+          kind: 'bar',
+          lng: salemLng + 0.01,
+          downloadedAt: olderDownloadedAt,
+        }),
+        makeListing({
+          listingId: 'ov-no-lock',
+          name: 'Salem Lounge',
+          kind: 'lounge',
+          downloadedAt,
+        }),
+      ]);
       const r = await request(app)
         .get(`/venue/discover?lat=${salemLat}&lng=${salemLng}`)
         .set(adminHeaders());
       expect(r.status).toBe(200);
       const body = r.body as DiscoverResponseBody;
       expect(body.lastDownloadedAt).toBe(downloadedAt.toISOString());
-      expect(body.rows.map((row) => row.listingId)).toEqual(['ov-no-lock']);
+      expect(body.rows.map((row) => row.listingId)).toEqual(['ov-no-lock', 'ov-no-lock-older']);
     });
   });
 

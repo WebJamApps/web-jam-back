@@ -306,6 +306,7 @@ async function getListingsCopyStatus(): Promise<
     { listingId: { $ne: MAP_LISTING_LOCK_ID } },
     { downloadedAt: 1 },
   )
+    .sort({ downloadedAt: -1 })
     .lean()
     .exec();
   const sampled = toValidDate((fallbackDoc as { downloadedAt?: unknown } | null)?.downloadedAt);
