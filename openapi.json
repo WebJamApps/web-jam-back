@@ -59,6 +59,34 @@
     {
       "name": "outreach",
       "description": "Pitch sends, outreach records, batch approvals and run reports."
+    },
+    {
+      "name": "backups",
+      "description": "Database backups, restores and copies to DEV, and the backup status."
+    },
+    {
+      "name": "facebook",
+      "description": "Cached Facebook page posts and page reconnection."
+    },
+    {
+      "name": "inquiries",
+      "description": "Contact and booking form submissions."
+    },
+    {
+      "name": "livestream",
+      "description": "The current or latest YouTube livestream."
+    },
+    {
+      "name": "promo",
+      "description": "Gig promotion sends."
+    },
+    {
+      "name": "subscribers",
+      "description": "Public sign-up, confirmation and unsubscribe."
+    },
+    {
+      "name": "admin-subscribers",
+      "description": "Administrative subscriber management."
     }
   ],
   "security": [],
@@ -985,6 +1013,9 @@
               }
             }
           },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
           "502": {
             "description": "Address lookup is unavailable (database read failed).",
             "content": {
@@ -1004,9 +1035,6 @@
                 }
               }
             }
-          },
-          "500": {
-            "$ref": "#/components/responses/ServerError"
           }
         }
       }
@@ -6003,6 +6031,1235 @@
           }
         }
       }
+    },
+    "/admin/backup": {
+      "post": {
+        "tags": [
+          "backups"
+        ],
+        "operationId": "startBackup",
+        "summary": "Start a database backup",
+        "description": "Developer role only; the AUTH_ROLES setting is not read. Answers at once; the export and upload to Dropbox run afterwards, and old runs are pruned after a good run. Unlike POST /admin/backup/runs, the answer does not name the run.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "\"backup started\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/TopAdminUnauthorized"
+          },
+          "409": {
+            "description": "\"backup run in progress\": a backup or restore is active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "\"Dropbox backup settings absent\". The caller's account could not be read also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/backup/diagram/database": {
+      "get": {
+        "tags": [
+          "backups"
+        ],
+        "operationId": "getDatabaseDiagram",
+        "summary": "Read the database diagram",
+        "description": "Developer role only; the AUTH_ROLES setting is not read. A Mermaid diagram generated from the record definitions.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The diagram source.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/TopAdminUnauthorized"
+          },
+          "500": {
+            "description": "The diagram could not be generated. The caller's account could not be read also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/backup/diagram/system": {
+      "get": {
+        "tags": [
+          "backups"
+        ],
+        "operationId": "getSystemDiagram",
+        "summary": "Read the system diagram",
+        "description": "Developer role only; the AUTH_ROLES setting is not read. The Mermaid system map kept in the repository.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The diagram source.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/TopAdminUnauthorized"
+          },
+          "500": {
+            "description": "\"failed to read system map\". The caller's account could not be read also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/backup/runs": {
+      "get": {
+        "tags": [
+          "backups"
+        ],
+        "operationId": "listBackupRuns",
+        "summary": "List backup runs",
+        "description": "Developer role only; the AUTH_ROLES setting is not read. Dated runs are listed newest first.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every run folder in Dropbox.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BackupRun"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/TopAdminUnauthorized"
+          },
+          "500": {
+            "description": "\"Dropbox backup settings absent\", or Dropbox could not be read. The caller's account could not be read also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "backups"
+        ],
+        "operationId": "startBackupRun",
+        "summary": "Start a database backup and name its run",
+        "description": "Developer role only; the AUTH_ROLES setting is not read. Answers at once; follow the run at GET /admin/backup/operations/{name}.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "\"backup started\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStarted"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/TopAdminUnauthorized"
+          },
+          "409": {
+            "description": "\"backup run in progress\": a backup or restore is active.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "\"Dropbox backup settings absent\". The caller's account could not be read also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/backup/runs/{name}/restore": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "description": "Backup run name. A value containing \"..\", a slash or a backslash is refused.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "backups"
+        ],
+        "operationId": "startBackupRestore",
+        "summary": "Restore the production database from a run",
+        "description": "Developer role only; the AUTH_ROLES setting is not read. Answers at once; the remaining checks and the restore run afterwards. A refusal or failure is reported as a failed operation at GET /admin/backup/operations/{name}.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRestoreInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "\"restore started\"; the name is the restore operation's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStarted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"a valid run name is required\" or \"the run's date, typed as YYYY-MM-DD, is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/TopAdminUnauthorized"
+          },
+          "409": {
+            "description": "\"a backup or restore is in progress\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "\"Dropbox backup settings absent\" or \"the database connection is not available\". The caller's account could not be read also answers 500. A request body that cannot be parsed also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/backup/runs/{name}/copy-to-dev": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "description": "Backup run name. A value containing \"..\", a slash or a backslash is refused.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "backups"
+        ],
+        "operationId": "startBackupCopyToDev",
+        "summary": "Copy a run into the DEV database",
+        "description": "Developer role only; the AUTH_ROLES setting is not read. Email addresses are replaced in the copy. Answers at once; the copy runs afterwards and its result or refusal is reported at GET /admin/backup/operations/{name}.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "\"copy to DEV started\"; the name is the copy operation's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStarted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"a valid run name is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/TopAdminUnauthorized"
+          },
+          "409": {
+            "description": "\"a copy to DEV is in progress\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "\"Dropbox backup settings absent\", or the DEV database setting is refused. The caller's account could not be read also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/backup/operations/{name}": {
+      "parameters": [
+        {
+          "name": "name",
+          "in": "path",
+          "required": true,
+          "description": "Operation name. A value containing \"..\", a slash or a backslash is refused.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "backups"
+        ],
+        "operationId": "getBackupOperation",
+        "summary": "Read the state of a backup, restore or copy",
+        "description": "Developer role only; the AUTH_ROLES setting is not read. Operations are held in memory. For a name not held, the manifest of the backup run with that name is read from Dropbox and answered as a backup operation.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The operation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"invalid operation name\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/TopAdminUnauthorized"
+          },
+          "404": {
+            "description": "No operation or run manifest has this name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The manifest could not be read from Dropbox. The caller's account could not be read also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backup/status": {
+      "get": {
+        "tags": [
+          "backups"
+        ],
+        "operationId": "getBackupStatus",
+        "summary": "Read the latest backup check",
+        "description": "Answers from the result of the server's last scheduled check.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The newest good run and whether the last run failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupStatus"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The check has not run yet, or it could not tell the state of the backups.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/facebook/feed": {
+      "get": {
+        "tags": [
+          "facebook"
+        ],
+        "operationId": "getFacebookFeed",
+        "summary": "Read a page's cached posts",
+        "description": "The cache is refreshed hourly.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "pageId",
+            "in": "query",
+            "required": false,
+            "description": "Facebook page id; defaults to the configured default page.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The cached posts; empty with a null lastUpdated when nothing is cached for the page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacebookFeed"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/facebook/token": {
+      "put": {
+        "tags": [
+          "facebook"
+        ],
+        "operationId": "updateFacebookToken",
+        "summary": "Reconnect a Facebook page",
+        "description": "Requires a role listed in AUTH_ROLES.facebook. Exchanges a short-lived Facebook user token for the page's token, stores it and refreshes the page's cache.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacebookTokenInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The token was stored. lastUpdated is null when nothing is cached for the page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacebookTokenResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"userToken is required\", or the exchange or the storing of the token failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ActionUnauthorized"
+          },
+          "500": {
+            "description": "A request body that cannot be parsed also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inquiry": {
+      "post": {
+        "tags": [
+          "inquiries"
+        ],
+        "operationId": "sendInquiry",
+        "summary": "Submit a contact or booking form",
+        "description": "Emails the submission to the artist's booking contact. Limited to 5 submissions per hour from one client address. A submission without a known form value or an allowed Origin header, with a value in website, or filled in less than 3 seconds by formLoadedAt, is answered 200 and not sent. The booking forms jam-bookus and tim-booking also require the contact and event fields and have the venue address checked, and their message wording can cause the same unsent 200.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "Origin",
+            "in": "header",
+            "required": false,
+            "description": "Sent by the browser; needed for the submission to be emailed.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InquiryInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "\"email sent\". Also the answer to a submission that was not sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A booking form lacks a required field or has an invalid one, or its venue address could not be verified.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "\"Too many requests, please try again later.\"",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The request could not be handled. A request body that cannot be parsed also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "\"email provider error\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InquiryMailError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/livestream/current": {
+      "get": {
+        "tags": [
+          "livestream"
+        ],
+        "operationId": "getCurrentLivestream",
+        "summary": "Read the current or latest livestream",
+        "description": "The channel's live video, else its latest completed one. A successful lookup is cached for 15 minutes.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The video; status none with a null videoId when there is none, the lookup is not configured or it failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Livestream"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/promo/gig/email": {
+      "post": {
+        "tags": [
+          "promo"
+        ],
+        "operationId": "sendGigPromoEmail",
+        "summary": "Email a gig promotion to subscribers",
+        "description": "Sends to every active subscriber with the email channel on, one at a time, adding each one's unsubscribe link. Requires promo:email, or JaM-admin or Developer when the privileges list is empty.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-required-capabilities": [
+          "promo:email"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoGigEmailInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Counts of the sends; a failed recipient is counted and does not stop the rest.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromoGigEmailResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"subject and bodyHtml are required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ActionUnauthorized"
+          },
+          "403": {
+            "description": "\"missing promo:email capability\" or \"not authorized to send promo email\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The caller or the subscriber list could not be read. A request body that cannot be parsed also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/subscriber": {
+      "post": {
+        "tags": [
+          "subscribers"
+        ],
+        "operationId": "optInSubscriber",
+        "summary": "Sign up for gig updates",
+        "description": "Stores a pending subscriber and emails a confirmation link. An address that is already active is left unchanged; a pending or unsubscribed one is made pending again.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriberOptInInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "\"Almost there — check your email to confirm your subscription\" or \"You are already subscribed\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Name is required\" or \"A valid email is required\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Storage failed, or the confirmation email could not be sent after the pending record was stored. A request body that cannot be parsed also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/subscriber/confirm": {
+      "get": {
+        "tags": [
+          "subscribers"
+        ],
+        "operationId": "confirmSubscriber",
+        "summary": "Confirm a subscription",
+        "description": "Makes the subscriber active and clears the confirmation token.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "description": "The token from the emailed link, given once.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An HTML page: \"You're subscribed!\"",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An HTML page: \"Invalid confirmation link\" (no token).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "An HTML page: \"This confirmation link is no longer valid\" (unknown token).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Storage failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/subscriber/unsubscribe": {
+      "get": {
+        "tags": [
+          "subscribers"
+        ],
+        "operationId": "unsubscribeSubscriber",
+        "summary": "Unsubscribe",
+        "description": "Marks the subscriber unsubscribed.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "query",
+            "required": true,
+            "description": "The token from the emailed link, given once.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An HTML page: \"You've been unsubscribed\"",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An HTML page: \"Invalid unsubscribe link\" (no token).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "An HTML page: \"This unsubscribe link is no longer valid\" (unknown token).",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Storage failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/subscriber": {
+      "get": {
+        "tags": [
+          "admin-subscribers"
+        ],
+        "operationId": "listSubscribers",
+        "summary": "List subscribers",
+        "description": "Requires a role listed in AUTH_ROLES.admin. Every query parameter is used as a filter on the subscriber field of that name.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Only subscribers with this status.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "email",
+            "in": "query",
+            "required": false,
+            "description": "Only the subscriber with this stored address.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": false,
+            "description": "Only subscribers with this name.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The matching subscribers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Subscriber"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ActionUnauthorized"
+          },
+          "500": {
+            "description": "Storage failed, for example on a filter value of the wrong type.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin-subscribers"
+        ],
+        "operationId": "createSubscriber",
+        "summary": "Add a subscriber",
+        "description": "Requires a role listed in AUTH_ROLES.admin. The status defaults to active. An unsubscribe token is generated.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriberInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new subscriber.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscriber"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Name is required\", \"A valid email is required\" or \"status not valid\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ActionUnauthorized"
+          },
+          "500": {
+            "description": "Storage failed, for example because the email address is already stored. A request body that cannot be parsed also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/subscriber/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Subscriber id.",
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "admin-subscribers"
+        ],
+        "operationId": "getSubscriber",
+        "summary": "Read one subscriber",
+        "description": "Requires a role listed in AUTH_ROLES.admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The subscriber.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscriber"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Find id is invalid\" or \"nothing found with id provided\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ActionUnauthorized"
+          },
+          "500": {
+            "description": "Storage failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin-subscribers"
+        ],
+        "operationId": "updateSubscriber",
+        "summary": "Update a subscriber",
+        "description": "Requires a role listed in AUTH_ROLES.admin. Fields left out are unchanged. Fields beyond those listed are passed to storage as sent.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubscriberUpdateInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated subscriber.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Subscriber"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"Update id is invalid\", \"status not valid\", \"Name is required\", \"A valid email is required\" or \"Id Not Found\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ActionUnauthorized"
+          },
+          "500": {
+            "description": "Storage failed. A request body that cannot be parsed also answers 500.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin-subscribers"
+        ],
+        "operationId": "deleteSubscriber",
+        "summary": "Delete a subscriber",
+        "description": "Requires a role listed in AUTH_ROLES.admin.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "\"Subscriber was deleted successfully\".",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "\"id is invalid\" or \"Delete id is invalid\" (no such subscriber).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ActionUnauthorized"
+          },
+          "500": {
+            "description": "Storage failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6087,6 +7344,26 @@
       },
       "MessageNotFound": {
         "description": "Not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
+      "ActionUnauthorized": {
+        "description": "No valid token, no user for it, or the user's role is not allowed on this route. The route also answers 401, with the error's message, when handling the request fails unexpectedly, for example on a body field of the wrong type.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Message"
+            }
+          }
+        }
+      },
+      "TopAdminUnauthorized": {
+        "description": "No Authorization header, an invalid token, no account for it, or an account whose role is not Developer. This route does not answer 403.",
         "content": {
           "application/json": {
             "schema": {
@@ -8906,6 +10183,826 @@
           },
           "complete": {
             "type": "boolean"
+          }
+        }
+      },
+      "BackupDatabaseResult": {
+        "type": "object",
+        "required": [
+          "ok",
+          "collections"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "collections": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Documents exported per collection."
+          }
+        }
+      },
+      "BackupManifest": {
+        "type": "object",
+        "required": [
+          "generatedAt",
+          "databases"
+        ],
+        "properties": {
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "who": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "databases": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BackupDatabaseResult"
+            }
+          }
+        }
+      },
+      "BackupRun": {
+        "type": "object",
+        "required": [
+          "name",
+          "startTime",
+          "startedAt",
+          "trigger",
+          "state",
+          "size",
+          "dropboxPath",
+          "path",
+          "collections",
+          "databases"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "startTime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Same value as startTime."
+          },
+          "trigger": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "good",
+              "incomplete",
+              "failed"
+            ]
+          },
+          "size": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "dropboxPath": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Same value as dropboxPath."
+          },
+          "collections": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer"
+              }
+            }
+          },
+          "databases": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/BackupDatabaseResult"
+            }
+          }
+        }
+      },
+      "BackupStarted": {
+        "type": "object",
+        "required": [
+          "name",
+          "message"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "BackupRestoreInput": {
+        "type": "object",
+        "required": [
+          "date"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "The chosen run's date, typed as YYYY-MM-DD."
+          }
+        }
+      },
+      "BackupRestoreResult": {
+        "type": "object",
+        "required": [
+          "collections",
+          "missingIndexes",
+          "indexFailures"
+        ],
+        "properties": {
+          "collections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "collection",
+                "restored",
+                "manifest"
+              ],
+              "properties": {
+                "collection": {
+                  "type": "string"
+                },
+                "restored": {
+                  "type": "integer"
+                },
+                "manifest": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              }
+            }
+          },
+          "missingIndexes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "collection",
+                "index"
+              ],
+              "properties": {
+                "collection": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "indexFailures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "collection",
+                "message"
+              ],
+              "properties": {
+                "collection": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "BackupCopyResult": {
+        "type": "object",
+        "required": [
+          "collections",
+          "missingIndexes",
+          "indexFailures",
+          "readBack",
+          "clean"
+        ],
+        "properties": {
+          "collections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "collection",
+                "copied",
+                "manifest",
+                "addressesReplaced"
+              ],
+              "properties": {
+                "collection": {
+                  "type": "string"
+                },
+                "copied": {
+                  "type": "integer"
+                },
+                "manifest": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "addressesReplaced": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "missingIndexes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "collection",
+                "index"
+              ],
+              "properties": {
+                "collection": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "indexFailures": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "collection",
+                "message"
+              ],
+              "properties": {
+                "collection": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "readBack": {
+            "type": "object",
+            "required": [
+              "status",
+              "remaining",
+              "message"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "found",
+                  "failed"
+                ]
+              },
+              "remaining": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          "clean": {
+            "type": "boolean",
+            "description": "True only when the read-back found no real address."
+          }
+        }
+      },
+      "BackupOperation": {
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "status",
+          "startedAt"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "backup",
+              "restore",
+              "copy-to-dev"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "completed",
+              "failed"
+            ]
+          },
+          "startedAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "progress": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "result": {
+            "description": "The result for the operation's type; absent or null until there is one.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupManifest"
+              },
+              {
+                "$ref": "#/components/schemas/BackupRestoreResult"
+              },
+              {
+                "$ref": "#/components/schemas/BackupCopyResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BackupStatus": {
+        "type": "object",
+        "properties": {
+          "newestGoodRun": {
+            "type": "string"
+          },
+          "lastRunFailed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FacebookPost": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "full_picture": {
+            "type": "string"
+          },
+          "permalink_url": {
+            "type": "string"
+          },
+          "created_time": {
+            "type": "string"
+          }
+        }
+      },
+      "FacebookFeed": {
+        "type": "object",
+        "required": [
+          "posts",
+          "lastUpdated"
+        ],
+        "properties": {
+          "posts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FacebookPost"
+            }
+          },
+          "lastUpdated": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "FacebookTokenInput": {
+        "type": "object",
+        "required": [
+          "userToken"
+        ],
+        "properties": {
+          "userToken": {
+            "type": "string",
+            "description": "Short-lived Facebook user token."
+          },
+          "pageId": {
+            "type": "string",
+            "description": "Defaults to the configured default page."
+          }
+        }
+      },
+      "FacebookTokenResult": {
+        "type": "object",
+        "required": [
+          "pageId",
+          "lastUpdated"
+        ],
+        "properties": {
+          "pageId": {
+            "type": "string"
+          },
+          "lastUpdated": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "InquiryInput": {
+        "type": "object",
+        "properties": {
+          "form": {
+            "type": "string",
+            "enum": [
+              "webjam-homepage",
+              "jam-bookus",
+              "tim-booking"
+            ],
+            "description": "Needed for the submission to be emailed."
+          },
+          "formLoadedAt": {
+            "type": "number",
+            "description": "When the form was loaded, in milliseconds since 1970. Needed for the submission to be emailed."
+          },
+          "website": {
+            "type": "string",
+            "description": "Hidden field; leave it out or empty."
+          },
+          "artist": {
+            "type": "string",
+            "description": "Artist whose booking contact receives the email; the default contact is used when absent or unknown."
+          },
+          "name": {
+            "type": "string",
+            "description": "Booking forms require name, or firstname or lastname."
+          },
+          "firstname": {
+            "type": "string"
+          },
+          "lastname": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "description": "Booking forms require email or emailaddress."
+          },
+          "emailaddress": {
+            "type": "string"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Booking forms require phone or phonenumber."
+          },
+          "phonenumber": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "description": "Booking forms require message or comments."
+          },
+          "comments": {
+            "type": "string"
+          },
+          "eventDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Required by booking forms; today or later."
+          },
+          "eventType": {
+            "type": "string",
+            "description": "Required by booking forms: brewery-winery, restaurant-bar, wedding, private-party, festival-fair, church, corporate or other."
+          },
+          "venuePlaceId": {
+            "type": "string",
+            "description": "Google place id. Booking forms require this or venueAddress."
+          },
+          "venueAddress": {
+            "type": "string"
+          },
+          "country": {
+            "type": "string"
+          },
+          "uSAstate": {
+            "type": "string"
+          },
+          "zipcode": {
+            "type": "string"
+          }
+        }
+      },
+      "InquiryMailError": {
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "Livestream": {
+        "type": "object",
+        "required": [
+          "videoId",
+          "status"
+        ],
+        "properties": {
+          "videoId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "completed",
+              "none"
+            ]
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PromoGigEmailInput": {
+        "type": "object",
+        "required": [
+          "subject",
+          "bodyHtml"
+        ],
+        "properties": {
+          "subject": {
+            "type": "string"
+          },
+          "bodyHtml": {
+            "type": "string"
+          }
+        }
+      },
+      "PromoGigEmailResult": {
+        "type": "object",
+        "required": [
+          "sent",
+          "failed",
+          "total"
+        ],
+        "properties": {
+          "sent": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          }
+        }
+      },
+      "Subscriber": {
+        "type": "object",
+        "required": [
+          "_id",
+          "name",
+          "email"
+        ],
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "description": "Stored trimmed and in lower case."
+          },
+          "phone": {
+            "type": "number"
+          },
+          "channels": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "boolean"
+              },
+              "sms": {
+                "type": "boolean"
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "active",
+              "unsubscribed"
+            ]
+          },
+          "confirmToken": {
+            "type": "string"
+          },
+          "unsubscribeToken": {
+            "type": "string"
+          },
+          "consent": {
+            "type": "object",
+            "properties": {
+              "sms": {
+                "type": "object",
+                "properties": {
+                  "agreed": {
+                    "type": "boolean"
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "ip": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SubscriberOptInInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "email"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "channels": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "boolean",
+                "description": "On unless false."
+              }
+            }
+          }
+        }
+      },
+      "SubscriberInput": {
+        "type": "object",
+        "required": [
+          "name",
+          "email"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "description": "Stored trimmed and in lower case."
+          },
+          "phone": {
+            "type": "number"
+          },
+          "channels": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "boolean"
+              },
+              "sms": {
+                "type": "boolean"
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "active",
+              "unsubscribed"
+            ]
+          }
+        }
+      },
+      "SubscriberUpdateInput": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "description": "Stored trimmed and in lower case."
+          },
+          "phone": {
+            "type": "number"
+          },
+          "channels": {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "boolean"
+              },
+              "sms": {
+                "type": "boolean"
+              }
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "active",
+              "unsubscribed"
+            ]
           }
         }
       }
