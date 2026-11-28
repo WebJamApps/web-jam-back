@@ -31,22 +31,20 @@ process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason); // eslint-disable-line no-console
 });
 const readCsv = new ReadCSV();
-// Allow-list built in lib/cors.ts: the AllowUrl env origins (JaMmusic +
-// CollegeLutheran) plus timshermanmusic.com and its *.pages.dev previews (#885).
-const corsOptions = makeCorsOptions();
-const app = express();
-// Trust Heroku's single proxy hop so req.ip reflects each visitor's own address (#973).
-app.set('trust proxy', 1);
 
-/* istanbul ignore next */
-if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'main') app.use(enforce.HTTPS({ trustProtoHeader: true }));
-app.use(express.static(path.normalize(path.join(import.meta.dirname, '../../JaMmusic/dist'))));
-app.use(cors(corsOptions));
-// eslint-disable-next-line no-void
-(async () => { await utils.mongoConnect(mongoose); })();
-app.use(helmet({ crossOriginEmbedderPolicy: false }));
-app.use(helmet.contentSecurityPolicy({
-  directives: {
+// The built JaMmusic bundle: FRONTEND_DIST_DIR when set (the e2e stack's per-run build), else the sibling clone.
+export function resolveFrontendDistDir(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env.FRONTEND_DIST_DIR?.trim();
+  if (override) return path.resolve(override);
+  return path.normalize(path.join(import.meta.dirname, '../../JaMmusic/dist'));
+}
+
+type CspDirectives = Record<string, string[] | null>;
+
+// One policy for every route. upgrade-insecure-requests is sent only in production; elsewhere it is
+// set to null, because Helmet adds it by default and it would break local HTTP serving (e2e stack).
+export function makeCspDirectives(env: NodeJS.ProcessEnv = process.env): CspDirectives {
+  return {
     'default-src': ["'self'"],
     'base-uri': ["'self'"],
     'block-all-mixed-content': [],
@@ -54,20 +52,39 @@ app.use(helmet.contentSecurityPolicy({
     'frame-src': ["'self'", 'https://accounts.google.com', 'https://www.facebook.com', 'https://open.spotify.com',
       'https://w.soundcloud.com', 'https://www.youtube.com', 'https://dl.dropboxusercontent.com', 'https://js.stripe.com'],
     'frame-ancestors': ["'self'"],
-    'img-src': ["'self'", 'data:', 'https:', 'https://dl.dropboxusercontent.com'],
+    'img-src': ["'self'", 'data:', 'blob:', 'https:', 'https://dl.dropboxusercontent.com'],
     'media-src': ["'self'", 'https://dl.dropboxusercontent.com', 'https://*.dl.dropboxusercontent.com',
       'https://www.dropbox.com', 'https://cdn.plyr.io'],
     'object-src': ["'none'"],
+    // https://cdn.tiny.cloud stays until the self-hosted TinyMCE JaMmusic build has deployed.
     'script-src': ["'self'", 'https://accounts.google.com', 'https://apis.google.com', 'https://cdn.tiny.cloud',
       'https://w.soundcloud.com', 'https://www.youtube.com', 'https://s.ytimg.com', 'https://cdnjs.cloudflare.com',
       'https://js.stripe.com', 'https://maps.googleapis.com'],
     'script-src-attr': ["'none'"],
     'style-src': ["'self'", 'https:', "'unsafe-inline'"],
-    'upgrade-insecure-requests': [],
-    'connect-src': ["'self'", 'ws:', 'wss:', 'https://cdn.plyr.io', 'https://noembed.com',
+    'upgrade-insecure-requests': env.NODE_ENV === 'production' ? [] : null,
+    'connect-src': ["'self'", 'blob:', 'ws:', 'wss:', 'https://cdn.plyr.io', 'https://noembed.com',
       'https://maps.googleapis.com', 'https://places.googleapis.com'],
-  },
-}));
+  };
+}
+
+// Allow-list built in lib/cors.ts: the AllowUrl env origins (JaMmusic +
+// CollegeLutheran) plus timshermanmusic.com and its *.pages.dev previews (#885).
+const corsOptions = makeCorsOptions();
+const frontendDistDir = resolveFrontendDistDir();
+const app = express();
+// Trust Heroku's single proxy hop so req.ip reflects each visitor's own address (#973).
+app.set('trust proxy', 1);
+
+/* istanbul ignore next */
+if (process.env.NODE_ENV === 'production' && process.env.BUILD_BRANCH === 'main') app.use(enforce.HTTPS({ trustProtoHeader: true }));
+// Security headers go first, so static files (/) and the SPA fallback (/music) get the same policy.
+app.use(helmet({ crossOriginEmbedderPolicy: false }));
+app.use(helmet.contentSecurityPolicy({ directives: makeCspDirectives() }));
+app.use(express.static(frontendDistDir));
+app.use(cors(corsOptions));
+// eslint-disable-next-line no-void
+(async () => { await utils.mongoConnect(mongoose); })();
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(morgan('tiny'));
@@ -77,7 +94,7 @@ routes(app);
 startFacebookRefresh();
 startBackupScheduler();
 app.get('/*splat', (_req: Request, res: Response) => {
-  res.sendFile(path.normalize(path.join(import.meta.dirname, '../../JaMmusic/dist/index.html')));
+  res.sendFile(path.join(frontendDistDir, 'index.html'));
 });
 app.use((_req: Request, res: Response) => res.status(404).send('not found'));
 /* istanbul ignore next */
